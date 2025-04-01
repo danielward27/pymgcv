@@ -28,7 +28,7 @@ jobs:
       - name: Install dependencies
         shell: bash -el {0} # Ensures the Conda environment is activated
         run: |
-          conda install -c conda-forge r-base
+          conda install -c conda-forge r-base r-mgcv -y
           pip install rpy2
           pip install -e .[dev]
 
