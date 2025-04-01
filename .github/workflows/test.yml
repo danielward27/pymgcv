@@ -24,7 +24,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
       - uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
@@ -32,6 +31,6 @@ jobs:
 
       - name: Install dependencies and run pytest
         run: |
-          conda install -c conda-forge python=$PY_VER 'rpy2' 'r-mgcv'
+          conda install -c conda-forge 'rpy2' 'r-mgcv'
           pip install -e .[dev]
           pytest
