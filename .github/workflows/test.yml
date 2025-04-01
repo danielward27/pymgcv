@@ -14,6 +14,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        py_ver: ["3.10"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 5
 
@@ -23,13 +24,15 @@ jobs:
       - uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
-          python-version: "3.10"
+          python-version: $PY_VER
 
       - name: Install dependencies
         shell: bash -el {0} # Ensures the Conda environment is activated
         run: |
-          conda install -c conda-forge r-base r-mgcv -y
-          pip install rpy2
+          conda create -n pkg_test -c conda-forge python=$PY_VER 'rpy2' 'r-mgcv'
+          conda activate pkg_test
+          # conda install -c conda-forge r-base r-mgcv -y
+          # pip install rpy2
           pip install -e .[dev]
 
       - name: Run pytest
