@@ -18,7 +18,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        py_ver: ["3.10"]
+        python-version: ["3.10"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
 
@@ -28,23 +28,10 @@ jobs:
       - uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
-          python-version: "3.12" # tests run with $py_ver
+          python-version: ${{ matrix.python-version }}
 
-      - name: Install dependencies
+      - name: Install dependencies and run pytest
         run: |
-          conda create -n pkg_test -c conda-forge python=$PY_VER 'rpy2' 'r-mgcv'
-          # For Windows, use the appropriate activation method
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            conda init bash  # Initialize conda for bash on Windows
-            source $CONDA_PREFIX/etc/profile.d/conda.sh  # Source conda on Windows
-          fi
-          conda activate pkg_test
+          conda install -c conda-forge python=$PY_VER 'rpy2' 'r-mgcv'
           pip install -e .[dev]
-
-      - name: Run pytest
-        run: |
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            source $CONDA_PREFIX/etc/profile.d/conda.sh  # Ensure conda is initialized
-          fi
-          conda activate pkg_test
           pytest
