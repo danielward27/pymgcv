@@ -24,7 +24,7 @@ jobs:
       - uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
-          python-version: $PY_VER
+          python-version: "3.12" # tests run with $py_ver
 
       - name: Install dependencies
         shell: bash -el {0} # Ensures the Conda environment is activated
