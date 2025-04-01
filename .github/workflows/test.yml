@@ -36,5 +36,8 @@ jobs:
           pip install -e .[dev]
 
       - name: Run pytest
-        shell: bash -el {0} # Ensures the Conda environment is activated
-        run: pytest
+        shell: bash -el {0}
+
+        run: |
+          conda activate pkg_test
+          pytest
