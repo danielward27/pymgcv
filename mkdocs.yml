@@ -1,0 +1,73 @@
+theme:
+  name: material
+  features:
+    - navigation.sections # Sections are included in the navigation on the left.
+    - toc.integrate # Table of contents is integrated on the left; does not appear separately on the right.
+    - header.autohide # header disappears as you scroll
+
+  palette:
+    primary: white
+
+  icon:
+    repo: fontawesome/brands/github
+
+site_name: pymgcv
+site_description: The documentation for the pymgcv software library.
+site_author: Daniel Ward
+# site_url: TODO
+
+repo_url: https://github.com/danielward27/pymgcv
+repo_name: danielward27/pymgcv
+edit_uri: ""
+
+strict: true # Don't allow warnings during the build process
+
+extra_javascript:
+  # The below two make MathJax work, see https://squidfunk.github.io/mkdocs-material/reference/mathjax/
+  - _static/mathjax.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+markdown_extensions:
+  - pymdownx.arithmatex: # Render LaTeX via MathJax
+      generic: true
+  - pymdownx.superfences
+  - pymdownx.details # Allowing hidden expandable regions denoted by ???
+  - pymdownx.snippets: # Include one Markdown file into another
+      base_path: docs
+  - admonition
+  - toc:
+      toc_depth: 4
+
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+
+plugins:
+  - search # default search plugin; needs manually re-enabling when using any other plugins
+
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_root_heading: true
+            merge_init_into_class: true
+            docstring_section_style: list
+            extensions:
+              - griffe_inherited_docstrings
+            show_bases: false
+            # heading_level: 2
+            # inherited_members: true
+            # members_order: source
+            # show_if_no_docstring: true
+            # show_overloads: false
+            # show_signature_annotations: true
+            # show_source: false
+            # show_symbol_type_heading: true
+            # show_symbol_type_toc: true
+            # force_inspection: true
+
+extra_css:
+  - stylesheets/extra.css

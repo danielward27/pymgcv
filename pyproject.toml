@@ -28,10 +28,12 @@ dev = [
     "beartype",
     "pytest-beartype",
     "ruff",
-    "sphinx <8.2",              # TODO due to https://github.com/tox-dev/sphinx-autodoc-typehints/issues/523
-    "sphinx-book-theme",
-    "sphinx-copybutton",
-    "sphinx-autodoc-typehints",
+    "hippogriffe",
+    "mkdocs",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+    "pymdown-extensions",
+    "griffe-inherited-docstrings",
 ]
 
 [build-system]
@@ -47,7 +49,7 @@ include = ["*.py", "*.pyi", "**/pyproject.toml", "*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "D", "COM", "I", "UP", "TRY004", "RET", "PT", "FBT"]
-ignore = ["D102", "D105", "D107", "B028", "COM812", "F722"]
+ignore = ["D101", "D105", "D107", "B028", "COM812", "F722"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
