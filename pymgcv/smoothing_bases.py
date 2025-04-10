@@ -3,43 +3,36 @@ from dataclasses import dataclass
 
 
 @dataclass
-class AbstractSmooth(ABC):
+class AbstractBasis(ABC):
+    """Abstract basis - controlling both the ``bs`` choice and ``xt``"""
+
+    k: int | None
 
     @property
     @abstractmethod
-    def r_bs_str(self) -> str:
-        """The 2 letter string passed to the bs argument of mgcv.gam."""
+    def bs_str(self):
         pass
 
 
 @dataclass(kw_only=True)
-class ThinPlateSpline(AbstractSmooth):
+class ThinPlateSpline(AbstractBasis):
     """Thin plate regression spline.
 
     Args:
         shrinkage: Whether to use a modified smoothing penalty to penalise the null
+            space.
     """
 
-    shrinkage: bool = False
+    k: int | None = None
+    shrinkage: bool | None = False
 
     @property
-    def r_bs_str(self) -> str:
-        """The 2 letter string passed to the bs argument of mgcv.gam."""
+    def bs_str(self) -> str:
         return "ts" if self.shrinkage else "tp"
 
 
-@dataclass
-class DuchonSpline(AbstractSmooth):  # TODO support passing m?
-    """A generalization of thin plate splines."""
-
-    @property
-    def r_bs_str(self) -> str:
-        """The 2 letter string passed to the bs argument of mgcv.gam."""
-        return "ds"
-
-
 @dataclass(kw_only=True)
-class CubicSpline(AbstractSmooth):
+class CubicSpline(AbstractBasis):
     """Cubic regression regression spline.
 
     Args:
@@ -49,6 +42,7 @@ class CubicSpline(AbstractSmooth):
             space. Defaults to False.
     """
 
+    k: int | None = None
     shrinkage: bool = False
     cyclic: bool = False
 
@@ -57,43 +51,58 @@ class CubicSpline(AbstractSmooth):
             raise ValueError("Cannot use both cyclic and shrinkage simultaneously.")
 
     @property
-    def r_bs_str(self) -> str:
+    def bs_str(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "cs" if self.shrinkage else "cc" if self.cyclic else "cr"
 
 
-@dataclass
-class SplineOnSphere(AbstractSmooth):
+@dataclass(kw_only=True)
+class DuchonSpline(AbstractBasis):  # TODO support passing m?
+    """A generalization of thin plate splines."""
+
+    k: int | None = None
+
+    @property
+    def bs_str(self) -> str:
+        """The 2 letter string passed to the bs argument of mgcv.gam."""
+        return "ds"
+
+
+@dataclass(kw_only=True)
+class SplineOnSphere(AbstractBasis):
     """Two dimensional thin plate spline analogues on a sphere.
 
     For use with two variables denoting latitude and longitude in degrees.
     """
 
+    k: int | None = None
+
     @property
-    def r_bs_str(self) -> str:
+    def bs_str(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "sos"
 
 
-@dataclass
-class BSpline(AbstractSmooth):
+@dataclass(kw_only=True)
+class BSpline(AbstractBasis):
     """B-spline basis with integrated squared derivative penalties."""
 
+    k: int | None = None
+
     @property
-    def r_bs_str(self):
+    def bs_str(self):
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "bs"
 
 
 @dataclass(kw_only=True)
-class PSpline(AbstractSmooth):
+class PSpline(AbstractBasis):
+    """These are P-splines as proposed by Eilers and Marx (1996)."""
+
+    k: int | None = None
     cyclic: bool = False
 
-    def __init__(self, *, cyclic: bool = False):
-        """These are P-splines as proposed by Eilers and Marx (1996)."""
-        pass
-
     @property
-    def r_bs_str(self) -> str:
+    def bs_str(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "cp" if self.cyclic else "ps"
