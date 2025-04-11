@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 @dataclass
 class AbstractBasis(ABC):
-    """Abstract basis - controlling both the ``bs`` choice and ``xt``"""
+    """Abstract basis - controlling both the ``bs`` choice and ``xt``."""
 
     k: int | None
 

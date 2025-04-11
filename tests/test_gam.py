@@ -18,7 +18,7 @@ def test_variables_to_formula():
     assert (
         variables_to_formula(
             dependent="y",
-            independent=("x0", Smooth(("x1",))),
+            independent=("x0", Smooth("x1")),
         )
         == "y~x0+s(x1)"
     )
@@ -33,7 +33,7 @@ def test_gam():
 
     g = gam(
         dependent="y",
-        independent=("x0", Smooth(("x1",)), Smooth(("x2",)), Smooth(("x3",))),
+        independent=("x0", Smooth("x1"), Smooth("x2"), Smooth("x3")),
         data=data,
     )
     assert g is not None  # TODO update when gam result finished.

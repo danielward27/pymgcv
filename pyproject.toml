@@ -1,26 +1,23 @@
 [project]
-authors = [{ name = "Daniel Ward", email = "danielward27@outlook.com" }]
+name = "pymgcv"
+authors = [{ name = "danielward27", email = "danielward27@outlook.com" }]
+
+# dependencies = [, , "rpy2"]
+
+description = "pymgcv: Generalized additive models using mgcv, in Python."
+requires-python = ">= 3.11"
+version = "0.0.0"
+keywords = ["generalized additive models", "GAMs"]
+license = { file = "LICENSE" }
+readme = "README.md"
+
 classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Topic :: Scientific/Engineering :: Information Analysis",
-    "Topic :: Scientific/Engineering :: Mathematics",
 ]
-dependencies = ["numpy", "pandas", "rpy2"]
-description = "pymgcv: Generalized additive models using mgcv, in Python."
-keywords = ["generalized additive models", "GAMs"]
-license = { file = "LICENSE" }
-name = "pymgcv"
-readme = "README.md"
-requires-python = ">=3.10"
-version = "0.0.0"
-
-[project.urls]
-repository = "https://github.com/danielward27/pymgcv"
-# documentation = "https://danielward27.github.io/pymgcv/index.html"
+dependencies = ["rpy2", "pytz", "pandas", "matplotlib", "numpy"]
 
 [project.optional-dependencies]
 dev = [
@@ -37,12 +34,36 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
 build-backend = "hatchling.build"
+requires = ["hatchling"]
+
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 beartype_packages = 'pymgcv'
+
+
+# ------------------- pixi config --------------------#
+
+[tool.pixi.dependencies]
+r-base = "*"
+r-mgcv = "*"
+numpy = "*"
+pandas = "*"
+
+[tool.pixi.pypi-dependencies]
+pymgcv = { path = ".", editable = true }
+
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.tasks]
+
+[tool.pixi.environments]
+dev = ["dev"]
+
 
 [tool.ruff]
 include = ["*.py", "*.pyi", "**/pyproject.toml", "*.ipynb"]

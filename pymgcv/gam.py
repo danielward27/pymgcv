@@ -47,7 +47,7 @@ def variables_to_formula(
 
 def gam(
     dependent: str,
-    independent: tuple[str, Smooth | TensorSmooth, ...],
+    independent: tuple[str | Smooth | TensorSmooth, ...],
     data: pd.DataFrame,
     family: FamilyOptions = "gaussian",
 ):  # TODO many more options not included currently.
