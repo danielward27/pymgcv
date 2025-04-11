@@ -5,16 +5,14 @@
 
 ## Installation
 
-Currently not setup user installations. For development purposes, use:
+Currently not packaged up the package :package:! For development purposes, use:
 ```
-# Install https://pixi.sh/latest/
-git clone git+github.com/danielward27/pymgcv.git
-
-# Then e.g. 
+# Install [pixi](https://pixi.sh/latest/)
+git clone https://github.com/danielward27/pymgcv.git
+cd pymgcv
 pixi shell --environment=dev
 pytest
 ```
-
 
 ### What's supported
 
