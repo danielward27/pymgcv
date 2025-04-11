@@ -5,15 +5,14 @@
 
 ## Installation
 
-We recomend installing with anaconda/miniconda. Currently - will change I have used:
-
+Currently not setup user installations. For development purposes, use:
 ```
-conda create --name pymgcv_env python R
-conda activate pymgcv_env
-pip install rpy2
-# Clone/fork then do
-pip install .  # or pip install -e .[dev]
+# Install https://pixi.sh/latest/
+git clone git+github.com/danielward27/pymgcv.git
 
+# Then e.g. 
+pixi shell --environment=dev
+pytest
 ```
 
 
