@@ -1,0 +1,17 @@
+ /* Color heading to match code block color */
+ .doc.doc-heading {
+     border-radius: 2px;
+     padding: 2px 2px;
+     background-color: #f5f5f5;
+ }
+
+ /* Add line along side of functions and classes for better visual seperation */
+ .doc.doc-object.doc-class {
+     border-left: 3px solid #008080;
+     padding: 0px 10px;
+ }
+
+ .doc.doc-object.doc-function {
+     border-left: 3px solid #008080;
+     padding: 0px 10px;
+ }

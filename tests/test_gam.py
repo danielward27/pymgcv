@@ -1,8 +1,8 @@
 import rpy2.robjects as ro
 
+from pymgcv import Smooth
 from pymgcv.converters import to_py
 from pymgcv.gam import gam, variables_to_formula
-from pymgcv.smooths import Smooth
 
 mgcv = ro.packages.importr("mgcv")
 
@@ -18,10 +18,13 @@ def test_variables_to_formula():
     assert (
         variables_to_formula(
             dependent="y",
-            independent=("x0", Smooth("x1")),
+            independent=("x0", Smooth(("x1",))),
         )
-        == "y~x0+s(x1,k=-1,bs='tp')"
+        == "y~x0+s(x1)"
     )
+
+
+# TODO accept string in smooth?
 
 
 def test_gam():
@@ -30,7 +33,7 @@ def test_gam():
 
     g = gam(
         dependent="y",
-        independent=("x0", Smooth("x1"), Smooth("x2"), Smooth("x3")),
+        independent=("x0", Smooth(("x1",)), Smooth(("x2",)), Smooth(("x3",))),
         data=data,
     )
     assert g is not None  # TODO update when gam result finished.
