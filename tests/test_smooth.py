@@ -1,17 +1,15 @@
-# def test_smooth_str_conversion():
-#     s = Smooth("x", "y")
-#     assert str(s) == "s(x,y,k=-1,bs='tp')"
 import pytest
 
 from pymgcv import Smooth, TensorSmooth
 from pymgcv.smoothing_bases import CubicSpline, SplineOnSphere
 
 test_cases = [
-    (Smooth(("a",)), "s(a)"),
-    (Smooth(("a", "b"), m=3), "s(a,b,m=3)"),
+    (Smooth("a"), "s(a)"),
+    (Smooth("a", "b", m=3), "s(a,b,m=3)"),
     (
         Smooth(
-            ("a", "b"),
+            "a",
+            "b",
             bs=CubicSpline(cyclic=True),
             m=5,
             by="var",
@@ -20,11 +18,12 @@ test_cases = [
         ),
         "s(a,b,bs='cc',m=5,by=var,id='2',fx=TRUE)",
     ),
-    (TensorSmooth(("a", "b")), "te(a,b)"),
-    (TensorSmooth(("a", "b"), interaction_only=True), "ti(a,b)"),
+    (TensorSmooth("a", "b"), "te(a,b)"),
+    (TensorSmooth("a", "b", interaction_only=True), "ti(a,b)"),
     (
         TensorSmooth(
-            ("long", "lat"),
+            "long",
+            "lat",
             bs=SplineOnSphere(),
             m=3,
             d=5,

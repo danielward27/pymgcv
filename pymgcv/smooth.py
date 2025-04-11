@@ -1,4 +1,4 @@
-from dataclasses import KW_ONLY, dataclass, field
+from dataclasses import dataclass
 
 from pymgcv.smoothing_bases import AbstractBasis, CubicSpline, ThinPlateSpline
 
@@ -15,12 +15,27 @@ class Smooth:
     """
 
     varnames: tuple[str, ...]
-    _: KW_ONLY
-    bs: AbstractBasis = field(default_factory=ThinPlateSpline)
-    m: int | None = None
-    by: str | None = None
-    id: str | None = None
+    bs: AbstractBasis
+    m: int | None
+    by: str | None
+    id: str | None
     fx: bool = False
+
+    def __init__(
+        self,
+        *varnames: str,
+        bs: AbstractBasis | None = None,
+        m: int | None = None,
+        by: str | None = None,
+        id: str | None = None,
+        fx: bool = False,
+    ):
+        self.varnames = varnames
+        self.bs = ThinPlateSpline() if bs is None else bs
+        self.m = m
+        self.by = by
+        self.id = id
+        self.fx = fx
 
     def __str__(self):
         """Returns the mgcv smooth term as a string."""
@@ -55,15 +70,36 @@ class TensorSmooth:
     """Tensor smooths (te and ti in mgcv)."""
 
     varnames: tuple[str, ...]
-    _: KW_ONLY
-    bs: AbstractBasis = field(default_factory=CubicSpline)
-    d: int | None = None
-    m: int | None = None
-    by: str | None = None
-    id: str | None = None
-    fx: bool = False
-    np: bool = True
-    interaction_only: bool = False
+    bs: AbstractBasis
+    d: int | None
+    m: int | None
+    by: str | None
+    id: str | None
+    fx: bool
+    np: bool
+    interaction_only: bool
+
+    def __init__(
+        self,
+        *varnames: str,
+        bs: AbstractBasis | None = None,
+        d: int | None = None,
+        m: int | None = None,
+        by: str | None = None,
+        id: str | None = None,
+        fx: bool = False,
+        np: bool = True,
+        interaction_only: bool = False,
+    ):
+        self.varnames = varnames
+        self.bs = CubicSpline() if bs is None else bs
+        self.d = d
+        self.m = m
+        self.by = by
+        self.id = id
+        self.fx = fx
+        self.np = np
+        self.interaction_only = interaction_only
 
     def __str__(self):
         """Returns the mgcv smooth term as a string."""
