@@ -2,8 +2,6 @@
 name = "pymgcv"
 authors = [{ name = "danielward27", email = "danielward27@outlook.com" }]
 
-# dependencies = [, , "rpy2"]
-
 description = "pymgcv: Generalized additive models using mgcv, in Python."
 requires-python = ">= 3.11"
 version = "0.0.0"
@@ -50,6 +48,7 @@ r-base = "*"
 r-mgcv = "*"
 numpy = "*"
 pandas = "*"
+liblzma = ">=5.8.1,<6"
 
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }
