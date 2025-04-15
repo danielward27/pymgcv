@@ -8,29 +8,15 @@ on:
     branches:
       - main
 
-defaults:
-  run:
-    shell: bash -l {0}
-
 jobs:
   Test:
     name: Tests
-    strategy:
-      matrix:
-        os: [ubuntu-latest] # TODO Currently fails on windows-latest
-        python-version: ["3.10"]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v4
-      - uses: conda-incubator/setup-miniconda@v3
+      - uses: prefix-dev/setup-pixi@v0.8.5
         with:
-          auto-update-conda: true
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies and run pytest
-        run: |
-          conda install -c conda-forge 'rpy2' 'r-mgcv'
-          pip install -e .[dev]
-          pytest  # TODO try in seperate step
+          environments: dev
+      - run: pixi run -e dev pytest
