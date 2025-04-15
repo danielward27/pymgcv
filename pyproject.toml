@@ -49,6 +49,7 @@ r-mgcv = "*"
 numpy = "*"
 pandas = "*"
 liblzma = ">=5.8.1,<6"
+compilers = ">=1.9.0,<2"
 
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }
