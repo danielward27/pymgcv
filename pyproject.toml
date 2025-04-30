@@ -54,6 +54,8 @@ compilers = ">=1.9.0,<2"
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }
 
+[tool.pixi.pypi-options]
+no-build-isolation = ["rpy2"]
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
