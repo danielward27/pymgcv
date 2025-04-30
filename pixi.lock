@@ -1961,7 +1961,7 @@ packages:
 - pypi: .
   name: pymgcv
   version: 0.0.0
-  sha256: 52f9c1e71408291bcb98f3f98ceb5d1d4af9d6a2c3424732f31509731cd6c85a
+  sha256: 1616c2a1462147d795a2c4209c9afa75b7df2be136423302e28211afee599f22
   requires_dist:
   - rpy2
   - pytz

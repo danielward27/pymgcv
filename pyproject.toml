@@ -33,7 +33,7 @@ dev = [
 
 [build-system]
 build-backend = "hatchling.build"
-requires = ["hatchling"]
+requires = ["hatchling", "setuptools"] # setuptools for rpy2 build
 
 
 [tool.pytest.ini_options]
