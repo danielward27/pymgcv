@@ -1,42 +1,15 @@
 [project]
 name = "pymgcv"
-authors = [{ name = "danielward27", email = "danielward27@outlook.com" }]
-
-description = "pymgcv: Generalized additive models using mgcv, in Python."
-requires-python = ">= 3.11"
+# Currently disable 3.13 as errors when importing rpy2.robjects:
+# ModuleNotFoundError: No module named '_rinterface_cffi_abi' 
+requires-python = ">= 3.11, <= 3.12"
 version = "0.0.0"
-keywords = ["generalized additive models", "GAMs"]
-license = { file = "LICENSE" }
-readme = "README.md"
 
-classifiers = [
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
-    "Natural Language :: English",
-    "Programming Language :: Python :: 3",
-]
-dependencies = [
-    "rpy2",
-    "pytz",
-    "pandas",
-    "matplotlib",
-    "numpy",
-    "setuptools",
-] # Setuptools for rpy2 build
+dependencies = ["rpy2"]
+
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-    "beartype",
-    "pytest-beartype",
-    "ruff",
-    "hippogriffe",
-    "mkdocs",
-    "mkdocs-material",
-    "mkdocstrings[python]",
-    "pymdown-extensions",
-    "griffe-inherited-docstrings",
-]
+dev = ["pytest"]
 
 [build-system]
 build-backend = "hatchling.build"
@@ -45,19 +18,14 @@ requires = ["hatchling"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-beartype_packages = 'pymgcv'
-
 
 # ------------------- pixi config --------------------#
 
 [tool.pixi.dependencies]
 r-base = "*"
-r-mgcv = "*"
-numpy = "*"
-pandas = "*"
-liblzma = ">=5.8.1,<6"
 compilers = ">=1.9.0,<2"
-setuptools = ">=79.0.1,<80"
+liblzma = ">=5.8.1,<6"
+
 
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }
@@ -69,23 +37,6 @@ no-build-isolation = ["rpy2"]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
-[tool.pixi.tasks]
 
 [tool.pixi.environments]
 dev = ["dev"]
-
-
-[tool.ruff]
-include = ["*.py", "*.pyi", "**/pyproject.toml", "*.ipynb"]
-
-[tool.ruff.lint]
-select = ["E", "F", "B", "D", "COM", "I", "UP", "TRY004", "RET", "PT", "FBT"]
-ignore = ["D101", "D105", "D107", "B028", "COM812", "F722"]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D"]
-"*.ipynb" = ["D"]
-"__init__.py" = ["D"]
