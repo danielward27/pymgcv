@@ -23,6 +23,7 @@ pythonpath = ["."]
 
 [tool.pixi.dependencies]
 r-base = "*"
+setuptools = "*"
 compilers = ">=1.9.0,<2"
 liblzma = ">=5.8.1,<6"
 
