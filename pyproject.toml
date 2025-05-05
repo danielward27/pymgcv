@@ -1,23 +1,25 @@
 [project]
 name = "pymgcv"
 authors = [{ name = "danielward27", email = "danielward27@outlook.com" }]
-
-# dependencies = [, , "rpy2"]
-
 description = "pymgcv: Generalized additive models using mgcv, in Python."
-requires-python = ">= 3.11"
+requires-python = ">= 3.11, <= 3.12"
 version = "0.0.0"
+
+# python=3.13 gives error: https://github.com/rpy2/rpy2/issues/1175
+
 keywords = ["generalized additive models", "GAMs"]
 license = { file = "LICENSE" }
 readme = "README.md"
+dependencies = ["rpy2"]
 
-classifiers = [
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
-    "Natural Language :: English",
-    "Programming Language :: Python :: 3",
-]
-dependencies = ["rpy2", "pytz", "pandas", "matplotlib", "numpy"]
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+
+[tool.pytest.ini_options]
+beartype_packages = 'pymgcv'
+
 
 [project.optional-dependencies]
 dev = [
@@ -33,49 +35,38 @@ dev = [
     "griffe-inherited-docstrings",
 ]
 
-[build-system]
-build-backend = "hatchling.build"
-requires = ["hatchling"]
-
-
-[tool.pytest.ini_options]
-pythonpath = ["."]
-beartype_packages = 'pymgcv'
-
 
 # ------------------- pixi config --------------------#
 
 [tool.pixi.dependencies]
-r-base = "*"
-r-mgcv = "*"
-numpy = "*"
-pandas = "*"
+r-base = ">=4.4.3,<4.5"
+r-mgcv = ">=1.9_3,<2"
+cffi = ">=1.17.1,<2"        # https://github.com/rpy2/rpy2/issues/739
+setuptools = ">=80.1.0,<81"
+numpy = ">=2.2.5,<3"
+pandas = ">=2.2.3,<3"
+
 
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }
 
+[tool.pixi.pypi-options]
+no-build-isolation = ["rpy2"]
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
-[tool.pixi.tasks]
 
 [tool.pixi.environments]
 dev = ["dev"]
 
-
+# ----------------- ruff config -------------------#
 [tool.ruff]
 include = ["*.py", "*.pyi", "**/pyproject.toml", "*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "D", "COM", "I", "UP", "TRY004", "RET", "PT", "FBT"]
-ignore = ["D101", "D105", "D107", "B028", "COM812", "F722"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["D"]
-"*.ipynb" = ["D"]
-"__init__.py" = ["D"]

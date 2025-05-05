@@ -40,7 +40,7 @@ type FamilyOptions = Literal[
 
 
 def variables_to_formula(
-    dependent: str, independent: tuple[str | Smooth | TensorSmooth, ...]
+    dependent: str, independent: tuple[str | Smooth | TensorSmooth, ...],
 ) -> str:
     return f"{dependent}~" + "+".join(str(var) for var in independent)
 
