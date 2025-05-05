@@ -1,7 +1,5 @@
 [project]
 name = "pymgcv"
-# Currently disable 3.13 as errors when importing rpy2.robjects:
-# ModuleNotFoundError: No module named '_rinterface_cffi_abi' 
 requires-python = ">= 3.11, <= 3.12"
 version = "0.0.0"
 
@@ -26,7 +24,8 @@ r-base = "*"
 setuptools = "*"
 compilers = ">=1.9.0,<2"
 liblzma = ">=5.8.1,<6"
-zlib = "*"
+zlib = ">=1.3.1,<2"
+cffi = ">=1.17.1,<2"     # https://github.com/rpy2/rpy2/issues/739
 
 
 [tool.pixi.pypi-dependencies]
