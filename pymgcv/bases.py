@@ -1,3 +1,5 @@
+"""The bases options."""
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -8,9 +10,9 @@ class AbstractBasis(ABC):
 
     k: int | None
 
-    @property
     @abstractmethod
-    def bs_str(self):
+    def __str__(self):
+        """The mgcv string representation of the basis."""
         pass
 
 
@@ -26,8 +28,8 @@ class ThinPlateSpline(AbstractBasis):
     k: int | None = None
     shrinkage: bool | None = False
 
-    @property
-    def bs_str(self) -> str:
+    def __str__(self) -> str:
+        """The mgcv string representation of the basis."""
         return "ts" if self.shrinkage else "tp"
 
 
@@ -50,8 +52,7 @@ class CubicSpline(AbstractBasis):
         if self.cyclic and self.shrinkage:
             raise ValueError("Cannot use both cyclic and shrinkage simultaneously.")
 
-    @property
-    def bs_str(self) -> str:
+    def __str__(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "cs" if self.shrinkage else "cc" if self.cyclic else "cr"
 
@@ -62,8 +63,7 @@ class DuchonSpline(AbstractBasis):  # TODO support passing m?
 
     k: int | None = None
 
-    @property
-    def bs_str(self) -> str:
+    def __str__(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "ds"
 
@@ -77,8 +77,7 @@ class SplineOnSphere(AbstractBasis):
 
     k: int | None = None
 
-    @property
-    def bs_str(self) -> str:
+    def __str__(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "sos"
 
@@ -89,8 +88,7 @@ class BSpline(AbstractBasis):
 
     k: int | None = None
 
-    @property
-    def bs_str(self):
+    def __str__(self):
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "bs"
 
@@ -102,7 +100,6 @@ class PSpline(AbstractBasis):
     k: int | None = None
     cyclic: bool = False
 
-    @property
-    def bs_str(self) -> str:
+    def __str__(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "cp" if self.cyclic else "ps"

@@ -46,6 +46,8 @@ markdown_extensions:
 
 plugins:
   - search # default search plugin; needs manually re-enabling when using any other plugins
+  - mkdocs-jupyter:
+      include: ["*.ipynb"]
 
   - mkdocstrings:
       handlers:
@@ -58,12 +60,14 @@ plugins:
             extensions:
               - griffe_inherited_docstrings
             show_bases: false
+            filters:
+              - "!^__str__$"
             # heading_level: 2
             # inherited_members: true
             # members_order: source
             # show_if_no_docstring: true
             # show_overloads: false
-            # show_signature_annotations: true
+            show_signature_annotations: true
             # show_source: false
             # show_symbol_type_heading: true
             # show_symbol_type_toc: true
