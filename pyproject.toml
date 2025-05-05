@@ -3,8 +3,9 @@ name = "pymgcv"
 requires-python = ">= 3.11, <= 3.12"
 version = "0.0.0"
 
-dependencies = ["rpy2"]
+# python=3.13 gives error: https://github.com/rpy2/rpy2/issues/1175
 
+dependencies = ["rpy2"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
@@ -20,9 +21,9 @@ pythonpath = ["."]
 # ------------------- pixi config --------------------#
 
 [tool.pixi.dependencies]
-r-base = "*"
-cffi = ">=1.17.1,<2" # https://github.com/rpy2/rpy2/issues/739
+cffi = ">=1.17.1,<2"        # https://github.com/rpy2/rpy2/issues/739
 setuptools = ">=80.1.0,<81"
+r-base = ">=4.4.3,<4.5"
 
 
 [tool.pixi.pypi-dependencies]
