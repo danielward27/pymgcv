@@ -30,9 +30,11 @@ dev = [
     "hippogriffe",
     "mkdocs",
     "mkdocs-material",
+    "mkdocs-jupyter",
     "mkdocstrings[python]",
     "pymdown-extensions",
     "griffe-inherited-docstrings",
+    "ipykernel",
 ]
 
 
@@ -45,6 +47,8 @@ cffi = ">=1.17.1,<2"        # https://github.com/rpy2/rpy2/issues/739
 setuptools = ">=80.1.0,<81"
 numpy = ">=2.2.5,<3"
 pandas = ">=2.2.3,<3"
+matplotlib = ">=3.10,<4"
+pillow = ">=11.1.0,<12"
 
 
 [tool.pixi.pypi-dependencies]

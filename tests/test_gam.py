@@ -1,3 +1,4 @@
+import numpy as np
 import rpy2.robjects as ro
 
 from pymgcv import Smooth
@@ -30,10 +31,13 @@ def test_variables_to_formula():
 def test_gam():
 
     data = to_py(mgcv.gamSim(5, n=200, scale=2))
-
+    test_data = to_py(mgcv.gamSim(5, n=50, scale=2))
     g = gam(
         dependent="y",
         independent=("x0", Smooth("x1"), Smooth("x2"), Smooth("x3")),
         data=data,
     )
-    assert g is not None  # TODO update when gam result finished.
+    assert isinstance(g.summary(), str)
+
+    result = g.predict(test_data)
+    assert isinstance(result, np.ndarray)

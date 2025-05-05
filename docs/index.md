@@ -1,30 +1,17 @@
-# Welcome to MkDocs
+# pymgcv
 
-For full documentation visit [mkdocs.org](https://www.mkdocs.org).
+### Installation
 
-## Commands
+Currently in development. As this is a multilanguage project (R and Python), we use 
+[pixi](https://pixi.sh/latest/), a package management tool which supports this.
 
-* `mkdocs new [dir-name]` - Create a new project.
-* `mkdocs serve` - Start the live-reloading docs server.
-* `mkdocs build` - Build the documentation site.
-* `mkdocs -h` - Print help message and exit.
-
-## Project layout
-
-    mkdocs.yml    # The configuration file.
-    docs/
-        index.md  # The documentation homepage.
-        ...       # Other markdown pages, images and other files.
-
-::: pymgcv.smooths
-    handler: python
-    options:
-      show_root_heading: false
-      show_source: false
-    
-
-::: pymgcv.smooth_options
-    handler: python
-    options:
-      show_root_heading: false
-      show_source: false
+``pymgcv`` can be installed by installing [pixi](https://pixi.sh/latest/), and running:
+```bash
+git clone https://github.com/danielward27/pymgcv.git
+cd pymgcv
+pixi shell
+```
+For development, install using
+```bash
+pixi shell --environment=dev
+```

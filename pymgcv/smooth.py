@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from pymgcv.smoothing_bases import AbstractBasis, CubicSpline, ThinPlateSpline
+from pymgcv.bases import AbstractBasis, CubicSpline, ThinPlateSpline
 
 # TODO not supported sp, pc.
 # xt not needed as handled with basis.
@@ -41,7 +41,7 @@ class Smooth:
         """Returns the mgcv smooth term as a string."""
         provided = {
             "k": -1 if self.bs.k is None else self.bs.k,
-            "bs": f"'{self.bs.bs_str}'",
+            "bs": f"'{str(self.bs)}'",
             "m": "NA" if self.m is None else self.m,
             "by": "NA" if self.by is None else self.by,
             "id": "NULL" if self.id is None else f"'{self.id}'",
@@ -105,7 +105,7 @@ class TensorSmooth:
         """Returns the mgcv smooth term as a string."""
         provided = {
             "k": -1 if self.bs.k is None else self.bs.k,
-            "bs": f"'{self.bs.bs_str}'",
+            "bs": f"'{str(self.bs)}'",
             "d": "NA" if self.d is None else self.d,
             "m": "NA" if self.m is None else self.m,
             "by": "NA" if self.by is None else self.by,

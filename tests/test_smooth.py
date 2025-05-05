@@ -1,7 +1,7 @@
 import pytest
 
 from pymgcv import Smooth, TensorSmooth
-from pymgcv.smoothing_bases import CubicSpline, SplineOnSphere
+from pymgcv.bases import CubicSpline, SplineOnSphere
 
 test_cases = [
     (Smooth("a"), "s(a)"),
