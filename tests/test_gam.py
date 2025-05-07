@@ -1,7 +1,7 @@
 import numpy as np
 import rpy2.robjects as ro
 
-from pymgcv import Smooth
+from pymgcv import smooth
 from pymgcv.converters import to_py
 from pymgcv.gam import gam, variables_to_formula
 
@@ -19,7 +19,7 @@ def test_variables_to_formula():
     assert (
         variables_to_formula(
             dependent="y",
-            independent=("x0", Smooth("x1")),
+            independent=("x0", smooth("x1")),
         )
         == "y~x0+s(x1)"
     )
@@ -34,7 +34,7 @@ def test_gam():
     test_data = to_py(mgcv.gamSim(5, n=50, scale=2))
     g = gam(
         dependent="y",
-        independent=("x0", Smooth("x1"), Smooth("x2"), Smooth("x3")),
+        independent=("x0", smooth("x1"), smooth("x2"), smooth("x3")),
         data=data,
     )
     assert isinstance(g.summary(), str)

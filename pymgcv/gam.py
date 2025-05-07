@@ -7,7 +7,6 @@ import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
 from pymgcv.converters import to_py, to_rpy
-from pymgcv.smooth import Smooth, TensorSmooth
 
 mgcv = importr("mgcv")
 rbase = importr("base")
@@ -44,15 +43,15 @@ FamilyOptions = Literal[
 
 def variables_to_formula(
     dependent: str,
-    independent: Iterable[str | Smooth | TensorSmooth],
+    independent: Iterable[str],
 ) -> str:
     """Convert the variables to an mgcv style formula."""
-    return f"{dependent}~" + "+".join(str(var) for var in independent)
+    return f"{dependent}~" + "+".join(independent)
 
 
 def gam(
     dependent: str,
-    independent: tuple[str | Smooth | TensorSmooth, ...],
+    independent: tuple[str, ...],
     data: pd.DataFrame,
     family: FamilyOptions = "gaussian",
 ):  # TODO missing options.
