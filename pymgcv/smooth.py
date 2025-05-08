@@ -1,133 +1,74 @@
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from functools import partial
 
-from pymgcv.bases import AbstractBasis, CubicSpline, ThinPlateSpline
+from pymgcv.bases import AbstractBasis
 
 # TODO not supported sp, pc.
-# xt not needed as handled with basis.
-# TODO Does this need to be a class?
+# xt not needed as will be handled with basis.
 
 
-@dataclass
-class Smooth:
-    """Smooth - similar to ``s`` in mgcv.
+def smooth(
+    *varnames: str,
+    k: int | None = None,
+    bs: AbstractBasis | None = None,
+    m: int | None = None,
+    by: str | None = None,
+    id: str | None = None,
+    fx: bool = False,
+) -> str:
+    """Returns the mgcv smooth term as a string."""
+    fx = None if not fx else fx  # type: ignore # Map to None for filtering
+    kwargs = {"k": k, "bs": bs, "m": m, "by": by, "id": id, "fx": fx}
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
-    bs now replaced with abstract smooth basis.
-    """
+    map_to_str = {  # Define how to map to argument in formula string
+        "bs": lambda bs: f"'{bs}'",
+        "id": lambda id: f"'{id}'",
+        "fx": lambda fx: str(fx).upper(),
+    }
 
-    varnames: tuple[str, ...]
-    bs: AbstractBasis
-    m: int | None
-    by: str | None
-    id: str | None
-    fx: bool = False
-
-    def __init__(
-        self,
-        *varnames: str,
-        bs: AbstractBasis | None = None,
-        m: int | None = None,
-        by: str | None = None,
-        id: str | None = None,
-        fx: bool = False,
-    ):
-        self.varnames = varnames
-        self.bs = ThinPlateSpline() if bs is None else bs
-        self.m = m
-        self.by = by
-        self.id = id
-        self.fx = fx
-
-    def __str__(self):
-        """Returns the mgcv smooth term as a string."""
-        provided = {
-            "k": -1 if self.bs.k is None else self.bs.k,
-            "bs": f"'{str(self.bs)}'",
-            "m": "NA" if self.m is None else self.m,
-            "by": "NA" if self.by is None else self.by,
-            "id": "NULL" if self.id is None else f"'{self.id}'",
-            "fx": str(self.fx).upper(),
-        }
-
-        defaults = {
-            "k": -1,
-            "bs": "'tp'",
-            "m": "NA",
-            "by": "NA",
-            "id": "NULL",
-            "fx": "FALSE",
-        }
-        keep = {k: v for k, v in provided.items() if defaults[k] != v}
-        smooth_string = f"s({",".join(self.varnames)}"
-        for key, val in keep.items():
-            smooth_string += f",{key}={val}"
-        return smooth_string + ")"
+    smooth_string = f"s({",".join(varnames)}"
+    for key, val in kwargs.items():
+        smooth_string += f",{key}={map_to_str.get(key, str)(val)}"
+    return smooth_string + ")"
 
 
-# TODO some options not supported
-# Passing lists to bs?
-@dataclass
-class TensorSmooth:
-    """Tensor smooths (te and ti in mgcv)."""
+def tensor_smooth(
+    *varnames: str,
+    k: Sequence[int] | None = None,
+    bs: Sequence[AbstractBasis] | None = None,
+    d: Sequence[int] | None = None,
+    m: Sequence[int] | None = None,
+    by: str | None = None,
+    id: str | None = None,
+    fx: bool = False,
+    np: bool = True,
+    interaction_only: bool = False,
+) -> str:
+    """Returns the mgcv tensor smooth term as a string."""
+    # Map to None if matching default
+    np = None if np else np  # type: ignore
+    fx = None if not fx else fx  # type: ignore
 
-    varnames: tuple[str, ...]
-    bs: AbstractBasis
-    d: int | None
-    m: int | None
-    by: str | None
-    id: str | None
-    fx: bool
-    np: bool
-    interaction_only: bool
+    kwargs = {"k": k, "bs": bs, "d": d, "m": m, "by": by, "id": id, "fx": fx, "np": np}
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
-    def __init__(
-        self,
-        *varnames: str,
-        bs: AbstractBasis | None = None,
-        d: int | None = None,
-        m: int | None = None,
-        by: str | None = None,
-        id: str | None = None,
-        fx: bool = False,
-        np: bool = True,
-        interaction_only: bool = False,
-    ):
-        self.varnames = varnames
-        self.bs = CubicSpline() if bs is None else bs
-        self.d = d
-        self.m = m
-        self.by = by
-        self.id = id
-        self.fx = fx
-        self.np = np
-        self.interaction_only = interaction_only
+    map_to_str = {  # Define how to map to argument in formula string
+        "k": _sequence_to_rvec_str,
+        "bs": partial(_sequence_to_rvec_str, converter=lambda bs: f"'{bs}'"),
+        "d": _sequence_to_rvec_str,
+        "m": _sequence_to_rvec_str,
+        "id": lambda id: f"'{id}'",
+        "fx": lambda fx: str(fx).upper(),
+        "np": lambda np: str(np).upper(),
+    }
 
-    def __str__(self):
-        """Returns the mgcv smooth term as a string."""
-        provided = {
-            "k": -1 if self.bs.k is None else self.bs.k,
-            "bs": f"'{str(self.bs)}'",
-            "d": "NA" if self.d is None else self.d,
-            "m": "NA" if self.m is None else self.m,
-            "by": "NA" if self.by is None else self.by,
-            "id": "NULL" if self.id is None else f"'{self.id}'",
-            "fx": str(self.fx).upper(),
-            "np": str(self.np).upper(),
-        }
+    smooth_string = f"{"ti" if interaction_only else "te"}({",".join(varnames)}"
+    for key, val in kwargs.items():
+        smooth_string += f",{key}={map_to_str.get(key, str)(val)}"
+    return smooth_string + ")"
 
-        defaults = {
-            "k": -1,
-            "bs": "'cr'",
-            "d": "NA",
-            "m": "NA",
-            "by": "NA",
-            "id": "NULL",
-            "fx": "FALSE",
-            "np": "TRUE",
-        }
-        keep = {k: v for k, v in provided.items() if defaults[k] != v}
 
-        bs = "ti" if self.interaction_only else "te"
-        smooth_string = f"{bs}({",".join(self.varnames)}"
-        for key, val in keep.items():
-            smooth_string += f",{key}={val}"
-        return smooth_string + ")"
+def _sequence_to_rvec_str(sequence: Sequence, converter: Callable = str):
+    component = ",".join(converter(el) for el in sequence)
+    return f"c({component})"

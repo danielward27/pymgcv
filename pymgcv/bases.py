@@ -3,15 +3,15 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+import numpy as np
+
 
 @dataclass
 class AbstractBasis(ABC):
     """Abstract basis - controlling both the ``bs`` choice and ``xt``."""
 
-    k: int | None
-
     @abstractmethod
-    def __str__(self):
+    def __str__(self) -> str:
         """The mgcv string representation of the basis."""
         pass
 
@@ -25,7 +25,6 @@ class ThinPlateSpline(AbstractBasis):
             space.
     """
 
-    k: int | None = None
     shrinkage: bool | None = False
 
     def __str__(self) -> str:
@@ -44,7 +43,6 @@ class CubicSpline(AbstractBasis):
             space. Defaults to False.
     """
 
-    k: int | None = None
     shrinkage: bool = False
     cyclic: bool = False
 
@@ -61,8 +59,6 @@ class CubicSpline(AbstractBasis):
 class DuchonSpline(AbstractBasis):  # TODO support passing m?
     """A generalization of thin plate splines."""
 
-    k: int | None = None
-
     def __str__(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "ds"
@@ -75,8 +71,6 @@ class SplineOnSphere(AbstractBasis):
     For use with two variables denoting latitude and longitude in degrees.
     """
 
-    k: int | None = None
-
     def __str__(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "sos"
@@ -86,9 +80,7 @@ class SplineOnSphere(AbstractBasis):
 class BSpline(AbstractBasis):
     """B-spline basis with integrated squared derivative penalties."""
 
-    k: int | None = None
-
-    def __str__(self):
+    def __str__(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "bs"
 
@@ -97,9 +89,17 @@ class BSpline(AbstractBasis):
 class PSpline(AbstractBasis):
     """These are P-splines as proposed by Eilers and Marx (1996)."""
 
-    k: int | None = None
     cyclic: bool = False
 
     def __str__(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "cp" if self.cyclic else "ps"
+
+
+@dataclass(kw_only=True)
+class MarkovRandomField(AbstractBasis):
+
+    polys: dict[str, np.ndarray]
+
+    def __str__(self) -> str:
+        return "mrf"
