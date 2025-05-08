@@ -11,7 +11,7 @@ class AbstractBasis(ABC):
     """Abstract basis - controlling both the ``bs`` choice and ``xt``."""
 
     @abstractmethod
-    def __str__(self):
+    def __str__(self) -> str:
         """The mgcv string representation of the basis."""
         pass
 
@@ -80,7 +80,7 @@ class SplineOnSphere(AbstractBasis):
 class BSpline(AbstractBasis):
     """B-spline basis with integrated squared derivative penalties."""
 
-    def __str__(self):
+    def __str__(self) -> str:
         """The 2 letter string passed to the bs argument of mgcv.gam."""
         return "bs"
 

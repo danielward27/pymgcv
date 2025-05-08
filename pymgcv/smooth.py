@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from functools import partial
 
 from pymgcv.bases import AbstractBasis
@@ -69,6 +69,6 @@ def tensor_smooth(
     return smooth_string + ")"
 
 
-def _sequence_to_rvec_str(sequence: Sequence, converter=str):
+def _sequence_to_rvec_str(sequence: Sequence, converter: Callable = str):
     component = ",".join(converter(el) for el in sequence)
     return f"c({component})"
