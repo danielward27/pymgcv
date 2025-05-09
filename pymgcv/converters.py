@@ -1,6 +1,7 @@
 """More convenient versions."""
 
 import numpy as np
+import pandas as pd
 import rpy2.robjects as ro
 from rpy2.robjects import numpy2ri, pandas2ri
 from rpy2.robjects.packages import importr
@@ -20,7 +21,7 @@ def to_py(x):
         return ro.conversion.get_conversion().rpy2py(x)
 
 
-def list_vec_to_dict(x: ro.ListVector) -> dict:
+def rlistvec_to_dict(x: ro.ListVector) -> dict:
     """Convert a list vector to a dict, with conversion using to_py.
 
     Dots in names are replaced with underscores, to promote more pythonic naming.
@@ -33,24 +34,34 @@ def list_vec_to_dict(x: ro.ListVector) -> dict:
     return {k.replace(".", "_"): to_py(v) for k, v in zip(x.names, x, strict=True)}
 
 
-def dict_to_rdf(d: dict[str, np.ndarray]) -> ro.vectors.DataFrame:
-    """Convert a dictionary of arrays to a rpy dataframe."""
-    shapes = [arr.shape for arr in d.values()]
+def data_to_rdf(
+    data: pd.DataFrame | dict[str, pd.Series | np.ndarray],
+) -> ro.vectors.DataFrame:
+    """Convert data to an rpy2 dataframe.
+
+    Data can be either a dataframe, or a dictionary mapping from strings to arrays
+    or pandas series. The latter is occasionally useful when users wish to have
+    matrix variables which cannot be added as a dataframe column.
+    """
+    if isinstance(data, pd.DataFrame):
+        return to_rpy(data)
+
+    shapes = [arr.shape for arr in data.values()]
 
     if any(len(s) < 1 or len(s) > 2 for s in shapes):
-        raise ValueError("All arrays must be 1D or 2D.")
+        raise ValueError("All data must be 1D or 2D (i.e. vector or matrix).")
 
     if not all(s[0] == shapes[0][0] for s in shapes):
-        raise ValueError("All arrays must match on axis 0.")
+        raise ValueError("All data must match on axis 0.")
 
-    d = {k: to_rpy(v) for k, v in d.items()}
-    ro.r(
-        """
-        to_df <- function(a) {
-            return(data.frame(lapply(a, function(x) {
+    data = {k: to_rpy(v) for k, v in data.items()}
+
+    with ro.local_context() as env:
+        env["list_vec"] = ro.ListVector(data)
+        return ro.r(
+            """
+            data.frame(lapply(list_vec, function(x) {
                 if (is.matrix(x)) I(x) else x
-            })))
-        }
-    """,
-    )
-    return ro.r["to_df"](ro.ListVector(d))  # type: ignore
+            }))
+            """,
+        )  # type: ignore

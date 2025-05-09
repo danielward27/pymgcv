@@ -3,10 +3,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
+import pandas as pd
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
-from pymgcv.converters import dict_to_rdf, list_vec_to_dict
+from pymgcv.converters import data_to_rdf, rlistvec_to_dict
 
 mgcv = importr("mgcv")
 rbase = importr("base")
@@ -15,30 +16,6 @@ rstats = importr("stats")
 
 
 # TODO, passing arguments to family?
-FamilyOptions = Literal[
-    "gaussian",
-    "Tweedie",
-    "negbin",
-    "negbin",
-    "betar",
-    "cnorm",
-    "nb",
-    "ocat",
-    "scat",
-    "tw",
-    "ziP",
-    "gfam",
-    "cox.ph",
-    "gammals",
-    "gaulss",
-    "gevlss",
-    "gumbls",
-    "multinom",
-    "mvn",
-    "shash",
-    "twlss",
-    "ziplss",
-]
 
 
 def variables_to_formula(
@@ -47,24 +24,6 @@ def variables_to_formula(
 ) -> str:
     """Convert the variables to an mgcv style formula."""
     return f"{dependent}~" + "+".join(independent)
-
-
-def gam(
-    dependent: str,
-    independent: tuple[str, ...],
-    data: dict[str, np.ndarray],
-    family: FamilyOptions = "gaussian",
-):
-
-    # Note, if your data is a pandas dataframe, you can convert before fitting, e.g.
-    # using {k: v.to_numpy() for k, v in df.items()}
-    # TODO missing options.
-    # TODO families as functions? e.g. gaussian()
-
-    formula = variables_to_formula(dependent, independent)
-    return FittedGAM(
-        mgcv.gam(ro.Formula(formula), data=dict_to_rdf(data), family=family),
-    )
 
 
 @dataclass
@@ -82,11 +41,11 @@ class FittedGAM:
         """Compute predictions and standard errors."""
         predictions = rstats.predict(
             self.rgam,
-            newdata=dict_to_rdf(data),
+            newdata=data_to_rdf(data),
             type=type,
             se=True,
         )
-        return list_vec_to_dict(predictions)
+        return rlistvec_to_dict(predictions)
 
     def summary(self) -> str:
         strvec = rutils.capture_output(rbase.summary(self.rgam))
@@ -95,3 +54,41 @@ class FittedGAM:
     def formula(self) -> str:
         """Get the mgcv-style formula used to fit the model."""
         return str(self.rgam.rx2("formula"))
+
+    @property
+    def coefficients(self) -> np.ndarray:
+        """The coefficients from the fit."""
+        return rlistvec_to_dict(self.rgam)["coefficients"]
+
+
+def gam(
+    dependent: str,
+    independent: Iterable[str],
+    data: pd.DataFrame | dict[str, pd.Series | np.ndarray],
+    family: str = "gaussian",
+) -> FittedGAM:
+    """Fit a gam model.
+
+    Args:
+        dependent: The dependent variable.
+        independent: The independent variables.
+        data: A ``pandas.DataFrame`` or a dictionary mapping variable names to arrays or
+            pandas series. Using a dictionary is useful for passing matrix variables.
+            Factors should be represented using the pandas category dtype.
+        family: The family. This is currently passed as a string which will be evaluated
+            in R. This can be the name, the name with arguments e.g. ``mvn(d=2)``.
+            Defaults to "gaussian".
+
+    Returns:
+        The fitted gam model.
+    """
+    # TODO missing options.
+    # TODO families as functions? e.g. gaussian()
+    formula = variables_to_formula(dependent, independent)
+    family = ro.r(family)
+    return FittedGAM(
+        mgcv.gam(ro.Formula(formula), data=data_to_rdf(data), family=family),
+    )
+
+
+# TODO make data to R and check factor maintained?

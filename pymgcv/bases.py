@@ -99,7 +99,8 @@ class PSpline(AbstractBasis):
 @dataclass(kw_only=True)
 class MarkovRandomField(AbstractBasis):
 
-    polys: dict[str, np.ndarray]
+    polys: list[np.ndarray]
+    # TODO support xt
 
     def __str__(self) -> str:
         return "mrf"
