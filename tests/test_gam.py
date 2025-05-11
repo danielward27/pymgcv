@@ -7,7 +7,7 @@ import pytest
 import rpy2.robjects as ro
 
 from pymgcv import smooth, tensor_smooth
-from pymgcv.bases import MarkovRandomField
+from pymgcv.bases import MarkovRandomField, RandomEffect
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
 from pymgcv.gam import FittedGAM, gam, variables_to_formula
 
@@ -42,12 +42,14 @@ class AbstractTestCase(ABC):
         pass
 
     @abstractmethod
-    def pymgcv_gam(self, data: dict[str, np.ndarray]) -> FittedGAM:
+    def pymgcv_gam(
+        self,
+        data: pd.DataFrame | dict[str, np.ndarray | pd.Series],
+    ) -> FittedGAM:
         """Returns pymgcv gam."""
         pass
 
-    def mgcv_gam(self, data: dict[str, np.ndarray]):
-        breakpoint()
+    def mgcv_gam(self, data: pd.DataFrame | dict[str, np.ndarray | pd.Series]):
         with ro.local_context() as env:
             env["data"] = data_to_rdf(data)
             for k, v in self.add_to_r_env.items():
@@ -99,9 +101,7 @@ def get_test_cases():
 
     class FactorGAM(AbstractTestCase):  # TODO fix
         test_id = "simple-factor"
-        mgcv_call = """
-        gam(y~s(x) + s(group), data=data)
-        """
+        mgcv_call = "gam(y~s(x) + s(group, bs='re'), data=data)"
         add_to_r_env = {}
 
         def get_data(self) -> pd.DataFrame | dict[str, np.ndarray | pd.Series]:
@@ -121,7 +121,10 @@ def get_test_cases():
         def pymgcv_gam(self, data) -> FittedGAM:
             return gam(
                 dependent="y",
-                independent=[smooth("x"), smooth("group")],
+                independent=[
+                    smooth("x"),
+                    smooth("group", bs=RandomEffect()),
+                ],  # TODO are strings supported?
                 data=data,
             )
 
@@ -172,8 +175,8 @@ test_cases = get_test_cases()
 def test_pymgcv_mgcv_equivilance(test_case: AbstractTestCase):
 
     data = test_case.get_data()
-    mgcv_gam = test_case.mgcv_gam(data)
     pymgcv_gam = test_case.pymgcv_gam(data)
+    mgcv_gam = test_case.mgcv_gam(data)
     assert (
         pytest.approx(
             expected=rlistvec_to_dict(mgcv_gam)["coefficients"],

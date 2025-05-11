@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 import pytest
 import rpy2.robjects as ro
-from rpy2 import robjects as ro
 from rpy2.robjects import ListVector
 
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py

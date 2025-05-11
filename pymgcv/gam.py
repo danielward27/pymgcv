@@ -87,7 +87,9 @@ def gam(
     formula = variables_to_formula(dependent, independent)
     family = ro.r(family)
     return FittedGAM(
-        mgcv.gam(ro.Formula(formula), data=data_to_rdf(data), family=family),
+        mgcv.gam(
+            ro.Formula(formula), data=data_to_rdf(data), family="gaussian",
+        ),  # TODO
     )
 
 

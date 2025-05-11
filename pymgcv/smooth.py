@@ -1,7 +1,7 @@
 from collections.abc import Callable, Sequence
 from functools import partial
 
-from pymgcv.bases import AbstractBasis
+from pymgcv.bases import BasisProtocol
 
 # TODO not supported sp, pc.
 # xt not needed as will be handled with basis.
@@ -10,7 +10,7 @@ from pymgcv.bases import AbstractBasis
 def smooth(
     *varnames: str,
     k: int | None = None,
-    bs: AbstractBasis | None = None,
+    bs: BasisProtocol | None = None,
     m: int | None = None,
     by: str | None = None,
     id: str | None = None,
@@ -36,7 +36,7 @@ def smooth(
 def tensor_smooth(
     *varnames: str,
     k: Sequence[int] | None = None,
-    bs: Sequence[AbstractBasis] | None = None,
+    bs: Sequence[BasisProtocol] | None = None,
     d: Sequence[int] | None = None,
     m: Sequence[int] | None = None,
     by: str | None = None,
