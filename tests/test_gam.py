@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 import rpy2.robjects as ro
 
-from pymgcv import smooth, tensor_smooth
+from pymgcv import Smooth, TensorSmooth
 from pymgcv.bases import MarkovRandomField, RandomEffect
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
 from pymgcv.gam import FittedGAM, gam, variables_to_formula
@@ -25,7 +25,7 @@ def test_variables_to_formula():
     assert (
         variables_to_formula(
             dependent="y",
-            independent=("x0", smooth("x1")),
+            independent=("x0", Smooth("x1")),
         )
         == "y~x0+s(x1)"
     )
@@ -73,7 +73,7 @@ def get_test_cases():
         def pymgcv_gam(self, data) -> FittedGAM:
             return gam(
                 dependent="y",
-                independent=("x0", smooth("x1"), smooth("x2"), smooth("x3")),
+                independent=("x0", Smooth("x1"), Smooth("x2"), Smooth("x3")),
                 data=data,
             )
 
@@ -95,7 +95,7 @@ def get_test_cases():
         def pymgcv_gam(self, data) -> FittedGAM:
             return gam(
                 dependent="y",
-                independent=(tensor_smooth("x0", "x1"),),
+                independent=(TensorSmooth("x0", "x1"),),
                 data=data,
             )
 
@@ -122,8 +122,8 @@ def get_test_cases():
             return gam(
                 dependent="y",
                 independent=[
-                    smooth("x"),
-                    smooth("group", bs=RandomEffect()),
+                    Smooth("x"),
+                    Smooth("group", bs=RandomEffect()),
                 ],  # TODO are strings supported?
                 data=data,
             )
@@ -156,7 +156,7 @@ def get_test_cases():
 
             return gam(
                 dependent="y",
-                independent=(smooth("district", bs=MarkovRandomField(polys=polys)),),
+                independent=(Smooth("district", bs=MarkovRandomField(polys=polys)),),
                 data=data,
             )
 

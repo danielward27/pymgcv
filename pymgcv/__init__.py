@@ -1,6 +1,7 @@
-from .smooth import smooth, tensor_smooth
+from .smooth import Smooth, TensorSmooth, Linear
 
 __all__ = [
-    "smooth",
-    "tensor_smooth",
+    "Smooth",
+    "TensorSmooth",
+    "Linear",
 ]
