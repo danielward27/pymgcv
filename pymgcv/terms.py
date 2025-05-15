@@ -1,43 +1,77 @@
-# %%
+"""Defines the different types of terms available in pymgcv."""
 
 from collections.abc import Callable, Sequence
-from functools import partial
-
-from pymgcv.bases import BasisProtocol
 
 # TODO not supported sp, pc.
 # xt not needed as will be handled with basis.
-
 from dataclasses import dataclass
-from typing import Tuple, Protocol
+from typing import Any, Protocol, runtime_checkable
 
-from typing import Protocol
-
-class SmoothProtocol(Protocol):  # TODO Now we can no longer pass raw strings
-    varnames: Tuple[str, ...]
-
-    def __str__(self) -> str: ...
+from pymgcv.bases import BasisProtocol
 
 
-class Linear(Protocol):  # TODO name?
-    varnames: Tuple[str, ...]
+@runtime_checkable
+class TermLike(Protocol):
+    """Protocol defining interface for terms of a GAM model.
 
-    def __init__(self, name: str, /):
-        self.varnames = (name, )
+    Attributes:
+        varnames: The name or names of the variables in the term.
+        simple_string: A simplified representation of the term. This should match the form of the term after printing
+            the summary of a GAM model.
+
+
+    """
+    varnames: tuple[str, ...]
+    simple_string: str
 
     def __str__(self) -> str:
-        return ','.join(self.varnames)
+        """The string representation of the term which will be passed to mgcv."""
+        ...
 
 
 @dataclass
-class Smooth:
-    varnames: Tuple[str, ...]
-    k: int | None = None
-    bs: BasisProtocol | None = None
-    m: int | None = None
-    by: str | None = None
-    id: str | None = None
-    fx: bool = False
+class Linear(TermLike):  # TODO do we need a seperate class for a variable factor?
+    """A linear term in the model (i.e. no basis expansion).
+    
+    Args:
+        name: The name of the variable to include as a linear term.
+
+    """
+    varnames: tuple[str]
+    simple_string: str
+
+    def __init__(self, name: str, /):
+        self.varnames = (name, )
+        self.simple_string = self.varnames[0]
+
+    def __str__(self) -> str:
+        return self.simple_string
+    
+
+@dataclass
+class Interaction(TermLike):
+    """An interaction term in the model."""
+    varnames: tuple[str, ...]
+    simple_string: str
+
+    def __init__(self, a: str, b: str):
+        self.varnames = (a, b)
+        self.simple_string = f"{a}:{b}"
+
+    def __str__(self) -> str:
+        return self.simple_string
+
+
+@dataclass
+class Smooth(TermLike):
+    varnames: tuple[str, ...]
+    k: int | None
+    bs: BasisProtocol | None
+    m: int | None
+    by: str | None
+    id: str | None
+    fx: bool
+    simple_string: str
 
     def __init__(
         self,
@@ -56,6 +90,7 @@ class Smooth:
         self.by =by
         self.id =id
         self.fx =fx
+        self.simple_string = f"s({','.join(self.varnames)})"
 
     def __str__(self) -> str:
         """Returns the mgcv smooth term as a string."""
@@ -82,22 +117,24 @@ class Smooth:
         return smooth_string + ")"
 
 
-def _sequence_to_rvec_str(seq: Sequence, converter=str):
+def _sequence_to_rvec_str(seq: Sequence, converter: Callable[[Any], str]=str):
     return f"c({','.join(converter(x) for x in seq)})"
 
 
-@dataclass(init=False)
-class TensorSmooth:
+@dataclass
+class TensorSmooth(TermLike):
     varnames: tuple[str, ...]
-    k: tuple[int] | None = None
-    bs: tuple[BasisProtocol] = None
-    d: tuple[int] | None = None
-    m: tuple[int] | None = None
-    by: str | None = None
-    id: str | None = None
-    fx: bool | None = False
-    np: bool | None = True
-    interaction_only: bool = False
+    k: tuple[int, ...] | None
+    bs: tuple[BasisProtocol, ...] | None
+    d: tuple[int, ...] | None
+    m: tuple[int, ...] | None
+    by: str | None
+    id: str | None
+    fx: bool | None
+    np: bool | None
+    interaction_only: bool
+    simple_string: str
+
 
     def __init__(
         self,
@@ -105,7 +142,7 @@ class TensorSmooth:
         k: Sequence[int] | None = None,
         bs: Sequence[BasisProtocol] | None = None,
         d: Sequence[int] | None = None,
-        m: Sequence[int | None] = None,
+        m: Sequence[int] | None = None,
         by: str | None = None,
         id: str | None = None,
         fx: bool = False,
@@ -123,6 +160,9 @@ class TensorSmooth:
         self.np = None if np else np
         self.interaction_only = interaction_only
 
+        prefix = "ti" if self.interaction_only else "te"
+        self.simple_string = f"{prefix}({','.join(self.varnames)})"
+
     def __str__(self) -> str:
         kwargs = {
             "k": self.k,
@@ -138,7 +178,7 @@ class TensorSmooth:
 
         map_to_str = {
             "k": _sequence_to_rvec_str,
-            "bs": partial(_sequence_to_rvec_str, converter=lambda bs: f"'{bs}'"),
+            "bs": lambda bs: _sequence_to_rvec_str(bs, converter=lambda b: f"'{b}'"),
             "d": _sequence_to_rvec_str,
             "m": _sequence_to_rvec_str,
             "id": lambda id: f"'{id}'",

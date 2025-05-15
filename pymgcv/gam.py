@@ -1,6 +1,5 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -8,7 +7,7 @@ import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict
-from pymgcv.smooth import SmoothProtocol
+from pymgcv.terms import TermLike
 
 mgcv = importr("mgcv")
 rbase = importr("base")
@@ -23,7 +22,7 @@ base = importr("base")
 
 def variables_to_formula(
     dependent: str,
-    independent: Iterable[str | SmoothProtocol],
+    independent: Iterable[str | TermLike],
 ) -> str:
     """Convert the variables to an mgcv style formula."""
     return f"{dependent}~" + "+".join(map(str, independent))
@@ -36,8 +35,8 @@ class FittedGAM:
     def __init__(
             self,
             gam: ro.vectors.ListVector,
-            dependent: str = str,
-            independent = Iterable[SmoothProtocol],
+            dependent: str,
+            independent = Iterable[TermLike],
             ):
         self.rgam = gam
         self.dependent = dependent
@@ -57,33 +56,37 @@ class FittedGAM:
     
     def predict_term(
         self,
-        smooth: SmoothProtocol,
+        smooth: TermLike,  # TODO rename
         data: dict[str, np.ndarray],
     ):
         for var in smooth.varnames:
             if var not in data:
                 raise ValueError(f"Expected {var} to be provided in data.")
-        # TODO should I use exclude or newdata.guaranteed?
-
+        # TODO should I use newdata.guaranteed?
         # TODO also check by variables provided? Anyting else?
         # Manually add missing columns as for some reason mgcv wants them
         all_independent_names = [el for indep in self.independent for el in indep.varnames]
         n = list(data.values())[0].shape[0]
         dummy = {k: np.zeros(n) for k in all_independent_names}  # TODO seems very bug prone?
         data = dummy | data
-        
+        exclude = [term.simple_string for term in self.independent if term.simple_string != smooth.simple_string]
+    
+        # TODO Order not consistent with formula? Do zeroed terms get prepended or somthing?
+
         predictions = rstats.predict(
             self.rgam,
             newdata=data_to_rdf(data),
             se=True,
             type="terms",
-        )
+            exclude=exclude,
+        )  # Not whether I should expect columns to be removed?
 
         # TODO This is pretty horrible and should probably be rewritten:
-        predictions = rlistvec_to_dict(predictions)
+        predictions = rlistvec_to_dict(predictions)  # TODO 
         zeroed_cols = np.all(predictions["fit"] == 0, axis=-2)  # Do these have names?
         predictions["fit"] = predictions["fit"][..., ~zeroed_cols].squeeze()
         predictions["se_fit"] = predictions["se_fit"][..., ~zeroed_cols].squeeze()
+        # TODO at least have failsafe that if all columns are zero, to return a vector of zeros?
         return predictions
         
 
@@ -103,7 +106,7 @@ class FittedGAM:
 
 def gam(
     dependent: str,
-    independent: Iterable[SmoothProtocol],
+    independent: Iterable[TermLike],
     data: pd.DataFrame | dict[str, pd.Series | np.ndarray],
     family: str = "gaussian",
 ) -> FittedGAM:
