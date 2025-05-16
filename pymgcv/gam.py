@@ -20,12 +20,12 @@ base = importr("base")
 # TODO, passing arguments to family?
 
 
-def variables_to_formula(
+def terms_to_formula(
     dependent: str,
-    independent: Iterable[str | TermLike],
+    terms: Iterable[str | TermLike],
 ) -> str:
     """Convert the variables to an mgcv style formula."""
-    return f"{dependent}~" + "+".join(map(str, independent))
+    return f"{dependent}~" + "+".join(map(str, terms))
 
 
 @dataclass
@@ -36,11 +36,11 @@ class FittedGAM:
             self,
             gam: ro.vectors.ListVector,
             dependent: str,
-            independent = Iterable[TermLike],
+            terms = Iterable[TermLike],
             ):
         self.rgam = gam
         self.dependent = dependent
-        self.independent = independent
+        self.terms = terms
 
     def predict(
         self,
@@ -56,20 +56,22 @@ class FittedGAM:
     
     def predict_term(
         self,
-        smooth: TermLike,  # TODO rename
+        term: TermLike,  # TODO rename
         data: dict[str, np.ndarray],
     ):
-        for var in smooth.varnames:
+        
+        for var in term.varnames:
             if var not in data:
                 raise ValueError(f"Expected {var} to be provided in data.")
         # TODO should I use newdata.guaranteed?
         # TODO also check by variables provided? Anyting else?
         # Manually add missing columns as for some reason mgcv wants them
-        all_independent_names = [el for indep in self.independent for el in indep.varnames]
+
+        all_independent_names = [el for indep in self.terms for el in indep.varnames]
         n = list(data.values())[0].shape[0]
         dummy = {k: np.zeros(n) for k in all_independent_names}  # TODO seems very bug prone?
         data = dummy | data
-        exclude = [term.simple_string for term in self.independent if term.simple_string != smooth.simple_string]
+        exclude = [t.simple_string for t in self.terms if t.simple_string != term.simple_string]
     
         # TODO Order not consistent with formula? Do zeroed terms get prepended or somthing?
 
@@ -103,10 +105,19 @@ class FittedGAM:
         """The coefficients from the fit."""
         return rlistvec_to_dict(self.rgam)["coefficients"]
 
+    def partial_residuals(self, term: TermLike, data: dict[str, np.ndarray]) -> np.ndarray:
+        """Get the partial residuals for a term."""
+        term_predict = self.predict_term(term, data)["fit"]
+        total_predict = self.predict(data)["fit"]
+        y = data[self.dependent]
+        return (y-total_predict) + term_predict
+
+
+
 
 def gam(
     dependent: str,
-    independent: Iterable[TermLike],
+    terms: Iterable[TermLike],
     data: pd.DataFrame | dict[str, pd.Series | np.ndarray],
     family: str = "gaussian",
 ) -> FittedGAM:
@@ -114,7 +125,7 @@ def gam(
 
     Args:
         dependent: The dependent variable.
-        independent: The independent variables.
+        terms: The terms to use for fitting the model.
         data: A ``pandas.DataFrame`` or a dictionary mapping variable names to arrays or
             pandas series. Using a dictionary is useful for passing matrix variables.
             Factors should be represented using the pandas category dtype.
@@ -127,14 +138,14 @@ def gam(
     """
     # TODO missing options.
     # TODO families as functions? e.g. gaussian()
-    formula = variables_to_formula(dependent, independent)
+    formula = terms_to_formula(dependent, terms)
     family = ro.r(family)
     return FittedGAM(
         mgcv.gam(
             ro.Formula(formula), data=data_to_rdf(data), family="gaussian",
         ),  # TODO
         dependent=dependent,
-        independent=independent,
+        terms=terms,
     )
 
 

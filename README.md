@@ -12,4 +12,3 @@ git clone https://github.com/danielward27/pymgcv.git
 cd pymgcv
 pixi shell --environment=dev
 ```
-

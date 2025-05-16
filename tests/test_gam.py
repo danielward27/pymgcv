@@ -9,23 +9,24 @@ import rpy2.robjects as ro
 from pymgcv import Smooth, TensorSmooth
 from pymgcv.bases import MarkovRandomField, RandomEffect
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
-from pymgcv.gam import FittedGAM, gam, variables_to_formula
+from pymgcv.gam import FittedGAM, gam, terms_to_formula
+from pymgcv import terms
 
 mgcv = ro.packages.importr("mgcv")  # type: ignore
 
 
 def test_variables_to_formula():
     assert (
-        variables_to_formula(
+        terms_to_formula(
             dependent="y",
-            independent=("x",),
+            terms=("x",),
         )
         == "y~x"
     )
     assert (
-        variables_to_formula(
+        terms_to_formula(
             dependent="y",
-            independent=("x0", Smooth("x1")),
+            terms=("x0", Smooth("x1")),
         )
         == "y~x0+s(x1)"
     )
@@ -73,7 +74,7 @@ def get_test_cases():
         def pymgcv_gam(self, data) -> FittedGAM:
             return gam(
                 dependent="y",
-                independent=("x0", Smooth("x1"), Smooth("x2"), Smooth("x3")),
+                terms=(terms.Linear("x0"), terms.Smooth("x1"), terms.Smooth("x2"), terms.Smooth("x3")),
                 data=data,
             )
 
@@ -95,7 +96,7 @@ def get_test_cases():
         def pymgcv_gam(self, data) -> FittedGAM:
             return gam(
                 dependent="y",
-                independent=(TensorSmooth("x0", "x1"),),
+                terms=(TensorSmooth("x0", "x1"),),
                 data=data,
             )
 
@@ -121,7 +122,7 @@ def get_test_cases():
         def pymgcv_gam(self, data) -> FittedGAM:
             return gam(
                 dependent="y",
-                independent=[
+                terms=[
                     Smooth("x"),
                     Smooth("group", bs=RandomEffect()),
                 ],  # TODO are strings supported?
@@ -156,7 +157,7 @@ def get_test_cases():
 
             return gam(
                 dependent="y",
-                independent=(Smooth("district", bs=MarkovRandomField(polys=polys)),),
+                terms=(Smooth("district", bs=MarkovRandomField(polys=polys)),),
                 data=data,
             )
 

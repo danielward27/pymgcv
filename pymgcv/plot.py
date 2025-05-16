@@ -9,9 +9,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from collections.abc import Iterable
-
+from typing import Any
 from pymgcv import terms
 from pymgcv.gam import FittedGAM
+
 
 # mgcViz = importr("mgcViz")
 
@@ -22,33 +23,57 @@ def plot_1d(
     term: terms.Linear | terms.Smooth,
     gam: FittedGAM,
     xlims: tuple[int, int],
-    fit_kwargs = None,
-    interval_kwargs = None,
+    data: dict[str, np.ndarray],
+    fit_kwargs: dict[str, Any] | None = None,
+    interval_kwargs:  dict[str, Any] | None = None,
+    partial_residual_kwargs:  dict[str, Any] | None = None,
     ax: Axes | None = None,
-    ):
+    ):  # TODO data default to None
+    """_summary_
+
+    Args:
+        term (terms.Linear | terms.Smooth): _description_
+        gam (FittedGAM): _description_
+        xlims (tuple[int, int]): _description_
+        data (dict[str, np.ndarray]): Data used for adding partial residuals.
+        fit_kwargs (_type_, optional): _description_. Defaults to None.
+        interval_kwargs (_type_, optional): _description_. Defaults to None.
+        partial_residual_kwargs (_type_, optional): _description_. Defaults to None.
+        ax (Axes | None, optional): _description_. Defaults to None.
+
+    Returns:
+        _type_: _description_
+    """
     ax = plt.gca() if ax is None else ax
     fit_kwargs = {} if fit_kwargs is None else fit_kwargs
     interval_kwargs = {} if interval_kwargs is None else interval_kwargs
+    partial_residual_kwargs = {} if partial_residual_kwargs is None else partial_residual_kwargs
 
+
+    # Add partial residuals
+    partial_residuals = gam.partial_residuals(term, data)
+    color = partial_residual_kwargs.get("color", "black")
+    ax.scatter(data[term.varnames[0]], partial_residuals, color=color, **partial_residual_kwargs)
+    
     # TODO varnames or another attribute for extracting required data?
     x0_linspace = np.linspace(*xlims, num=100)
     pred = gam.predict_term(term, data={term.varnames[0]: x0_linspace})
-    ax.plot(x0_linspace, pred["fit"])
+    ax.plot(x0_linspace, pred["fit"], **fit_kwargs)
+
 
     # Plot interval
+    color = interval_kwargs.get("color", ax.lines[-1].get_color())  # Match previous line color
     linestyle = interval_kwargs.get("linestyle", "dotted")
-    color = interval_kwargs.get("color", ax.lines[-1].get_color())
 
     ax.plot(
         x0_linspace,
         pred["fit"] + 1.96*pred["se_fit"],
         linestyle=linestyle,
         color=color,
+        **interval_kwargs,
         )
-    ax.plot(x0_linspace, pred["fit"] - 1.96*pred["se_fit"], linestyle=linestyle, color=color)
+    ax.plot(x0_linspace, pred["fit"] - 1.96*pred["se_fit"], linestyle=linestyle, color=color, **interval_kwargs)
     ax.set_xlabel(term.simple_string)
-
-    # TODO y axis label?
     return ax
 
 
@@ -77,33 +102,13 @@ def plot_smooth_2d(
         cmap=colormesh_kwargs.get("cmap", "RdBu"),
         )
     ax.figure.colorbar(mesh, ax=ax)
-    ax.set_xlabel(term.simple_string)
-
-
+    ax.set_xlabel(term.varnames[0])
+    ax.set_ylabel(term.varnames[1])
     return ax
-
-    # TODO add data points?
-    # plt.scatter(data["x1"], data["x2"], c="black", s=5)
-    # plt.ylabel("y")
-    # plt.xlabel(terms[1].simple_string)
-    # plt.show()
-
-    # x0_linspace = np.linspace(data["x0"].min(), data["x0"].max(), num=100)
-    # pred = fitted_gam.predict_term(terms[2], data={"x3": x0_linspace})
-    # plt.plot(x0_linspace, pred["fit"])
-    # plt.plot(x0_linspace, pred["fit"] + 2*pred["se_fit"], linestyle="dotted", color="black")
-    # plt.plot(x0_linspace, pred["fit"] - 2*pred["se_fit"], linestyle="dotted", color="black")
-    # plt.xlabel(str(terms[2]))
-    # plt.ylabel("y")
-    # plt.show()
-
-
 
 
 def plot_spline_on_sphere():
     raise NotImplementedError()
-
-
 
 
     # Get the term index in the gam
