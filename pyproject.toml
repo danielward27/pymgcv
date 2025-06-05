@@ -18,7 +18,7 @@ requires = ["hatchling"]
 
 
 [tool.pytest.ini_options]
-beartype_packages = 'pymgcv'
+beartype_packages = 'pymgcv' 
 
 
 [project.optional-dependencies]
@@ -50,6 +50,7 @@ pandas = ">=2.2.3,<3"
 matplotlib = ">=3.10,<4"
 pillow = ">=11.1.0,<12"
 python = ">=3.12,<=3.13"
+r-devtools = ">=2.4.5,<3"   # Added for now to install mgcViz
 
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }
@@ -74,3 +75,6 @@ select = ["E", "F", "B", "D", "COM", "I", "UP", "TRY004", "RET", "PT", "FBT"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[dependency-groups]
+dev = ["ty>=0.0.1a4"]

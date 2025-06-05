@@ -1,6 +1,7 @@
 """More convenient versions."""
 
-import numpy as np
+from collections.abc import Iterable
+
 import pandas as pd
 import rpy2.robjects as ro
 from rpy2.robjects import numpy2ri, pandas2ri
@@ -35,33 +36,35 @@ def rlistvec_to_dict(x: ro.ListVector) -> dict:
 
 
 def data_to_rdf(
-    data: pd.DataFrame | dict[str, pd.Series | np.ndarray],
+    data: pd.DataFrame,
+    as_array_prefixes: Iterable[str] = (),
 ) -> ro.vectors.DataFrame:
-    """Convert data to an rpy2 dataframe.
+    """Convert pandas dataframe to an rpy2 dataframe.
 
-    Data can be either a dataframe, or a dictionary mapping from strings to arrays
-    or pandas series. The latter is occasionally useful when users wish to have
-    matrix variables which cannot be added as a dataframe column.
+    Args:
+    data: pandas dataframe to convert.
+    as_array_prefixes: prefixes of columns to combine into arrays, which
+        e.g. are interpreted as functional effects by mgcv.
     """
-    if isinstance(data, pd.DataFrame):
-        return to_rpy(data)
+    if not isinstance(data, pd.DataFrame):
+        raise TypeError("Data must be a pandas DataFrame.")
+    if any(data.dtypes == "object") or any(data.dtypes == "string"):
+        raise TypeError("DataFrame contains unsupported object or string types.")
 
-    shapes = [arr.shape for arr in data.values()]
+    not_array_colnames = [
+        col
+        for col in data.columns
+        if not any(col.startswith(prefix) for prefix in as_array_prefixes)
+    ]
+    rpy_df = to_rpy(data[not_array_colnames])
 
-    if any(len(s) < 1 or len(s) > 2 for s in shapes):
-        raise ValueError("All data must be 1D or 2D (i.e. vector or matrix).")
-
-    if not all(s[0] == shapes[0][0] for s in shapes):
-        raise ValueError("All data must match on axis 0.")
-
-    data = {k: to_rpy(v) for k, v in data.items()}
-
-    with ro.local_context() as env:
-        env["list_vec"] = ro.ListVector(data)
-        return ro.r(
-            """
-            data.frame(lapply(list_vec, function(x) {
-                if (is.matrix(x)) I(x) else x
-            }))
-            """,
-        )  # type: ignore
+    matrices = {}
+    for prefix in as_array_prefixes:
+        subset = data.filter(like=prefix)
+        matrices[prefix] = base.I(to_rpy(subset.to_numpy()))
+    matrices_df = base.data_frame(**matrices)
+    if rpy_df.nrow == 0:
+        return matrices_df
+    if matrices_df.nrow == 0:
+        return rpy_df
+    return base.cbind(rpy_df, matrices_df)

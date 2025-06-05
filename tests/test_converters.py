@@ -27,7 +27,7 @@ def test_rlistvec_to_dict():
 
 
 def test_data_to_rdf_basic_dict():
-    d = {"a": np.array([1, 2, 3]), "b": np.array([4, 5, 6])}
+    d = pd.DataFrame({"a": np.array([1, 2, 3]), "b": np.array([4, 5, 6])})
     df = data_to_rdf(d)
 
     assert df.nrow == 3
@@ -37,8 +37,8 @@ def test_data_to_rdf_basic_dict():
 
 
 def test_data_to_rdf_with_matrix():
-    d = {"a": np.array([1, 2, 3]), "b": np.ones((3, 2))}
-    df = data_to_rdf(d)
+    d = pd.DataFrame({"a": np.array([1, 2, 3]), "b0": np.ones(3), "b1": np.ones(3)})
+    df = data_to_rdf(d, as_array_prefixes=("b",))
 
     assert df.nrow == 3
     assert df.ncol == 2
@@ -46,22 +46,17 @@ def test_data_to_rdf_with_matrix():
     assert to_py(df.rx2("b")).shape == (3, 2)
 
 
-def test_data_to_rdf_invalid_shapes():
-    with pytest.raises(ValueError, match="All data must match on axis 0"):
-        data_to_rdf({"a": np.ones((3,)), "b": np.ones((4,))})
 
-    with pytest.raises(ValueError, match="All data must be 1D or 2D"):
-        data_to_rdf({"a": np.array([1, 2, 3]), "b": np.zeros(())})
 
 
 def test_data_to_rdf_categorical_factors():
-    data = {
+    data = pd.DataFrame({
         "y": np.arange(3),
         "x": pd.Categorical(
             ["green", "green", "blue"],
             categories=["red", "green", "blue"],
         ),
-    }
+    })
 
     rdf = data_to_rdf(data)
     factor = rdf.rx2("x")

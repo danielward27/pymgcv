@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+from copy import deepcopy
 from dataclasses import dataclass
 
 import numpy as np
@@ -6,15 +7,13 @@ import pandas as pd
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
-from pymgcv.converters import data_to_rdf, rlistvec_to_dict
-from pymgcv.terms import TermLike
+from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
+from pymgcv.terms import Smooth, TensorSmooth, TermLike
 
 mgcv = importr("mgcv")
 rbase = importr("base")
 rutils = importr("utils")
 rstats = importr("stats")
-base = importr("base")
-
 
 
 # TODO, passing arguments to family?
@@ -32,19 +31,37 @@ def terms_to_formula(
 class FittedGAM:
     """The result object from fittin a GAM."""
 
+    rgam: ro.vectors.ListVector
+    dependent: str
+    terms: tuple[TermLike, ...]
+    data: pd.DataFrame
+
     def __init__(
-            self,
-            gam: ro.vectors.ListVector,
-            dependent: str,
-            terms = Iterable[TermLike],
-            ):
-        self.rgam = gam
+        self,
+        rgam: ro.vectors.ListVector,
+        dependent: str,
+        terms: Iterable[TermLike],
+        data: pd.DataFrame,
+    ):
+        self.rgam = rgam
         self.dependent = dependent
-        self.terms = terms
+        self.terms = tuple(terms)
+        self.data = data
+
+        for term in self.terms:
+            if isinstance(term, Smooth | TensorSmooth) and term.by is not None:
+                if data[term.by].dtype == "category":
+                    raise TypeError(
+                        """Categorical by variables not yet supported. The reason for
+                        this is that these implicitly expand into multiple terms in the
+                        model, which leads to complications as the model terms no longer
+                        have a one to one mapping to the predicted terms. This behaviour
+                        will be supported as needed.""",
+                    )
 
     def predict(
         self,
-        data: dict[str, np.ndarray],
+        data: pd.DataFrame,
     ):
         """Compute predictions and standard errors."""
         predictions = rstats.predict(
@@ -53,46 +70,70 @@ class FittedGAM:
             se=True,
         )
         return rlistvec_to_dict(predictions)
-    
-    def predict_term(
+
+    def predict_terms(
         self,
-        term: TermLike,  # TODO rename
-        data: dict[str, np.ndarray],
+        data: pd.DataFrame,
     ):
-        
-        for var in term.varnames:
-            if var not in data:
-                raise ValueError(f"Expected {var} to be provided in data.")
-        # TODO should I use newdata.guaranteed?
-        # TODO also check by variables provided? Anyting else?
-        # Manually add missing columns as for some reason mgcv wants them
-
-        all_independent_names = [el for indep in self.terms for el in indep.varnames]
-        n = list(data.values())[0].shape[0]
-        dummy = {k: np.zeros(n) for k in all_independent_names}  # TODO seems very bug prone?
-        data = dummy | data
-        exclude = [t.simple_string for t in self.terms if t.simple_string != term.simple_string]
-    
-        # TODO Order not consistent with formula? Do zeroed terms get prepended or somthing?
-
+        """Compute predictions and standard errors."""
         predictions = rstats.predict(
             self.rgam,
             newdata=data_to_rdf(data),
             se=True,
             type="terms",
-            exclude=exclude,
-        )  # Not whether I should expect columns to be removed?
+            newdata_gauranteed=True,
+        )
+        fit = pd.DataFrame(
+            to_py(predictions.rx2["fit"]),
+            columns=to_py(rbase.colnames(predictions.rx2["fit"])),
+        )
+        se = pd.DataFrame(
+            to_py(predictions.rx2["se.fit"]),
+            columns=to_py(rbase.colnames(predictions.rx2["se.fit"])),
+        )
+        return {"fit": fit, "se": se}
 
-        # TODO This is pretty horrible and should probably be rewritten:
-        predictions = rlistvec_to_dict(predictions)  # TODO 
-        zeroed_cols = np.all(predictions["fit"] == 0, axis=-2)  # Do these have names?
-        predictions["fit"] = predictions["fit"][..., ~zeroed_cols].squeeze()
-        predictions["se_fit"] = predictions["se_fit"][..., ~zeroed_cols].squeeze()
-        # TODO at least have failsafe that if all columns are zero, to return a vector of zeros?
-        return predictions
-        
+    def predict_term(
+        self,
+        term: TermLike,
+        data: pd.DataFrame,
+    ) -> dict[str, pd.DataFrame]:
+        """Convenience predictor for a single term of the model."""
+        for var in term.varnames:
+            if var not in data:
+                raise ValueError(f"Expected {var} to be provided in data.")
+        # TODO should I check the variables provided?
+        # Manually add missing columns as for some reason mgcv wants them
+        all_independent_names = [el for indep in self.terms for el in indep.varnames]
+        for name in all_independent_names:
+            if name not in data:
+                data[name] = np.zeros(len(data))
+        exclude = [
+            t.simple_string for t in self.terms if t.simple_string != term.simple_string
+        ]
+
+        predictions = rstats.predict(  # TODO exclude vs passing terx
+            self.rgam,
+            newdata=data_to_rdf(data),
+            type="terms",
+            exclude=exclude if exclude else ro.NULL,
+            se=True,
+        )
+        fit = pd.DataFrame(
+            predictions.rx2["fit"],
+            columns=np.array([term.simple_string]),
+        )
+        se = pd.DataFrame(
+            predictions.rx2["se.fit"],
+            columns=np.array([term.simple_string]),
+        )
+        return {"fit": fit, "se": se}
 
     def summary(self) -> str:
+        """Get the summary of the gam model.
+
+        Usually this should be combined with print, i.e. ``print(model.summary())``.
+        """
         strvec = rutils.capture_output(rbase.summary(self.rgam))
         return "\n".join(tuple(strvec))
 
@@ -105,20 +146,22 @@ class FittedGAM:
         """The coefficients from the fit."""
         return rlistvec_to_dict(self.rgam)["coefficients"]
 
-    def partial_residuals(self, term: TermLike, data: dict[str, np.ndarray]) -> np.ndarray:
+    def partial_residuals(
+        self,
+        term: TermLike,
+        data: pd.DataFrame,
+    ) -> np.ndarray:
         """Get the partial residuals for a term."""
         term_predict = self.predict_term(term, data)["fit"]
         total_predict = self.predict(data)["fit"]
         y = data[self.dependent]
-        return (y-total_predict) + term_predict
-
-
+        return (y - total_predict) + term_predict
 
 
 def gam(
     dependent: str,
     terms: Iterable[TermLike],
-    data: pd.DataFrame | dict[str, pd.Series | np.ndarray],
+    data: pd.DataFrame,
     family: str = "gaussian",
 ) -> FittedGAM:
     """Fit a gam model.
@@ -139,13 +182,16 @@ def gam(
     # TODO missing options.
     # TODO families as functions? e.g. gaussian()
     formula = terms_to_formula(dependent, terms)
-    family = ro.r(family)
+    ro.rl(family)
     return FittedGAM(
         mgcv.gam(
-            ro.Formula(formula), data=data_to_rdf(data), family="gaussian",
+            ro.Formula(formula),
+            data=data_to_rdf(data),
+            family=family,
         ),  # TODO
         dependent=dependent,
         terms=terms,
+        data=deepcopy(data),
     )
 
 

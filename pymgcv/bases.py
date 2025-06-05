@@ -4,35 +4,35 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 import numpy as np
-from rpy2.robjects import RObject
+from rpy2.robjects import ListVector
 
 
 @runtime_checkable
-class BasisProtocol(Protocol):
-    """Abstract basis - generally controlling both the ``bs`` choice and ``xt``."""
+class BasisLike(Protocol):
+    """Basis protocol class, defining the interface for configuring basis functions."""
 
     def __str__(self) -> str:
         """The mgcv string representation of the basis."""
         ...
 
-    def get_xt(self) -> RObject | None:
+    def get_xt(self) -> ListVector | None:
         """Get an robject to pass as xt."""
         ...
 
 
-class RandomEffect(BasisProtocol):
+class RandomEffect(BasisLike):
     """Random effect."""
 
     def __str__(self) -> str:
         """The mgcv string representation of the basis."""
         return "re"
 
-    def get_xt(self):
+    def get_xt(self) -> ListVector | None:
         return None
 
 
 @dataclass(kw_only=True)
-class ThinPlateSpline(BasisProtocol):
+class ThinPlateSpline(BasisLike):
     """Thin plate regression spline.
 
     Args:
@@ -51,7 +51,7 @@ class ThinPlateSpline(BasisProtocol):
 
 
 @dataclass(kw_only=True)
-class CubicSpline(BasisProtocol):
+class CubicSpline(BasisLike):
     """Cubic regression regression spline.
 
     Args:
@@ -78,7 +78,7 @@ class CubicSpline(BasisProtocol):
 
 
 @dataclass(kw_only=True)
-class DuchonSpline(BasisProtocol):  # TODO support passing m?
+class DuchonSpline(BasisLike):  # TODO support passing m?
     """A generalization of thin plate splines."""
 
     def __str__(self) -> str:
@@ -90,7 +90,7 @@ class DuchonSpline(BasisProtocol):  # TODO support passing m?
 
 
 @dataclass(kw_only=True)
-class SplineOnSphere(BasisProtocol):
+class SplineOnSphere(BasisLike):
     """Two dimensional thin plate spline analogues on a sphere.
 
     For use with two variables denoting latitude and longitude in degrees.
@@ -105,7 +105,7 @@ class SplineOnSphere(BasisProtocol):
 
 
 @dataclass(kw_only=True)
-class BSpline(BasisProtocol):
+class BSpline(BasisLike):
     """B-spline basis with integrated squared derivative penalties."""
 
     def __str__(self) -> str:
@@ -117,7 +117,7 @@ class BSpline(BasisProtocol):
 
 
 @dataclass(kw_only=True)
-class PSpline(BasisProtocol):
+class PSpline(BasisLike):
     """These are P-splines as proposed by Eilers and Marx (1996)."""
 
     cyclic: bool = False
@@ -131,8 +131,7 @@ class PSpline(BasisProtocol):
 
 
 @dataclass(kw_only=True)
-class MarkovRandomField(BasisProtocol):
-
+class MarkovRandomField(BasisLike):
     polys: list[np.ndarray]
     # TODO support xt
 
