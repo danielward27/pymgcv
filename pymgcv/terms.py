@@ -136,7 +136,12 @@ class Smooth(TermLike):
         self.by = by
         self.id = id
         self.fx = fx
-        self.simple_string = f"s({','.join(self.varnames)})"
+        simple_string = f"s({','.join(self.varnames)})"
+
+        if self.by is not None:
+            simple_string += f":{self.by}"
+
+        self.simple_string = simple_string
 
     def __str__(self) -> str:
         """Returns the mgcv smooth term as a string."""
@@ -224,8 +229,11 @@ class TensorSmooth(TermLike):
         self.np = None if np else np
         self.interaction_only = interaction_only
 
-        prefix = "ti" if self.interaction_only else "te"
-        self.simple_string = f"{prefix}({','.join(self.varnames)})"
+        simple_string = "ti(" if self.interaction_only else "te("
+        simple_string += ",".join(self.varnames) + ")"
+        if self.by is not None:
+            simple_string += ":" + self.by
+        self.simple_string = simple_string
 
     def __str__(self) -> str:
         kwargs = {

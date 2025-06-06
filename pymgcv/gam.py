@@ -15,7 +15,6 @@ rbase = importr("base")
 rutils = importr("utils")
 rstats = importr("stats")
 
-
 # TODO, passing arguments to family?
 
 
@@ -97,7 +96,7 @@ class FittedGAM:
         self,
         term: TermLike,
         data: pd.DataFrame,
-    ) -> dict[str, pd.DataFrame]:
+    ) -> dict[str, pd.Series]:
         """Convenience predictor for a single term of the model."""
         for var in term.varnames:
             if var not in data:
@@ -112,20 +111,20 @@ class FittedGAM:
             t.simple_string for t in self.terms if t.simple_string != term.simple_string
         ]
 
-        predictions = rstats.predict(  # TODO exclude vs passing terx
+        predictions = rstats.predict(  # TODO exclude vs passing
             self.rgam,
             newdata=data_to_rdf(data),
             type="terms",
             exclude=exclude if exclude else ro.NULL,
             se=True,
         )
-        fit = pd.DataFrame(
+        fit = pd.Series(
             predictions.rx2["fit"],
-            columns=np.array([term.simple_string]),
+            name=term.simple_string,
         )
-        se = pd.DataFrame(
+        se = pd.Series(
             predictions.rx2["se.fit"],
-            columns=np.array([term.simple_string]),
+            name=term.simple_string,
         )
         return {"fit": fit, "se": se}
 

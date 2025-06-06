@@ -271,18 +271,35 @@ def test_pymgcv_mgcv_equivilance(test_case: AbstractTestCase):
 
 
 @pytest.mark.parametrize("test_case", test_cases, ids=[type(t) for t in test_cases])
+def test_predict_term_against_predict_terms(test_case: AbstractTestCase):
+    # Test column names are expected
+    data = test_case.get_data()
+    fit = test_case.pymgcv_gam(data)
+    all_terms = fit.predict_terms(data)
+
+    for term in fit.terms:
+        term_fit = fit.predict_term(term, data=data)
+        for fit_or_se in ["fit", "se"]:
+            assert term_fit[fit_or_se].name in all_terms[fit_or_se].columns
+            assert (
+                pytest.approx(term_fit[fit_or_se])
+                == all_terms[fit_or_se][term_fit[fit_or_se].name]
+            )
+
+
+@pytest.mark.parametrize("test_case", test_cases, ids=[type(t) for t in test_cases])
 def test_fitted_gam_predict_term(test_case: AbstractTestCase):
     data = test_case.get_data()
-    gam = test_case.pymgcv_gam(data)
+    fit = test_case.pymgcv_gam(data)
 
-    for term in gam.terms:
-        pred = gam.predict_term(term, data=data)
+    for term in fit.terms:
+        pred = fit.predict_term(term, data=data)
         assert pred["fit"].shape == (data.shape[0], 1)
         assert pred["se"].shape == (data.shape[0], 1)
 
         # test minimal data still runs and produces same result
         minimal_data = pd.DataFrame({k: data[k] for k in term.varnames})
-        pred2 = gam.predict_term(term, data=minimal_data)
+        pred2 = fit.predict_term(term, data=minimal_data)
         assert pytest.approx(pred["fit"]) == pred2["fit"]
         assert pytest.approx(pred["se"]) == pred2["se"]
 
