@@ -2,7 +2,7 @@
 name = "pymgcv"
 authors = [{ name = "danielward27", email = "danielward27@outlook.com" }]
 description = "pymgcv: Generalized additive models using mgcv, in Python."
-requires-python = ">= 3.11, <= 3.12"
+requires-python = ">= 3.12"
 version = "0.0.0"
 
 # python=3.13 gives error: https://github.com/rpy2/rpy2/issues/1175
@@ -18,7 +18,7 @@ requires = ["hatchling"]
 
 
 [tool.pytest.ini_options]
-beartype_packages = 'pymgcv'
+beartype_packages = 'pymgcv' 
 
 
 [project.optional-dependencies]
@@ -49,7 +49,8 @@ numpy = ">=2.2.5,<3"
 pandas = ">=2.2.3,<3"
 matplotlib = ">=3.10,<4"
 pillow = ">=11.1.0,<12"
-
+python = ">=3.12,<=3.13"
+r-devtools = ">=2.4.5,<3"   # Added for now to install mgcViz
 
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }
@@ -74,3 +75,6 @@ select = ["E", "F", "B", "D", "COM", "I", "UP", "TRY004", "RET", "PT", "FBT"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[dependency-groups]
+dev = ["ty>=0.0.1a4"]

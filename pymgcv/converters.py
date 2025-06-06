@@ -1,6 +1,8 @@
 """More convenient versions."""
 
-import numpy as np
+from collections.abc import Iterable
+
+import pandas as pd
 import rpy2.robjects as ro
 from rpy2.robjects import numpy2ri, pandas2ri
 from rpy2.robjects.packages import importr
@@ -20,7 +22,7 @@ def to_py(x):
         return ro.conversion.get_conversion().rpy2py(x)
 
 
-def list_vec_to_dict(x: ro.ListVector) -> dict:
+def rlistvec_to_dict(x: ro.ListVector) -> dict:
     """Convert a list vector to a dict, with conversion using to_py.
 
     Dots in names are replaced with underscores, to promote more pythonic naming.
@@ -33,24 +35,36 @@ def list_vec_to_dict(x: ro.ListVector) -> dict:
     return {k.replace(".", "_"): to_py(v) for k, v in zip(x.names, x, strict=True)}
 
 
-def dict_to_rdf(d: dict[str, np.ndarray]) -> ro.vectors.DataFrame:
-    """Convert a dictionary of arrays to a rpy dataframe."""
-    shapes = [arr.shape for arr in d.values()]
+def data_to_rdf(
+    data: pd.DataFrame,
+    as_array_prefixes: Iterable[str] = (),
+) -> ro.vectors.DataFrame:
+    """Convert pandas dataframe to an rpy2 dataframe.
 
-    if any(len(s) < 1 or len(s) > 2 for s in shapes):
-        raise ValueError("All arrays must be 1D or 2D.")
+    Args:
+    data: pandas dataframe to convert.
+    as_array_prefixes: prefixes of columns to combine into arrays, which
+        e.g. are interpreted as functional effects by mgcv.
+    """
+    if not isinstance(data, pd.DataFrame):
+        raise TypeError("Data must be a pandas DataFrame.")
+    if any(data.dtypes == "object") or any(data.dtypes == "string"):
+        raise TypeError("DataFrame contains unsupported object or string types.")
 
-    if not all(s[0] == shapes[0][0] for s in shapes):
-        raise ValueError("All arrays must match on axis 0.")
+    not_array_colnames = [
+        col
+        for col in data.columns
+        if not any(col.startswith(prefix) for prefix in as_array_prefixes)
+    ]
+    rpy_df = to_rpy(data[not_array_colnames])
 
-    d = {k: to_rpy(v) for k, v in d.items()}
-    ro.r(
-        """
-        to_df <- function(a) {
-            return(data.frame(lapply(a, function(x) {
-                if (is.matrix(x)) I(x) else x
-            })))
-        }
-    """,
-    )
-    return ro.r["to_df"](ro.ListVector(d))  # type: ignore
+    matrices = {}
+    for prefix in as_array_prefixes:
+        subset = data.filter(like=prefix)
+        matrices[prefix] = base.I(to_rpy(subset.to_numpy()))
+    matrices_df = base.data_frame(**matrices)
+    if rpy_df.nrow == 0:
+        return matrices_df
+    if matrices_df.nrow == 0:
+        return rpy_df
+    return base.cbind(rpy_df, matrices_df)
