@@ -29,19 +29,23 @@ class TermLike(Protocol):
 
     Attributes:
         varnames: The name or names of the variables in the term.
-        simple_string: A simplified representation of the term. This should
-            match the form of the term after print in the summary of a GAM model.
-            We use this for plot labels and for excluding terms from the model
-            in mgcv.
         by: The name of a by variable or None if not present.
     """
 
     varnames: tuple[str, ...]
-    simple_string: str
     by: str | None
 
     def __str__(self) -> str:
         """The string representation of the term which will be passed to mgcv."""
+        ...
+
+    def simple_string(self, formula_idx: int = 0) -> str:
+        """A simplified representation of the term.
+
+        This should match the form used by mgcv when predicting the seperate terms of
+        the model. For multiformula models, mgcv adds an index to distinguish which
+        formula the term corresponds to. This is supported through ``formula_idx``.
+        """
         ...
 
 
@@ -55,16 +59,18 @@ class Linear(TermLike):
     """
 
     varnames: tuple[str]
-    simple_string: str
     by: str | None
 
     def __init__(self, name: str):
         self.varnames = (name,)
-        self.simple_string = self.varnames[0]
         self.by = None
 
     def __str__(self) -> str:
-        return self.simple_string
+        return self.varnames[0]
+
+    def simple_string(self, formula_idx: int = 0) -> str:
+        idx = "" if formula_idx == 0 else f".{formula_idx}"
+        return self.varnames[0] + idx
 
 
 @dataclass
@@ -84,7 +90,6 @@ class Interaction(TermLike):
     """
 
     varnames: tuple[str, ...]
-    simple_string: str
     by: str | None
 
     def __init__(self, *varnames: str):
@@ -94,11 +99,14 @@ class Interaction(TermLike):
             *varnames: The names of the variables to include in the interaction.
         """
         self.varnames = tuple(varnames)
-        self.simple_string = ":".join(self.varnames)
         self.by = None
 
     def __str__(self) -> str:
-        return self.simple_string
+        return ":".join(self.varnames)
+
+    def simple_string(self, formula_idx: int = 0) -> str:
+        idx = "" if formula_idx == 0 else f".{formula_idx}"
+        return ":".join(self.varnames) + idx
 
 
 @dataclass
@@ -117,7 +125,6 @@ class Smooth(TermLike):
     by: str | None
     id: str | None
     fx: bool
-    simple_string: str
 
     def __init__(
         self,
@@ -136,12 +143,6 @@ class Smooth(TermLike):
         self.by = by
         self.id = id
         self.fx = fx
-        simple_string = f"s({','.join(self.varnames)})"
-
-        if self.by is not None:
-            simple_string += f":{self.by}"
-
-        self.simple_string = simple_string
 
     def __str__(self) -> str:
         """Returns the mgcv smooth term as a string."""
@@ -167,13 +168,22 @@ class Smooth(TermLike):
             smooth_string += f",{key}={map_to_str.get(key, str)(val)}"
         return smooth_string + ")"
 
+    def simple_string(self, formula_idx: int = 0) -> str:
+        idx = "" if formula_idx == 0 else f".{formula_idx}"
+        simple_string = f"s{idx}({','.join(self.varnames)})"
+
+        if self.by is not None:
+            simple_string += f":{self.by}"
+
+        return simple_string
+
 
 def _sequence_to_rvec_str(seq: Sequence, converter: Callable[[Any], str] = str):
     return f"c({','.join(converter(x) for x in seq)})"
 
 
 # TODO, tensnor smooth d=c(2,1), common, in which case all the sequences should be length 2.
-# Worth testing this case.
+# Worth testing this case. A more intuitive interface would be to specify a list of smooths.
 @dataclass
 class TensorSmooth(TermLike):
     varnames: tuple[str, ...]
@@ -186,7 +196,6 @@ class TensorSmooth(TermLike):
     fx: bool | None
     np: bool | None
     interaction_only: bool
-    simple_string: str
 
     def __init__(
         self,
@@ -229,12 +238,6 @@ class TensorSmooth(TermLike):
         self.np = None if np else np
         self.interaction_only = interaction_only
 
-        simple_string = "ti(" if self.interaction_only else "te("
-        simple_string += ",".join(self.varnames) + ")"
-        if self.by is not None:
-            simple_string += ":" + self.by
-        self.simple_string = simple_string
-
     def __str__(self) -> str:
         kwargs = {
             "k": self.k,
@@ -263,3 +266,35 @@ class TensorSmooth(TermLike):
         for key, val in kwargs.items():
             smooth_string += f",{key}={map_to_str.get(key, str)(val)}"
         return smooth_string + ")"
+
+    def simple_string(self, formula_idx: int = 0) -> str:
+        idx = "" if formula_idx == 0 else f".{formula_idx}"
+        prefix = "ti" if self.interaction_only else "te"
+        simple_string = f"{prefix}{idx}({','.join(self.varnames)})"
+        if self.by is not None:
+            simple_string += ":" + self.by
+        return simple_string
+
+
+@dataclass
+class Offset(TermLike):
+    """A constant (zero parameter) offset term.
+
+    Args:
+        name: The name of the variable to use as an offset.
+    """
+
+    varnames: tuple[str]
+    by: str | None
+
+    def __init__(self, name: str):
+        self.varnames = (name,)
+        self.by = None
+
+    def __str__(self) -> str:
+        return f"offset({self.varnames[0]})"
+
+    def simple_string(self, formula_idx: int = 0) -> str:
+        # mgcv doesn't include it as a parametric term e.g. in predict terms so we have
+        # to special case it. Notice formula_idx not used because of this.
+        return f"offset({self.varnames[0]})"
