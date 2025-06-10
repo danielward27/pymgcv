@@ -247,7 +247,7 @@ def get_test_cases():
         def pymgcv_gam(self, data) -> FittedGAM:
             model = ModelSpecification(
                 {"y": [terms.Smooth("x0")]},
-                family_parameter_to_terms={"log_scale": [terms.Smooth("x1")]},
+                other_predictors={"log_scale": [terms.Smooth("x1")]},
                 family="gaulss()",
             )
             return gam(model, data=data)
@@ -369,7 +369,7 @@ def test_pymgcv_mgcv_equivilance(test_case: AbstractTestCase):
 def test_predict_terms(test_case: AbstractTestCase):
     data = test_case.get_data()
     fit = test_case.pymgcv_gam(data)
-    all_terms = fit.predict_terms(data)  # TODO: For now just testing that it runs.
+    all_terms = fit.partial_effects(data)  # TODO: For now just testing that it runs.
     expected = test_case.expected_predict_terms_structure
     assert all_terms.keys() == expected.keys()
 
@@ -386,7 +386,7 @@ def test_predict_terms_colsum_matches_predict(test_case: AbstractTestCase):
     predictions = pymgcv_gam.predict(
         data,
     )["fit"]
-    term_predictions = pymgcv_gam.predict_terms(data)
+    term_predictions = pymgcv_gam.partial_effects(data)
 
     for target in predictions.columns:
         term_fit = term_predictions[target]["fit"]
@@ -448,7 +448,7 @@ def test_intercept_and_se():
 
     model = ModelSpecification(
         {"y": [terms.Smooth("x0")]},
-        family_parameter_to_terms={"log_scale": [terms.Smooth("x1")]},
+        other_predictors={"log_scale": [terms.Smooth("x1")]},
         family="gaulss()",
     )
     fit = gam(model, data=data)
@@ -472,3 +472,30 @@ def test_intercept_and_se():
             )
 
     # TODO test model with no intercept
+
+
+@pytest.mark.parametrize("test_case", test_cases, ids=[type(t) for t in test_cases])
+def test_partial_effect_against_partial_effects(test_case: AbstractTestCase):
+    data = test_case.get_data()
+    fit = test_case.pymgcv_gam(data)
+
+    partial_effects = fit.partial_effects(data)
+
+    all_formulae = fit.model_specification.all_formulae
+    for target, terms in all_formulae.items():
+        for term in terms:
+            try:
+                effect = fit.partial_effect(target, term, data)
+            except NotImplementedError as e:
+                if str(e) != "":
+                    raise e
+                continue
+
+            for fit_or_se in ["fit", "se"]:
+                assert (
+                    pytest.approx(
+                        partial_effects[target][fit_or_se][term.simple_string()],
+                        abs=1e-3,
+                    )
+                    == effect[fit_or_se]
+                )

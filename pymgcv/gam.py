@@ -39,11 +39,11 @@ class ModelSpecification:
     """A class holding the specification of a GAM model.
 
     Args:
-        dependent_to_terms: A dictionary mapping dependent variable names
+        mean_predictors: A dictionary mapping dependent variable names
             to a list of ``TermLike`` objects used for modelling that
             variable. For univariate models (a single dependent variable), this is a
             dictionary with a single key-value pair.
-        family_parameter_to_terms: A dictionary mapping family parameter labels to
+        other_predictors: A dictionary mapping family parameter labels to
             a list of terms used to model the parameter. The keys of the dictionary
             are used solely as labels/names e.g. during predictions. The dictionary
             should match the order of the parameters in the mgcv family specified.
@@ -51,26 +51,21 @@ class ModelSpecification:
             R code.
     """
 
-    dependent_to_terms: dict[str, list[TermLike]]
-    family_parameter_to_terms: dict[str, list[TermLike]] = field(default_factory=dict)
+    mean_predictors: dict[str, list[TermLike]]
+    other_predictors: dict[str, list[TermLike]] = field(default_factory=dict)
     family: str = "gaussian"
 
     def __post_init__(self):
-        if len(self.dependent_to_terms) > 1 and self.family_parameter_to_terms:
+        if len(self.mean_predictors) > 1 and self.other_predictors:
             raise ValueError(  # TODO I assume this is possible in mgcv
                 "Simultaneous use of multiple dependent variables and predictors of "
                 "family parameters is not yet supported.",
             )
 
-    def _get_independent_names(self) -> list[str]:
-        """Returns all the independent variable names for a model."""
-        names = []
-        for terms in (
-            self.dependent_to_terms | self.family_parameter_to_terms
-        ).values():
-            for term in terms:
-                names.extend(term.varnames + (() if term.by is None else (term.by,)))
-        return names
+    @property
+    def all_formulae(self) -> dict[str, list[TermLike]]:
+        """All formulae (response and for family parameters)"""
+        return self.mean_predictors | self.other_predictors
 
     def _check_valid_data(
         self,
@@ -78,9 +73,7 @@ class ModelSpecification:
     ) -> None:
         """Checks data is compatible with the specification."""
         all_terms: list[TermLike] = []
-        for terms in (
-            self.dependent_to_terms | self.family_parameter_to_terms
-        ).values():
+        for terms in (self.all_formulae).values():
             all_terms.extend(terms)
 
         for term in all_terms:
@@ -101,19 +94,17 @@ class ModelSpecification:
                         will be supported as needed. For now, see
                         ``smooth_by_factor``.""",
                     )
+        # TODO error if any varnames clash with "intercept".
 
-    def _to_formulae(self) -> ro.Formula | list[ro.Formula]:
+    def _to_r_formulae(self) -> ro.Formula | list[ro.Formula]:
         formulae = []
-        for dependent, terms in self.dependent_to_terms.items():
+        for dependent, terms in self.mean_predictors.items():
             formulae.append(ro.Formula(_terms_to_formula_str(dependent, terms)))
 
-        for terms in self.family_parameter_to_terms.values():
+        for terms in self.other_predictors.values():
             formulae.append(ro.Formula(_terms_to_formula_str("", terms)))
 
-        if len(formulae) == 1:
-            return formulae[0]
-
-        return formulae
+        return formulae if len(formulae) > 1 else formulae[0]
 
 
 def _terms_to_formula_str(
@@ -146,8 +137,8 @@ class FittedGAM:
         predictions = rlistvec_to_dict(predictions)
 
         all_targets = (
-            self.model_specification.dependent_to_terms
-            | self.model_specification.family_parameter_to_terms
+            self.model_specification.mean_predictors
+            | self.model_specification.other_predictors
         ).keys()
         fit = pd.DataFrame(predictions["fit"], columns=list(all_targets))
         se = pd.DataFrame(predictions["se_fit"], columns=list(all_targets))
@@ -155,12 +146,12 @@ class FittedGAM:
         # TODO we assume 1 column for each linear predictor
         return pd.concat({"fit": fit, "se": se}, axis=1)
 
-    def predict_terms(
+    def partial_effects(
         self,
         data: pd.DataFrame,
     ) -> dict[str, pd.DataFrame]:
         # TODO way to filter terms?
-        """Compute predictions and standard errors.
+        """Compute partial effects and standard errors.
 
         The returned structure is a dictionary with keys matching the target
         variables (dependent variables of family parameters), and values are
@@ -186,12 +177,11 @@ class FittedGAM:
         )
         # Partition results based on formulas
         formulae = (
-            self.model_specification.dependent_to_terms
-            | self.model_specification.family_parameter_to_terms
+            self.model_specification.mean_predictors
+            | self.model_specification.other_predictors
         )
         results = {}
 
-        # mgcv doesn't include offset in predict terms, we will manually add it later
         formulae_without_offset = {
             k: [term for term in terms if not isinstance(term, Offset)]
             for k, terms in formulae.items()
@@ -219,20 +209,40 @@ class FittedGAM:
         for k, terms in formulae.items():
             for term in terms:
                 if isinstance(term, Offset):
-                    results[k].loc[:, ("fit", term.simple_string())] = data[
-                        term.varnames[0]
-                    ]
-                    results[k].loc[:, ("se", term.simple_string())] = 0
+                    results[k]["fit", term.simple_string()] = data[term.varnames[0]]
+                    results[k]["se", term.simple_string()] = 0
 
         # Add intercepts
         intercepts = _get_intercepts_and_se(self.rgam)
         formula_names = list(results.keys())
         for name, vals in intercepts.items():
             idx = 0 if name == "(Intercept)" else int(name.split(".")[-1])
-            results[formula_names[idx]].loc[:, ("fit", "intercept")] = vals["fit"]
-            results[formula_names[idx]].loc[:, ("se", "intercept")] = vals["se"]
+            formula_name = formula_names[idx]
+            results[formula_name]["fit", "intercept"] = vals["fit"]
+            results[formula_name]["se", "intercept"] = vals["se"]
 
-        return results
+        return {k: v.sort_index(axis=1) for k, v in results.items()}
+
+    def partial_effect(
+        self,
+        target: str,
+        term: TermLike,
+        data: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Compute the partial effect for a specific term.
+
+        Args:
+            target (str): The target variable (response variable name or
+                name given to family parameter).
+            term (TermLike): The term to compute the partial effect for.
+            data (pd.DataFrame): The data to compute the partial effect using.
+
+        Returns:
+            pd.DataFrame: Dataframe with columns "fit" (the effect) and "se"
+                (standard errors).
+        """
+        effect, se = term._partial_effect(data, self, target)
+        return pd.DataFrame({"fit": effect, "se": se})
 
     def summary(self) -> str:
         """Get the summary of the gam model.
@@ -272,7 +282,7 @@ def gam(
 
     return FittedGAM(
         mgcv.gam(
-            specification._to_formulae(),
+            specification._to_r_formulae(),
             data=data_to_rdf(data),
             family=ro.rl(specification.family),
         ),

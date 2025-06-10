@@ -4,8 +4,18 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
-from pymgcv.bases import BasisLike
+import numpy as np
+import pandas as pd
+from rpy2.robjects.packages import importr
 
+from pymgcv.bases import BasisLike
+from pymgcv.converters import data_to_rdf, to_py
+
+# TODO from pymgcv.gam import FittedGAM causes circular import
+
+mgcv = importr("mgcv")
+rbase = importr("base")
+rstats = importr("stats")
 # TODO: Not supporting 'sp' or 'pc' basis types.
 # TODO: 'xt' is not needed, as basis-related configuration will handle it.
 
@@ -48,6 +58,14 @@ class TermLike(Protocol):
         """
         ...
 
+    def _partial_effect(
+        self,
+        data: pd.DataFrame,
+        gam,
+        target: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Predict (partial effects) and standard errors for the term given data."""
+
 
 @dataclass
 class Linear(TermLike):
@@ -71,6 +89,25 @@ class Linear(TermLike):
     def simple_string(self, formula_idx: int = 0) -> str:
         idx = "" if formula_idx == 0 else f".{formula_idx}"
         return self.varnames[0] + idx
+
+    def _partial_effect(
+        self,
+        data: pd.DataFrame,
+        gam,
+        target: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        formula_idx = list(gam.model_specification.all_formulae.keys()).index(target)
+        mgcv_label = self.varnames[0]
+        if formula_idx != 0:
+            mgcv_label += f".{formula_idx}"
+        coef = rstats.coef(gam.rgam)
+        slope = to_py(coef.rx2[mgcv_label]).item()
+        data_array = data[self.varnames[0]].to_numpy()
+        param_idx = rbase.which(rbase.names(coef).ro == mgcv_label)
+        assert len(param_idx) == 1
+        variance = to_py(gam.rgam.rx2["Vp"].rx(param_idx, param_idx)).item()
+        se = np.abs(data_array) * np.sqrt(variance)
+        return data_array * slope, se
 
 
 @dataclass
@@ -108,13 +145,21 @@ class Interaction(TermLike):
         idx = "" if formula_idx == 0 else f".{formula_idx}"
         return ":".join(self.varnames) + idx
 
+    def _partial_effect(
+        self,
+        data: pd.DataFrame,
+        gam,
+        target: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        raise NotImplementedError()
+
 
 @dataclass
 class Smooth(TermLike):
     """Create a smooth term.
 
     Note that terms like ``Smooth("x1", "x2")`` are isotropic. This means for
-    example variables should be of similar scales. For scale invariant smoothing
+    example variables should be of similar scales/units. For scale invariant smoothing
     of multiple variables, see ``TensorSmooth``.
     """  # TODO properly reference TensorSmooth
 
@@ -176,6 +221,49 @@ class Smooth(TermLike):
             simple_string += f":{self.by}"
 
         return simple_string
+
+    def _partial_effect(
+        self,
+        data: pd.DataFrame,
+        gam,
+        target: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Predict (partial effect) and standard error for a smooth term."""
+        data = data.copy()
+        by = None if self.by is None else data.pop(self.by)
+        if self.by is not None:
+            by = data.pop(self.by)
+        formula_idx = list(gam.model_specification.all_formulae.keys()).index(target)
+        smooth_name = self.simple_string(formula_idx)
+        smooths = list(gam.rgam.rx2["smooth"])
+        labels = [smooth.rx2["label"][0] for smooth in smooths]
+        smooth = smooths[labels.index(smooth_name)]
+
+        required_cols = list(self.varnames)
+        if self.by is not None:
+            required_cols.append(self.by)
+
+        data = data[required_cols]
+
+        predict_mat = mgcv.PredictMat(smooth, data_to_rdf(data))
+        first = round(smooth.rx2["first.para"][0])
+        last = round(smooth.rx2["last.para"][0])
+        coefs = rstats.coef(gam.rgam)[(first - 1) : last]
+        pred = rbase.drop(predict_mat @ coefs)
+        # TODO factor by?
+        pred = pred if by is None else pred * by
+
+        # Compute SEs
+        covariance = rbase.as_matrix(
+            gam.rgam.rx2["Vp"].rx(rbase.seq(first, last), rbase.seq(first, last)),
+        )
+        se = rbase.sqrt(
+            rbase.rowSums(
+                (predict_mat @ covariance).ro * predict_mat,
+            ),
+        )
+        se = rbase.pmax(0, se)
+        return to_py(pred), to_py(se)
 
 
 def _sequence_to_rvec_str(seq: Sequence, converter: Callable[[Any], str] = str):
@@ -275,6 +363,14 @@ class TensorSmooth(TermLike):
             simple_string += ":" + self.by
         return simple_string
 
+    def _partial_effect(
+        self,
+        data: pd.DataFrame,
+        gam,
+        target: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        raise NotImplementedError()
+
 
 @dataclass
 class Offset(TermLike):
@@ -298,3 +394,12 @@ class Offset(TermLike):
         # mgcv doesn't include it as a parametric term e.g. in predict terms so we have
         # to special case it. Notice formula_idx not used because of this.
         return f"offset({self.varnames[0]})"
+
+    def _partial_effect(
+        self,
+        data: pd.DataFrame,
+        gam,
+        target: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        effect = data[self.varnames[0]].to_numpy()
+        return effect, np.zeros_like(effect)
