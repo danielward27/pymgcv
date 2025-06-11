@@ -10,6 +10,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib import rcParams
 from matplotlib.axes import Axes
 from rpy2.robjects.packages import importr
 
@@ -20,13 +21,15 @@ mgcViz = importr("mgcViz")
 
 
 def plot_1d(
+    response: str,
     term: terms.Linear | terms.Smooth,
     gam: FittedGAM,
     data: pd.DataFrame,
-    plot_fit_kwargs: dict[str, Any] | None = None,
-    plot_interval_kwargs: dict[str, Any] | None = None,
-    plot_partial_residual_kwargs: dict[str, Any] | None = None,
-    numeric_by_value: int | float = 1,
+    eval_density: int = 100,
+    n_standard_errors: int | float = 2,
+    plot_kwargs: dict[str, Any] | None = None,
+    fill_between_kwargs: dict[str, Any] | None = None,
+    scatter_kwargs: dict[str, Any] | None = None,
     ax: Axes | None = None,
 ) -> Axes:  # TODO data default to None
     """Plot 1D numeric terms (smooths or linear terms).
@@ -35,22 +38,30 @@ def plot_1d(
     by the "by" variable.
 
     Args:
+        response: The target variable.
         term: The term to plot.
         gam: The fitted gam model.
-        data: Data used for adding partial residuals.
-        plot_fit_kwargs: Argumnets passed to plotting of the line. Defaults to None.
-        plot_interval_kwargs: Arguments passed to plotting of the confidence interval
+        data: Data used for adding partial residuals and inferring the plot limits.
+        plot_kwargs: Argumnets passed to plotting of the line. Defaults to None.
+        fill_between_kwargs: Arguments passed to plotting of the confidence interval
             lines. Defaults to None.
-        plot_partial_residual_kwargs: Arguments passed to plotting of the partial
+        scatter_kwargs: Arguments passed to plotting of the partial
             residuals. Defaults to None.
         ax: Axes on to which the plot is applied. Defaults to None.
+        eval_density: Number of points to use for plotting the term. Defaults to 100.
     """
     ax = plt.gca() if ax is None else ax
-    plot_fit_kwargs = {} if plot_fit_kwargs is None else plot_fit_kwargs
-    plot_interval_kwargs = {} if plot_interval_kwargs is None else plot_interval_kwargs
-    plot_partial_residual_kwargs = (
-        {} if plot_partial_residual_kwargs is None else plot_partial_residual_kwargs
-    )
+    plot_kwargs = {} if plot_kwargs is None else plot_kwargs
+    fill_between_kwargs = {} if fill_between_kwargs is None else fill_between_kwargs
+    fill_between_kwargs.setdefault("alpha", 0.2)
+    scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
+    scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
+
+    if "c" not in plot_kwargs and "color" not in plot_kwargs:
+        plot_kwargs["color"] = "black"
+
+    if "c" not in fill_between_kwargs and "color" not in fill_between_kwargs:
+        fill_between_kwargs["color"] = "black"
 
     if len(term.varnames) != 1:
         raise ValueError(
@@ -58,121 +69,98 @@ def plot_1d(
         )
 
     x = data[term.varnames[0]]
-
-    # Add partial residuals first (better to be underneath)
-    partial_residuals = gam.partial_residuals(term, data)
-    color = plot_partial_residual_kwargs.get("color", "black")
-    ax.scatter(x, partial_residuals, color=color, **plot_partial_residual_kwargs)
-
-    # TODO again risky with different data types?
-    x0_linspace = np.linspace(x.min(), x.max(), num=100)
+    x0_linspace = np.linspace(x.min(), x.max(), num=eval_density)
     spaced_data = pd.DataFrame({term.varnames[0]: x0_linspace})
 
     if term.by is not None:
-        spaced_data[term.by] = 1
+        spaced_data[term.by] = 1  # TODO could interpret by numeric by as 2 dimensional?
 
-    pred = gam.predict_term(term, data)
-    ax.plot(x0_linspace, pred["fit"], **plot_fit_kwargs)
+    pred = gam.partial_effect(response, term, spaced_data)
+
+    # Add partial residuals
+    partial_residuals = gam.partial_residuals(response, term, data)
+    ax.scatter(x, partial_residuals, **scatter_kwargs)
 
     # Plot interval
-    color = plot_interval_kwargs.get(
-        "color",
-        ax.lines[-1].get_color(),
-    )  # Match previous line color
-    linestyle = plot_interval_kwargs.get("linestyle", "dotted")
+    ax.fill_between(
+        x0_linspace,
+        pred["fit"] - n_standard_errors * pred["se"],
+        pred["fit"] + n_standard_errors * pred["se"],
+        **fill_between_kwargs,
+    )
 
-    ax.plot(
-        x0_linspace,
-        pred["fit"] + 1.96 * pred["se"],
-        linestyle=linestyle,
-        color=color,
-        **plot_interval_kwargs,
-    )
-    ax.plot(
-        x0_linspace,
-        pred["fit"] - 1.96 * pred["se"],
-        linestyle=linestyle,
-        color=color,
-        **plot_interval_kwargs,
-    )
-    ax.set_xlabel(term.simple_string)
+    ax.plot(x0_linspace, pred["fit"], **plot_kwargs)
+    ax.set_xlabel(term.simple_string())
+    ax.set_ylabel(f"{response} (link scale)")
     return ax
 
 
-# TODO get default by saving limits in fitted_gam? Or by saving data in fitted_gam
-
-
 def plot_2d(
+    response: str,
     term: terms.Smooth | terms.TensorSmooth,
     gam: FittedGAM,
-    x1_lims: tuple[int, int],
-    x2_lims: tuple[int, int],
-    eval_points: int = 50,
-    ax: Axes | None = None,
+    data: pd.DataFrame,
+    eval_density: int = 50,
     colormesh_kwargs: dict | None = None,
+    scatter_kwargs: dict | None = None,
+    ax: Axes | None = None,
 ) -> Axes:
     """Plot smooth or tensor smooth terms of two variables as a colormesh.
 
     Args:
+        response: The name of the response variable.
         term: The term to plot.
         gam: The fitted gam model
-        density: _description_. Defaults to 50.
-        ax: _description_. Defaults to None.
-        colormesh_kwargs (dict | None, optional): _description_. Defaults to None.
-
-    Raises:
-        ValueError: _description_
-
-    Returns:
-        _type_: _description_
+        density: The density of the points (the square root of the evaluations).
+            Defaults to 50.
+        ax: Matplotlib axes to use. Defaults to None.
+        colormesh_kwargs (dict | None, optional): Any keyword arguments passed to
+            ``pcolormesh``. Defaults to None.
+        scatter_kwargs (dict | None, optional): Any keyword arguments passed to
+            ``matplotlib.pyplot.scatter`` for plotting the data points.
     """
     ax = plt.gca() if ax is None else ax
     colormesh_kwargs = {} if colormesh_kwargs is None else colormesh_kwargs
+    scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
+    scatter_kwargs.setdefault("color", "black")
+    scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
 
     if len(term.varnames) != 2:
         raise ValueError(
             f"Expected term to be a function of a two variables, got {term.varnames}",
         )
-
-    x1_mesh, x2_mesh = np.meshgrid(
-        np.linspace(*x1_lims, eval_points),
-        np.linspace(*x2_lims, eval_points),
+    x0_lims = (data[term.varnames[0]].min(), data[term.varnames[0]].max())
+    x1_lims = (data[term.varnames[1]].min(), data[term.varnames[1]].max())
+    x0_mesh, x1_mesh = np.meshgrid(
+        np.linspace(*x0_lims, eval_density),
+        np.linspace(*x1_lims, eval_density),
     )
 
-    pred = gam.predict_term(
+    pred = gam.partial_effect(
+        response,
         term,
         data=pd.DataFrame(
-            {term.varnames[0]: x1_mesh.ravel(), term.varnames[1]: x2_mesh.ravel()},
-            index=x1_mesh.ravel(),
+            {term.varnames[0]: x0_mesh.ravel(), term.varnames[1]: x1_mesh.ravel()},
+            index=x0_mesh.ravel(),
         ),
     )["fit"]
     mesh = ax.pcolormesh(
+        x0_mesh,
         x1_mesh,
-        x2_mesh,
-        pred.reshape(x1_mesh.shape),
-        cmap=colormesh_kwargs.get("cmap", "RdBu"),
+        pred.to_numpy().reshape(x0_mesh.shape),
         **colormesh_kwargs,
     )
     ax.figure.colorbar(mesh, ax=ax)
+
+    ax.scatter(
+        data[term.varnames[0]],
+        data[term.varnames[1]],
+        **scatter_kwargs,
+    )
+
     ax.set_xlabel(term.varnames[0])
     ax.set_ylabel(term.varnames[1])
     return ax
-
-
-# def get_plot_data(
-#     *,
-#     idx: int,  # TODO name better imo
-#     fitted_terms: pd.DataFrame,
-#     gam: FittedGAM,
-#     lims: tuple[int, int] | tuple[tuple[int, int], tuple[int, int]],
-# ):
-#     data = mgcViz.get_data(
-#         mgcViz.sm(gam.rgam, idx),
-#         fitted_terms=data_to_rdf(fitted_terms),
-#         gam=gam.rgam,
-#         lims=ro.vectors.FloatVector(lims),
-#     )
-#     return data
 
 
 # def plot_1d(
