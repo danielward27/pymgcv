@@ -12,31 +12,13 @@ from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
 from pymgcv.gam import (
     FittedGAM,
     ModelSpecification,
-    _get_intercepts_and_se,
-    _terms_to_formula_str,
     gam,
 )
+from pymgcv.rgam_utils import _get_intercepts_and_se
 from pymgcv.term_utils import smooth_by_factor
-from pymgcv.terms import Linear, Smooth
+from pymgcv.terms import Smooth
 
 mgcv = ro.packages.importr("mgcv")  # type: ignore
-
-
-def test_terms_to_formula_str():
-    assert (
-        _terms_to_formula_str(
-            dependent="y",
-            terms=(Linear("x"),),
-        )
-        == "y~x"
-    )
-    assert (
-        _terms_to_formula_str(
-            dependent="y",
-            terms=(Linear("x0"), Smooth("x1")),
-        )
-        == "y~x0+s(x1)"
-    )
 
 
 class AbstractTestCase(ABC):
@@ -93,9 +75,10 @@ def get_test_cases():
         expected_predict_terms_structure = {"y": ["s(x)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
+            x = np.random.uniform(0, 1, 200)
             return pd.DataFrame(
                 {
-                    "x": np.random.uniform(0, 1, 200),
+                    "x": x,
                     "y": np.random.normal(0, 0.2, 200),
                 },
             )
@@ -159,6 +142,32 @@ def get_test_cases():
                         Smooth("group", bs=RandomEffect()),
                     ],
                 },
+            )
+            return gam(model, data=data)
+
+    class SingleFactorInteractionGAM(AbstractTestCase):
+        mgcv_call = """
+            gam(y~a:b, data=data)
+            """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {"y": ["a:b", "intercept"]}
+
+        def get_data(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "a": pd.Categorical(
+                        np.random.choice(["A", "B"], size=200, replace=True),
+                    ),
+                    "b": pd.Categorical(
+                        np.random.choice(["C", "D", "E"], size=200, replace=True),
+                    ),
+                    "y": np.random.uniform(0, 1, size=200),
+                },
+            )
+
+        def pymgcv_gam(self, data) -> FittedGAM:
+            model = ModelSpecification(
+                {"y": [terms.Interaction("a", "b")]},
             )
             return gam(model, data=data)
 
@@ -341,6 +350,7 @@ def get_test_cases():
         SingleSmoothGAM(),
         SingleTensorSmoothGAM(),
         SingleRandomEffect(),
+        SingleFactorInteractionGAM(),
         SimpleGAM(),
         MultivariateMultiFormula(),
         LocationScaleMultiFormula(),
@@ -366,21 +376,21 @@ def test_pymgcv_mgcv_equivilance(test_case: AbstractTestCase):
 
 
 @pytest.mark.parametrize("test_case", test_cases, ids=[type(t) for t in test_cases])
-def test_predict_terms(test_case: AbstractTestCase):
+def test_predict_terms_structure(test_case: AbstractTestCase):
     data = test_case.get_data()
     fit = test_case.pymgcv_gam(data)
     all_terms = fit.partial_effects(data)  # TODO: For now just testing that it runs.
     expected = test_case.expected_predict_terms_structure
-    assert all_terms.keys() == expected.keys()
+    assert sorted(all_terms.keys()) == sorted(expected.keys())
 
     for term_name, fit_and_se in all_terms.items():
         for fit_or_se in ["fit", "se"]:
             actual = fit_and_se[fit_or_se].columns.values.tolist()
-            assert actual == expected[term_name]
+            assert sorted(actual) == sorted(expected[term_name])
 
 
 @pytest.mark.parametrize("test_case", test_cases, ids=[type(t) for t in test_cases])
-def test_predict_terms_colsum_matches_predict(test_case: AbstractTestCase):
+def test_partial_effects_colsum_matches_predict(test_case: AbstractTestCase):
     data = test_case.get_data()
     pymgcv_gam = test_case.pymgcv_gam(data)
     predictions = pymgcv_gam.predict(
@@ -495,7 +505,7 @@ def test_partial_effect_against_partial_effects(test_case: AbstractTestCase):
                 assert (
                     pytest.approx(
                         partial_effects[target][fit_or_se][term.simple_string()],
-                        abs=1e-3,
+                        abs=1e-6,
                     )
                     == effect[fit_or_se]
                 )

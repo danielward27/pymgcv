@@ -6,6 +6,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 import pandas as pd
+import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
 from pymgcv.bases import BasisLike
@@ -97,17 +98,20 @@ class Linear(TermLike):
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
         formula_idx = list(gam.model_specification.all_formulae.keys()).index(target)
-        mgcv_label = self.varnames[0]
-        if formula_idx != 0:
-            mgcv_label += f".{formula_idx}"
+        mgcv_label = self.simple_string(formula_idx)
         coef = rstats.coef(gam.rgam)
         slope = to_py(coef.rx2[mgcv_label]).item()
         data_array = data[self.varnames[0]].to_numpy()
-        param_idx = rbase.which(rbase.names(coef).ro == mgcv_label)
+        param_idx = rbase.which(coef.names.ro == mgcv_label)
         assert len(param_idx) == 1
-        variance = to_py(gam.rgam.rx2["Vp"].rx(param_idx, param_idx)).item()
+        variance = to_py(
+            gam.rgam.rx2["Vp"].rx(param_idx, param_idx),
+        ).item()  # TODO not sure this is actually correct?
         se = np.abs(data_array) * np.sqrt(variance)
         return data_array * slope, se
+
+
+# TODO can above logic be comined with interaction?
 
 
 @dataclass
@@ -151,7 +155,24 @@ class Interaction(TermLike):
         gam,
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
-        raise NotImplementedError()
+        data = data[list(self.varnames)]
+        formula_idx = list(gam.model_specification.all_formulae.keys()).index(target)
+        predict_mat = rstats.model_matrix(
+            ro.Formula(f"~{str(self)}-1"),
+            data=data_to_rdf(data),
+        )
+        coef_names = rbase.colnames(predict_mat)
+        post_fix = "" if formula_idx == 0 else f".{formula_idx}"
+        all_coefs = rstats.coef(gam.rgam)
+        coef_names = rbase.paste0(rbase.colnames(predict_mat), post_fix)
+        coefs = all_coefs.rx(coef_names)
+        fit = predict_mat @ coefs
+        cov = gam.rgam.rx2["Vp"]
+        cov.rownames = all_coefs.names
+        cov.colnames = all_coefs.names
+        subcov = cov.rx(coef_names, coef_names)
+        se = rbase.sqrt(rbase.rowSums((predict_mat @ subcov).ro * predict_mat))
+        return to_py(fit).squeeze(axis=-1), to_py(se)
 
 
 @dataclass
@@ -369,7 +390,42 @@ class TensorSmooth(TermLike):
         gam,
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
-        raise NotImplementedError()
+        """Predict (partial effect) and standard error for a smooth term."""
+        data = data.copy()
+        by = None if self.by is None else data.pop(self.by)
+        if self.by is not None:
+            by = data.pop(self.by)
+        formula_idx = list(gam.model_specification.all_formulae.keys()).index(target)
+        smooth_name = self.simple_string(formula_idx)
+        smooths = list(gam.rgam.rx2["smooth"])
+        labels = [smooth.rx2["label"][0] for smooth in smooths]
+        smooth = smooths[labels.index(smooth_name)]
+
+        required_cols = list(self.varnames)
+        if self.by is not None:
+            required_cols.append(self.by)
+
+        data = data[required_cols]
+
+        predict_mat = mgcv.PredictMat(smooth, data_to_rdf(data))
+        first = round(smooth.rx2["first.para"][0])
+        last = round(smooth.rx2["last.para"][0])
+        coefs = rstats.coef(gam.rgam)[(first - 1) : last]
+        pred = rbase.drop(predict_mat @ coefs)
+        # TODO factor by?
+        pred = pred if by is None else pred * by
+
+        # Compute SEs
+        covariance = rbase.as_matrix(
+            gam.rgam.rx2["Vp"].rx(rbase.seq(first, last), rbase.seq(first, last)),
+        )
+        se = rbase.sqrt(
+            rbase.rowSums(
+                (predict_mat @ covariance).ro * predict_mat,
+            ),
+        )
+        se = rbase.pmax(0, se)
+        return to_py(pred), to_py(se)
 
 
 @dataclass

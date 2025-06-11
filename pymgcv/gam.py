@@ -1,6 +1,6 @@
 from collections.abc import Iterable
-from copy import deepcopy
 from dataclasses import dataclass, field
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -8,6 +8,7 @@ import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
+from pymgcv.rgam_utils import _get_intercepts_and_se
 from pymgcv.terms import Offset, TermLike
 
 mgcv = importr("mgcv")
@@ -16,22 +17,6 @@ rutils = importr("utils")
 rstats = importr("stats")
 
 # TODO, passing arguments to family?
-
-
-def _get_intercepts_and_se(rgam):
-    coef = rgam.rx2("coefficients")
-    vp_diag = np.diag(np.array(rgam.rx2("Vp")))
-    coef_names = list(coef.names)
-    assert len(coef_names) == len(vp_diag)
-    intercept_names = [n for n in coef_names if n.startswith("(Intercept)")]
-
-    return {
-        name: {
-            "fit": coef[coef_names.index(name)],
-            "se": np.sqrt(vp_diag[coef_names.index(name)]).item(),
-        }
-        for name in intercept_names
-    }
 
 
 @dataclass
@@ -61,6 +46,19 @@ class ModelSpecification:
                 "Simultaneous use of multiple dependent variables and predictors of "
                 "family parameters is not yet supported.",
             )
+
+        all_term_names = set()
+        for terms in self.all_formulae.values():
+            for term in terms:
+                name = term.simple_string()
+                if name in all_term_names:
+                    raise ValueError(
+                        f"Duplicate term name '{name}' found in formulae. "
+                        "pymgcv does not support this. If you believe to have "
+                        "a legitimate use case for this, try duplicating the term "
+                        "and renaming it.",
+                    )
+                all_term_names.add(term.simple_string())
 
     @property
     def all_formulae(self) -> dict[str, list[TermLike]]:
@@ -94,25 +92,18 @@ class ModelSpecification:
                         will be supported as needed. For now, see
                         ``smooth_by_factor``.""",
                     )
+
         # TODO error if any varnames clash with "intercept".
 
     def _to_r_formulae(self) -> ro.Formula | list[ro.Formula]:
         formulae = []
         for dependent, terms in self.mean_predictors.items():
-            formulae.append(ro.Formula(_terms_to_formula_str(dependent, terms)))
+            formulae.append(ro.Formula(f"{dependent}~{'+'.join(map(str, terms))}"))
 
         for terms in self.other_predictors.values():
-            formulae.append(ro.Formula(_terms_to_formula_str("", terms)))
+            formulae.append(ro.Formula(f"~{'+'.join(map(str, terms))}"))
 
         return formulae if len(formulae) > 1 else formulae[0]
-
-
-def _terms_to_formula_str(
-    dependent: str,
-    terms: Iterable[TermLike],
-) -> str:
-    """Convert a list of variables to an mgcv style formula."""
-    return f"{dependent}~" + "+".join(map(str, terms))
 
 
 @dataclass
@@ -127,7 +118,11 @@ class FittedGAM:
         self,
         data: pd.DataFrame,
     ):
-        """Compute predictions and standard errors."""
+        """Compute predictions and standard errors.
+
+        Predictions are returned on the link scale (i.e. the result of the linear
+        predictor).
+        """
         self.model_specification._check_valid_data(data)
         predictions = rstats.predict(
             self.rgam,
@@ -136,12 +131,9 @@ class FittedGAM:
         )
         predictions = rlistvec_to_dict(predictions)
 
-        all_targets = (
-            self.model_specification.mean_predictors
-            | self.model_specification.other_predictors
-        ).keys()
-        fit = pd.DataFrame(predictions["fit"], columns=list(all_targets))
-        se = pd.DataFrame(predictions["se_fit"], columns=list(all_targets))
+        all_targets = self.model_specification.all_formulae.keys()
+        fit = pd.DataFrame(predictions["fit"], columns=pd.Index(all_targets))
+        se = pd.DataFrame(predictions["se_fit"], columns=pd.Index(all_targets))
 
         # TODO we assume 1 column for each linear predictor
         return pd.concat({"fit": fit, "se": se}, axis=1)
@@ -154,10 +146,16 @@ class FittedGAM:
         """Compute partial effects and standard errors.
 
         The returned structure is a dictionary with keys matching the target
-        variables (dependent variables of family parameters), and values are
+        variables (dependent variables or family parameters), and values are
         hierarcahical dataframes, with two top level columns "se" and "fit",
         and the lower level columns representing the components of the linear
         predictor (including offsets and intercepts).
+
+        Summing over the columns of the "fit" dataframe will match the values
+        produced by the `predict` method, i.e.
+        ```
+        partial_effects[target]["fit"].sum(axis=1)
+        ```
 
         """
         predictions = rstats.predict(
@@ -176,10 +174,7 @@ class FittedGAM:
             columns=to_py(rbase.colnames(predictions.rx2["se.fit"])),
         )
         # Partition results based on formulas
-        formulae = (
-            self.model_specification.mean_predictors
-            | self.model_specification.other_predictors
-        )
+        formulae = self.model_specification.all_formulae
         results = {}
 
         formulae_without_offset = {
@@ -187,20 +182,15 @@ class FittedGAM:
             for k, terms in formulae.items()
         }
         for i, (name, terms) in enumerate(formulae_without_offset.items()):
-            names_with_idx = [term.simple_string(i) for term in terms]
-            names = [term.simple_string() for term in terms]
-            rename = {
-                with_idx: without
-                for with_idx, without in zip(names_with_idx, names, strict=True)
-            }
+            rename = {term.simple_string(i): term.simple_string() for term in terms}
             results[name] = pd.concat(
                 {
-                    "fit": fit[names_with_idx]
-                    .rename(columns=rename, errors="raise")[names]
-                    .copy(),
-                    "se": se[names_with_idx]
-                    .rename(columns=rename, errors="raise")[names]
-                    .copy(),
+                    "fit": fit.rename(columns=rename, errors="raise")[
+                        rename.values()
+                    ].copy(),
+                    "se": se.rename(columns=rename, errors="raise")[
+                        rename.values()
+                    ].copy(),
                 },
                 axis=1,
             )
@@ -231,6 +221,9 @@ class FittedGAM:
     ) -> pd.DataFrame:
         """Compute the partial effect for a specific term.
 
+        For a single term, this provides a more efficient implementation than
+        computing for the full model.
+
         Args:
             target (str): The target variable (response variable name or
                 name given to family parameter).
@@ -243,6 +236,24 @@ class FittedGAM:
         """
         effect, se = term._partial_effect(data, self, target)
         return pd.DataFrame({"fit": effect, "se": se})
+
+    def partial_residuals(
+        self,
+        target: str,  # TODO dependent/resonse
+        term: TermLike,
+        data: pd.DataFrame,
+    ):
+        """Compute the partial residuals for a specific term.
+
+        Args:
+            target (str): The target variable (response variable) name.
+            term (TermLike): The term to compute the partial effect for.
+            data (pd.DataFrame): The data to compute the partial effect using.
+        """
+        partial_effect = self.partial_effect(target, term, data)["fit"]
+        fit = self.predict(data)["fit"][target]
+        y = data[target]
+        return (y - fit) + partial_effect
 
     def summary(self) -> str:
         """Get the summary of the gam model.
@@ -262,9 +273,22 @@ class FittedGAM:
         return rlistvec_to_dict(self.rgam)["coefficients"]
 
 
+FitMethodOptions = Literal[
+    "GCV.Cp",
+    "GACV.Cp",
+    "NCV",
+    "QNCV",
+    "REML",
+    "P-REML",
+    "ML",
+    "P-ML",
+]
+
+
 def gam(
     specification: ModelSpecification,
     data: pd.DataFrame,
+    method: FitMethodOptions = "GCV.Cp",
 ) -> FittedGAM:
     """Fit a gam model.
 
@@ -277,15 +301,27 @@ def gam(
         The fitted gam model.
     """
     # TODO missing options.
-    # TODO families as functions? e.g. gaussian()
     specification._check_valid_data(data)
+    _check_valid_varnames(data.columns)
 
     return FittedGAM(
         mgcv.gam(
             specification._to_r_formulae(),
             data=data_to_rdf(data),
             family=ro.rl(specification.family),
+            method=method,
         ),
-        data=deepcopy(data),
+        data=data.copy(),
         model_specification=specification,
     )
+
+
+def _check_valid_varnames(varnames: Iterable[str]):
+    disallowed = ["Intercept", "intercept", "s(", "te(", "ti(", "t2(", ":", "*"]
+
+    for var in varnames:
+        if any(dis in var for dis in disallowed):
+            raise ValueError(
+                f"Variable name '{var}' risks clashing with terms generated by mgcv, "
+                "please rename this variable.",
+            )
