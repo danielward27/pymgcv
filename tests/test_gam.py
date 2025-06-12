@@ -395,12 +395,12 @@ def test_partial_effects_colsum_matches_predict(test_case: AbstractTestCase):
     pymgcv_gam = test_case.pymgcv_gam(data)
     predictions = pymgcv_gam.predict(
         data,
-    )["fit"]
+    )
     term_predictions = pymgcv_gam.partial_effects(data)
 
-    for target in predictions.columns:
+    for target, pred in predictions.items():
         term_fit = term_predictions[target]["fit"]
-        assert pytest.approx(predictions[target]) == term_fit.sum(axis=1)
+        assert pytest.approx(pred["fit"]) == term_fit.sum(axis=1)
 
 
 def test_categorical_by_variables_not_supported():

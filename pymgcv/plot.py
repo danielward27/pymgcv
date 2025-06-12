@@ -1,8 +1,18 @@
-"""Plotting utility functions for gam models.
+"""Plotting utilities for visualizing GAM models and their components.
 
-We will likely refactor this, e.g. to dispatch using structural subtyping of terms,
-or be a method of the terms, but for now this gets us started. Only plotting of
-coninuous terms is currently supported.
+This module provides functions to create diagnostic and interpretive plots for
+GAM models, including:
+- 1D plots for univariate smooth terms with confidence intervals
+- 2D plots for bivariate smooth terms as colored surfaces
+- Partial residual plots for model diagnostics
+- Integration with matplotlib for custom styling
+
+The plotting functions are designed to work seamlessly with the term types
+defined in pymgcv.terms and support various customization options for
+publication-ready figures.
+
+Currently supports plotting of continuous terms. Categorical and factor
+smooth terms may be added in future versions.
 """
 
 from typing import Any
@@ -31,24 +41,65 @@ def plot_1d(
     fill_between_kwargs: dict[str, Any] | None = None,
     scatter_kwargs: dict[str, Any] | None = None,
     ax: Axes | None = None,
-) -> Axes:  # TODO data default to None
-    """Plot 1D numeric terms (smooths or linear terms).
+) -> Axes:
+    """Plot 1D smooth or linear terms with confidence intervals and partial residuals.
 
-    Note, "by" variables are imputed as 1, i.e. showing the term prior to scaling
-    by the "by" variable.
+    Creates a comprehensive plot showing:
+    - The estimated smooth function or linear relationship
+    - Confidence intervals around the estimate
+    - Partial residuals as scatter points for diagnostic purposes
+
+    This function is essential for understanding individual term contributions
+    and assessing model fit quality.
 
     Args:
-        response: The target variable.
-        term: The term to plot.
-        gam: The fitted gam model.
-        data: Data used for adding partial residuals and inferring the plot limits.
-        plot_kwargs: Argumnets passed to plotting of the line. Defaults to None.
-        fill_between_kwargs: Arguments passed to plotting of the confidence interval
-            lines. Defaults to None.
-        scatter_kwargs: Arguments passed to plotting of the partial
-            residuals. Defaults to None.
-        ax: Axes on to which the plot is applied. Defaults to None.
-        eval_density: Number of points to use for plotting the term. Defaults to 100.
+        response: Name of the response variable from the model specification.
+        term: The model term to plot. Must be a univariate term (single variable).
+        gam: Fitted GAM model containing the term to plot.
+        data: DataFrame used for plotting partial residuals and determining
+            axis limits. Should typically be the training data.
+        eval_density: Number of evaluation points along the variable range
+            for plotting the smooth curve. Higher values give smoother curves
+            but increase computation time. Default is 100.
+        n_standard_errors: Number of standard errors for confidence intervals.
+            Common values: 1 (≈68% CI), 1.96 (95% CI), 2 (≈95% CI). Default is 2.
+        plot_kwargs: Keyword arguments passed to matplotlib.pyplot.plot() for
+            the main curve. Useful for controlling color, line style, etc.
+        fill_between_kwargs: Keyword arguments passed to matplotlib.pyplot.fill_between()
+            for the confidence interval band. Default alpha=0.2.
+        scatter_kwargs: Keyword arguments passed to matplotlib.pyplot.scatter()
+            for partial residuals. Default point size is reduced for clarity.
+        ax: Matplotlib Axes object to plot on. If None, uses current axes.
+
+    Returns:
+        The matplotlib Axes object with the plot.
+
+    Raises:
+        ValueError: If the term has more than one variable (not univariate).
+
+    Examples:
+        ```python
+        import matplotlib.pyplot as plt
+        from pymgcv.plot import plot_1d
+
+        # Basic plot
+        fig, ax = plt.subplots()
+        plot_1d('y', Smooth('x'), model, data, ax=ax)
+        plt.show()
+
+        # Customized plot
+        plot_1d('y', Smooth('x'), model, data,
+                eval_density=200,  # Higher resolution
+                n_standard_errors=1.96,  # 95% CI
+                plot_kwargs={'color': 'blue', 'linewidth': 2},
+                fill_between_kwargs={'color': 'lightblue', 'alpha': 0.3},
+                scatter_kwargs={'color': 'red', 'alpha': 0.5})
+        ```
+
+    Note:
+        For terms with 'by' variables, the by variable is set to 1 during
+        evaluation, showing the term's effect before scaling by the by variable.
+        This allows visualization of the underlying functional form.
     """
     ax = plt.gca() if ax is None else ax
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
@@ -90,8 +141,8 @@ def plot_1d(
     )
 
     ax.plot(x0_linspace, pred["fit"], **plot_kwargs)
-    ax.set_xlabel(term.simple_string())
-    ax.set_ylabel(f"{response} (link scale)")
+    ax.set_xlabel(term.varnames[0])
+    ax.set_ylabel(f"partial effect: {term.simple_string()}")
     return ax
 
 
@@ -105,19 +156,65 @@ def plot_2d(
     scatter_kwargs: dict | None = None,
     ax: Axes | None = None,
 ) -> Axes:
-    """Plot smooth or tensor smooth terms of two variables as a colormesh.
+    """Plot 2D smooth surfaces as colored mesh plots with data overlay.
+
+    Creates a comprehensive 2D visualization showing:
+    - The estimated smooth surface as a colored mesh
+    - Original data points overlaid as scatter plot
+    - Automatic colorbar for interpreting surface values
+    - Proper axis labels from variable names
+
+    This function is essential for understanding bivariate relationships
+    and interactions between two continuous variables.
 
     Args:
-        response: The name of the response variable.
-        term: The term to plot.
-        gam: The fitted gam model
-        density: The density of the points (the square root of the evaluations).
-            Defaults to 50.
-        ax: Matplotlib axes to use. Defaults to None.
-        colormesh_kwargs (dict | None, optional): Any keyword arguments passed to
-            ``pcolormesh``. Defaults to None.
-        scatter_kwargs (dict | None, optional): Any keyword arguments passed to
-            ``matplotlib.pyplot.scatter`` for plotting the data points.
+        response: Name of the response variable from the model specification.
+        term: The bivariate term to plot. Must have exactly two variables.
+            Can be Smooth('x1', 'x2') or TensorSmooth('x1', 'x2').
+        gam: Fitted GAM model containing the term to plot.
+        data: DataFrame containing the variables for determining plot range
+            and showing data points. Should typically be the training data.
+        eval_density: Number of evaluation points along each axis, creating
+            an eval_density × eval_density grid. Higher values give smoother
+            surfaces but increase computation time. Default is 50.
+        colormesh_kwargs: Keyword arguments passed to matplotlib.pyplot.pcolormesh()
+            for the surface plot. Useful for controlling colormap, shading, etc.
+        scatter_kwargs: Keyword arguments passed to matplotlib.pyplot.scatter()
+            for the data points overlay. Default color is black with small points.
+        ax: Matplotlib Axes object to plot on. If None, uses current axes.
+
+    Returns:
+        The matplotlib Axes object with the plot, allowing further customization.
+
+    Raises:
+        ValueError: If the term doesn't have exactly two variables.
+
+    Examples:
+        ```python
+        import matplotlib.pyplot as plt
+        from pymgcv.plot import plot_2d
+
+        # Basic 2D surface plot
+        fig, ax = plt.subplots(figsize=(10, 8))
+        plot_2d('y', TensorSmooth('x1', 'x2'), model, data, ax=ax)
+        plt.show()
+
+        # Customized surface plot
+        plot_2d('y', Smooth('longitude', 'latitude'), model, data,
+                eval_density=100,  # High resolution
+                colormesh_kwargs={'cmap': 'RdBu', 'shading': 'gouraud'},
+                scatter_kwargs={'alpha': 0.6, 's': 20, 'c': 'white'})
+
+        # Multiple subplots for comparison
+        fig, axes = plt.subplots(1, 2, figsize=(15, 6))
+        plot_2d('y1', TensorSmooth('x1', 'x2'), model1, data, ax=axes[0])
+        plot_2d('y2', TensorSmooth('x1', 'x2'), model2, data, ax=axes[1])
+        ```
+
+    Note:
+        The function automatically adds a colorbar to interpret the surface values.
+        The colorbar represents the partial effect of the term (contribution to
+        the linear predictor on the link scale).
     """
     ax = plt.gca() if ax is None else ax
     colormesh_kwargs = {} if colormesh_kwargs is None else colormesh_kwargs

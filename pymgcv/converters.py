@@ -1,4 +1,13 @@
-"""More convenient versions."""
+"""Data conversion utilities for Python-R interoperability.
+
+This module provides convenient functions for converting data between Python
+and R representations, particularly for use with rpy2. It handles the conversion
+of pandas DataFrames to R data frames and various other Python objects to their
+R equivalents, with proper handling of numpy arrays and pandas-specific features.
+
+The conversions are essential for seamless integration with R's mgcv library
+while maintaining pythonic data structures on the Python side.
+"""
 
 from collections.abc import Iterable
 
@@ -11,21 +20,93 @@ base = importr("base")
 
 
 def to_rpy(x):
-    """Convert python object to rpy."""
+    """Convert Python object to R object using rpy2.
+
+    Handles automatic conversion of pandas DataFrames, numpy arrays, and
+    other Python objects to their R equivalents using the appropriate
+    rpy2 converters.
+
+    Args:
+        x: Python object to convert (DataFrame, array, list, etc.)
+
+    Returns:
+        R object equivalent of the input, ready for use in R function calls
+
+    Examples:
+        ```python
+        import pandas as pd
+        import numpy as np
+
+        # Convert DataFrame
+        df = pd.DataFrame({'x': [1, 2, 3], 'y': [4, 5, 6]})
+        r_df = to_rpy(df)
+
+        # Convert numpy array
+        arr = np.array([1, 2, 3])
+        r_vec = to_rpy(arr)
+        ```
+    """
     with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
         return ro.conversion.get_conversion().py2rpy(x)
 
 
 def to_py(x):
-    """Convert rpy object to python."""
+    """Convert R object to Python object using rpy2.
+
+    Handles automatic conversion of R data structures back to their Python
+    equivalents, including R data frames to pandas DataFrames and R vectors
+    to numpy arrays.
+
+    Args:
+        x: R object to convert (data.frame, vector, list, etc.)
+
+    Returns:
+        Python object equivalent of the input
+
+    Examples:
+        ```python
+        # Convert R vector to numpy array
+        r_vector = ro.IntVector([1, 2, 3])
+        py_array = to_py(r_vector)  # Returns numpy array
+
+        # Convert R data frame to pandas DataFrame
+        r_df = robjects.r('data.frame(x=1:3, y=4:6)')
+        py_df = to_py(r_df)  # Returns pandas DataFrame
+        ```
+    """
     with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
         return ro.conversion.get_conversion().rpy2py(x)
 
 
 def rlistvec_to_dict(x: ro.ListVector) -> dict:
-    """Convert a list vector to a dict, with conversion using to_py.
+    """Convert R ListVector to Python dictionary with pythonic naming.
 
-    Dots in names are replaced with underscores, to promote more pythonic naming.
+    Converts an R named list (ListVector) to a Python dictionary, with each
+    element converted to appropriate Python types. Dots in R names are replaced
+    with underscores to follow Python naming conventions.
+
+    Args:
+        x: R ListVector with named elements
+
+    Returns:
+        Dictionary with string keys (dots replaced with underscores) and
+        values converted to Python equivalents
+
+    Raises:
+        ValueError: If the ListVector contains duplicate names, which would
+            create an invalid dictionary
+
+    Examples:
+        ```python
+        # R list with elements: $coef, $fitted.values, $residuals
+        r_list = robjects.r('list(coef=1:3, fitted.values=4:6, residuals=7:9)')
+        py_dict = rlistvec_to_dict(r_list)
+        # Returns: {'coef': array([1,2,3]), 'fitted_values': array([4,5,6]), ...}
+        ```
+
+    Note:
+        This function is particularly useful for converting mgcv model output,
+        which often contains lists with R-style naming conventions.
     """
     if len(x.names) != len(set(x.names)):
         raise ValueError(
@@ -39,12 +120,47 @@ def data_to_rdf(
     data: pd.DataFrame,
     as_array_prefixes: Iterable[str] = (),
 ) -> ro.vectors.DataFrame:
-    """Convert pandas dataframe to an rpy2 dataframe.
+    """Convert pandas DataFrame to R data.frame for use with mgcv.
+
+    Performs specialized conversion of pandas DataFrames to R data.frames
+    with handling for functional data and other mgcv-specific requirements.
+    Certain columns can be combined into arrays for functional smooth terms.
 
     Args:
-    data: pandas dataframe to convert.
-    as_array_prefixes: prefixes of columns to combine into arrays, which
-        e.g. are interpreted as functional effects by mgcv.
+        data: Pandas DataFrame to convert. Must contain only data types
+            that can be meaningfully converted to R.
+        as_array_prefixes: Prefixes of column names to group into arrays.
+            Columns matching these prefixes will be combined into R arrays,
+            which mgcv can interpret as functional data for specialized
+            smooth terms.
+
+    Returns:
+        R data.frame object ready for use with mgcv functions
+
+    Raises:
+        TypeError: If input is not a pandas DataFrame
+
+    Examples:
+        ```python
+        import pandas as pd
+
+        # Basic conversion
+        df = pd.DataFrame({'x': [1, 2, 3], 'y': [4, 5, 6]})
+        r_df = data_to_rdf(df)
+
+        # With functional data (columns func_1, func_2, func_3 -> func array)
+        func_df = pd.DataFrame({
+            'x': [1, 2, 3],
+            'func_1': [0.1, 0.2, 0.3],
+            'func_2': [0.4, 0.5, 0.6],
+            'func_3': [0.7, 0.8, 0.9]
+        })
+        r_df = data_to_rdf(func_df, as_array_prefixes=['func'])
+        ```
+
+    Note:
+        This function is specifically designed for mgcv compatibility and
+        handles edge cases that generic pandas-to-R conversion might miss.
     """
     if not isinstance(data, pd.DataFrame):
         raise TypeError("Data must be a pandas DataFrame.")

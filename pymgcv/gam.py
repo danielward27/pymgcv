@@ -1,3 +1,16 @@
+"""Core GAM fitting and model specification functionality.
+
+This module provides the main interface for fitting Generalized Additive Models (GAMs)
+using R's mgcv library through rpy2. It includes classes for model specification,
+fitted model objects, and the main fitting function.
+
+The module handles:
+- Model specification with flexible term definitions
+- GAM fitting with various smoothing parameter estimation methods
+- Predictions and partial effects computation
+- Model diagnostics and summaries
+"""
+
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Literal
@@ -16,60 +29,75 @@ rbase = importr("base")
 rutils = importr("utils")
 rstats = importr("stats")
 
-# TODO, passing arguments to family?
-
 
 @dataclass
 class ModelSpecification:
-    """A class holding the specification of a GAM model.
+    r"""Defines the model to use.
+
+    This class encapsulates the GAM model specification, including the
+    family, and the terms for modeling response variable(s) and family parameters.
 
     Args:
-        mean_predictors: A dictionary mapping dependent variable names
-            to a list of ``TermLike`` objects used for modelling that
-            variable. For univariate models (a single dependent variable), this is a
-            dictionary with a single key-value pair.
-        other_predictors: A dictionary mapping family parameter labels to
-            a list of terms used to model the parameter. The keys of the dictionary
-            are used solely as labels/names e.g. during predictions. The dictionary
-            should match the order of the parameters in the mgcv family specified.
-        family: The MGCV family of the model. This is currently evaluated as literal
-            R code.
+        response_predictors: Dictionary mapping response variable names to lists of
+            [`TermLike`][pymgcv.terms.TermLike] objects used to predict $g([\mathbb{E}[Y])$  For single response
+            models, use a single key-value pair. For multivariate models, include
+            multiple response variables.
+        other_predictors: Dictionary mapping family parameter names to lists of
+            terms for modeling those parameters. Keys are used as labels during
+            prediction and should match the order expected by the mgcv family.
+            Common examples include 'scale' for location-scale models.
+        family: String specifying the mgcv family for the error distribution.
+            This is passed directly to R's mgcv and can include family arguments.
     """
 
-    mean_predictors: dict[str, list[TermLike]]
+    response_predictors: dict[str, list[TermLike]]
     other_predictors: dict[str, list[TermLike]] = field(default_factory=dict)
     family: str = "gaussian"
 
     def __post_init__(self):
-        if len(self.mean_predictors) > 1 and self.other_predictors:
+        if len(self.response_predictors) > 1 and self.other_predictors:
             raise ValueError(  # TODO I assume this is possible in mgcv
                 "Simultaneous use of multiple dependent variables and predictors of "
                 "family parameters is not yet supported.",
             )
 
-        all_term_names = set()
         for terms in self.all_formulae.values():
+            within_formula_names = set()
             for term in terms:
                 name = term.simple_string()
-                if name in all_term_names:
+                if name in within_formula_names:
                     raise ValueError(
                         f"Duplicate term name '{name}' found in formulae. "
                         "pymgcv does not support this. If you believe to have "
                         "a legitimate use case for this, try duplicating the term "
                         "and renaming it.",
                     )
-                all_term_names.add(term.simple_string())
+                within_formula_names.add(name)
 
     @property
     def all_formulae(self) -> dict[str, list[TermLike]]:
         """All formulae (response and for family parameters)"""
-        return self.mean_predictors | self.other_predictors
+        return self.response_predictors | self.other_predictors
 
     def _check_valid_data(
         self,
         data: pd.DataFrame,
     ) -> None:
-        """Checks data is compatible with the specification."""
+        """Validate that data contains all variables required by the model specification.
+
+        Performs comprehensive validation including:
+        - Checking that all term variables exist in the data
+        - Validating 'by' variables are present
+        - Ensuring categorical 'by' variables are not used (not yet supported)
+        - Checking for reserved variable names that conflict with mgcv
+
+        Args:
+            data: DataFrame containing the modeling data
+
+        Raises:
+            ValueError: If required variables are missing from data
+            TypeError: If categorical 'by' variables are detected (unsupported)
+        """
         all_terms: list[TermLike] = []
         for terms in (self.all_formulae).values():
             all_terms.extend(terms)
@@ -96,8 +124,20 @@ class ModelSpecification:
         # TODO error if any varnames clash with "intercept".
 
     def _to_r_formulae(self) -> ro.Formula | list[ro.Formula]:
+        """Convert the model specification to R formula objects.
+
+        Creates mgcv-compatible formula objects from the Python specification.
+        For single-formula models, returns a single Formula object. For
+        multi-formula models (multiple responses or family parameters),
+        returns a list of Formula objects.
+
+        Returns:
+            Single Formula object for simple models, or list of Formula objects
+            for multi-formula models. The order matches mgcv's expectations:
+            response formulae first, then family parameter formulae.
+        """
         formulae = []
-        for dependent, terms in self.mean_predictors.items():
+        for dependent, terms in self.response_predictors.items():
             formulae.append(ro.Formula(f"{dependent}~{'+'.join(map(str, terms))}"))
 
         for terms in self.other_predictors.values():
@@ -108,7 +148,15 @@ class ModelSpecification:
 
 @dataclass
 class FittedGAM:
-    """The result object from fitting a GAM."""
+    """The fitted GAM model with methods for predicting and analyzing.
+
+    Generally returned by fitting methods (rather than directly).
+
+    Args:
+        rgam: The underlying R mgcv model object from fitting
+        data: Original DataFrame used for model fitting
+        model_specification: The ModelSpecification used to create this model
+    """
 
     rgam: ro.vectors.ListVector
     data: pd.DataFrame
@@ -117,11 +165,38 @@ class FittedGAM:
     def predict(
         self,
         data: pd.DataFrame,
-    ):
-        """Compute predictions and standard errors.
+    ) -> dict[str, pd.DataFrame]:
+        """Compute model predictions with uncertainty estimates.
 
-        Predictions are returned on the link scale (i.e. the result of the linear
-        predictor).
+        Makes predictions for new data using the fitted GAM model. Predictions
+        are returned on the link scale (linear predictor scale), not the response
+        scale. For response scale predictions, apply the appropriate inverse link
+        function to the results.
+
+        Args:
+            data: DataFrame containing predictor variables. Must include all
+                variables referenced in the original model specification.
+
+        Returns:
+            DataFrame with hierarchical columns:
+            - Top level: 'fit' (predictions) and 'se' (standard errors)
+            - Second level: target variable names (response or family parameter names)
+
+            For single response models:
+                columns = [('fit', 'response_name'), ('se', 'response_name')]
+            For multi-target models:
+                columns = [('fit', 'target1'), ('se', 'target1'),
+                          ('fit', 'target2'), ('se', 'target2'), ...]
+
+        Raises:
+            ValueError: If required variables are missing from the input data
+
+        Example:
+            ```python
+            predictions = model.predict(new_data)
+            print(predictions[('fit', 'y')])  # Predictions for response 'y'
+            print(predictions[('se', 'y')])   # Standard errors for 'y'
+            ```
         """
         self.model_specification._check_valid_data(data)
         predictions = rstats.predict(
@@ -132,31 +207,68 @@ class FittedGAM:
         predictions = rlistvec_to_dict(predictions)
 
         all_targets = self.model_specification.all_formulae.keys()
-        fit = pd.DataFrame(predictions["fit"], columns=pd.Index(all_targets))
-        se = pd.DataFrame(predictions["se_fit"], columns=pd.Index(all_targets))
 
         # TODO we assume 1 column for each linear predictor
-        return pd.concat({"fit": fit, "se": se}, axis=1)
+        n = data.shape[0]
+        return {
+            target: pd.DataFrame(
+                {
+                    "fit": predictions["fit"].reshape(n, -1)[:, i],
+                    "se": predictions["se_fit"].reshape(n, -1)[:, i],
+                },
+            )
+            for i, target in enumerate(all_targets)
+        }
 
     def partial_effects(
         self,
         data: pd.DataFrame,
     ) -> dict[str, pd.DataFrame]:
-        # TODO way to filter terms?
-        """Compute partial effects and standard errors.
+        """Compute partial effects for all model terms.
 
-        The returned structure is a dictionary with keys matching the target
-        variables (dependent variables or family parameters), and values are
-        hierarcahical dataframes, with two top level columns "se" and "fit",
-        and the lower level columns representing the components of the linear
-        predictor (including offsets and intercepts).
+        Calculates the contribution of each model term to the overall prediction.
+        This decomposition is useful for understanding which terms contribute most
+        to predictions and for creating partial effect plots.
 
-        Summing over the columns of the "fit" dataframe will match the values
-        produced by the `predict` method, i.e.
-        ```
-        partial_effects[target]["fit"].sum(axis=1)
-        ```
+        Args:
+            data: DataFrame containing predictor variables for evaluation
 
+        Returns:
+            Dictionary mapping target variable names to DataFrames with partial effects.
+            Each DataFrame has hierarchical columns:
+            - Top level: 'fit' (partial effects) and 'se' (standard errors)
+            - Second level: term names (e.g., 's(x1)', 'x2', 'intercept')
+
+            The sum of all fit columns equals the total prediction:
+            ```python
+            effects = model.partial_effects(data)
+            total_effect = effects['y']['fit'].sum(axis=1)
+            predictions = model.predict(data)[('fit', 'y')]
+            assert np.allclose(total_effect, predictions)
+            ```
+
+        Example:
+            ```python
+            effects = model.partial_effects(data)
+
+            # Get contribution of smooth term s(x1) to response y
+            smooth_contribution = effects['y'][('fit', 's(x1)')]
+
+            # Get standard error of the smooth term
+            smooth_se = effects['y'][('se', 's(x1)')]
+
+            # Plot partial effect
+            plt.plot(data['x1'], smooth_contribution)
+            plt.fill_between(data['x1'],
+                           smooth_contribution - 2*smooth_se,
+                           smooth_contribution + 2*smooth_se,
+                           alpha=0.3)
+            ```
+
+        Note:
+            Partial effects include all model components: smooth terms, linear terms,
+            interactions, offsets, and intercepts. The effects are centered around
+            their mean values following mgcv conventions.
         """
         predictions = rstats.predict(
             self.rgam,
@@ -209,6 +321,7 @@ class FittedGAM:
             idx = 0 if name == "(Intercept)" else int(name.split(".")[-1])
             formula_name = formula_names[idx]
             results[formula_name]["fit", "intercept"] = vals["fit"]
+            results[formula_name] = results[formula_name].sort_index(axis=1)
             results[formula_name]["se", "intercept"] = vals["se"]
 
         return {k: v.sort_index(axis=1) for k, v in results.items()}
@@ -219,36 +332,99 @@ class FittedGAM:
         term: TermLike,
         data: pd.DataFrame,
     ) -> pd.DataFrame:
-        """Compute the partial effect for a specific term.
+        """Compute the partial effect for a single model term.
 
-        For a single term, this provides a more efficient implementation than
-        computing for the full model.
+        This method efficiently computes the contribution of one specific term
+        to the model predictions. It's more efficient than computing all partial
+        effects when you only need one term.
 
         Args:
-            target (str): The target variable (response variable name or
-                name given to family parameter).
-            term (TermLike): The term to compute the partial effect for.
-            data (pd.DataFrame): The data to compute the partial effect using.
+            target: Name of the target variable (response variable or family
+                parameter name from the model specification)
+            term: The specific term to evaluate (must match a term used in the
+                original model specification)
+            data: DataFrame containing the predictor variables needed for the term
 
         Returns:
-            pd.DataFrame: Dataframe with columns "fit" (the effect) and "se"
-                (standard errors).
+            DataFrame with columns:
+            - 'fit': The partial effect values (contribution of this term)
+            - 'se': Standard errors of the partial effect
+
+        Raises:
+            KeyError: If the target name is not found in the model
+            ValueError: If the term is not found in the model specification
+
+        Example:
+            ```python
+            # Get partial effect of smooth term on response
+            effect = model.partial_effect('y', Smooth('x1'), data)
+
+            # Plot the partial effect
+            import matplotlib.pyplot as plt
+            plt.plot(data['x1'], effect['fit'])
+            plt.fill_between(data['x1'],
+                           effect['fit'] - 2*effect['se'],
+                           effect['fit'] + 2*effect['se'],
+                           alpha=0.3)
+            plt.xlabel('x1')
+            plt.ylabel('Partial effect')
+            ```
+
+        Note:
+            The partial effect represents the contribution of this term alone,
+            with all other terms held at their reference values (typically zero
+            for centered smooth terms).
         """
         effect, se = term._partial_effect(data, self, target)
         return pd.DataFrame({"fit": effect, "se": se})
 
     def partial_residuals(
         self,
-        target: str,  # TODO dependent/resonse
+        target: str,
         term: TermLike,
         data: pd.DataFrame,
-    ):
-        """Compute the partial residuals for a specific term.
+    ) -> pd.Series:
+        """Compute partial residuals for model diagnostic plots.
+
+        Partial residuals combine the fitted values from a specific term with
+        the overall model residuals. They're useful for assessing whether the
+        chosen smooth function adequately captures the relationship, or if a
+        different functional form might be more appropriate.
+
+        The partial residuals are calculated as:
+        partial_residuals = observed - (total_fitted - term_effect)
+                          = observed - total_fitted + term_effect
+                          = residuals + term_effect
 
         Args:
-            target (str): The target variable (response variable) name.
-            term (TermLike): The term to compute the partial effect for.
-            data (pd.DataFrame): The data to compute the partial effect using.
+            target: Name of the response variable
+            term: The model term to compute partial residuals for
+            data: DataFrame containing the data (must include the response variable)
+
+        Returns:
+            Series containing the partial residuals for the specified term
+
+        Example:
+            ```python
+            # Compute partial residuals for smooth term
+            partial_resid = model.partial_residuals('y', Smooth('x1'), data)
+
+            # Plot partial residuals to assess model fit
+            import matplotlib.pyplot as plt
+            plt.scatter(data['x1'], partial_resid, alpha=0.6)
+
+            # Overlay the fitted smooth for comparison
+            smooth_effect = model.partial_effect('y', Smooth('x1'), data)
+            plt.plot(data['x1'], smooth_effect['fit'], 'red', linewidth=2)
+            plt.xlabel('x1')
+            plt.ylabel('Partial residuals')
+            plt.title('Partial residual plot for s(x1)')
+            ```
+
+        Note:
+            If the partial residuals show systematic patterns around the fitted
+            smooth curve, it may indicate that a different functional form or
+            additional model terms are needed.
         """
         partial_effect = self.partial_effect(target, term, data)["fit"]
         fit = self.predict(data)["fit"][target]
@@ -256,20 +432,18 @@ class FittedGAM:
         return (y - fit) + partial_effect
 
     def summary(self) -> str:
-        """Get the summary of the gam model.
+        """Generate a comprehensive summary of the fitted GAM model.
 
-        Usually this should be combined with print, i.e. ``print(model.summary())``.
+        Produces a detailed summary including parameter estimates, significance
+        tests, smooth term information, model fit statistics, and convergence
+        diagnostics. The output matches the format of R's mgcv summary.
         """
         strvec = rutils.capture_output(rbase.summary(self.rgam))
         return "\n".join(tuple(strvec))
 
-    def formula(self) -> str:
-        """Get the mgcv-style formula used to fit the model."""
-        return str(self.rgam.rx2("formula"))
-
     @property
-    def coefficients(self) -> np.ndarray:
-        """The coefficients from the fit."""
+    def coefficients(self) -> np.ndarray:  # TODO consider returning as dict?
+        """Extract model coefficients from the fitted GAM."""
         return rlistvec_to_dict(self.rgam)["coefficients"]
 
 
@@ -290,15 +464,22 @@ def gam(
     data: pd.DataFrame,
     method: FitMethodOptions = "GCV.Cp",
 ) -> FittedGAM:
-    """Fit a gam model.
+    """Fit a Generalized Additive Model.
 
     Args:
-        family: The family. This is currently passed as a string which will be evaluated
-            in R. This can be the name, the name with arguments e.g. ``mvn(d=2)``.
-            Defaults to "gaussian".
+        specification: ModelSpecification object defining the model structure,
+            including terms for response variables and family parameters, plus
+            the error distribution family
+        data: DataFrame containing all variables referenced in the specification.
+            Variable names must match those used in the model terms.
+        method: Method for smoothing parameter estimation, matching the mgcv,
+            options, including:
+            - "GCV.Cp": Generalized Cross Validation (default, recommended)
+            - "REML": Restricted Maximum Likelihood (good for mixed models)
 
     Returns:
-        The fitted gam model.
+        FittedGAM object containing the fitted model and methods for prediction,
+            analysis.
     """
     # TODO missing options.
     specification._check_valid_data(data)
@@ -316,7 +497,19 @@ def gam(
     )
 
 
-def _check_valid_varnames(varnames: Iterable[str]):
+def _check_valid_varnames(varnames: Iterable[str]) -> None:
+    """Validate variable names don't conflict with mgcv syntax.
+
+    Checks that variable names in the dataset don't contain strings that
+    could be interpreted as mgcv formula syntax, which would cause parsing
+    errors or unexpected behavior.
+
+    Args:
+        varnames: Iterable of variable names to validate
+
+    Raises:
+        ValueError: If any variable name contains reserved mgcv syntax
+    """
     disallowed = ["Intercept", "intercept", "s(", "te(", "ti(", "t2(", ":", "*"]
 
     for var in varnames:
