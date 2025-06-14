@@ -11,9 +11,10 @@ All terms implement the TermLike protocol and can be combined flexibly in
 ModelSpecification objects to build complex GAM models.
 """
 
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from collections.abc import Sequence
+from dataclasses import dataclass, fields
+from functools import singledispatch
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 import pandas as pd
@@ -23,14 +24,13 @@ from rpy2.robjects.packages import importr
 from pymgcv.bases import BasisLike
 from pymgcv.converters import data_to_rdf, to_py
 
-if TYPE_CHECKING:
-    pass
-
 # TODO from pymgcv.gam import FittedGAM causes circular import
 
 mgcv = importr("mgcv")
 rbase = importr("base")
 rstats = importr("stats")
+
+
 # TODO: Not supporting 'sp' or 'pc' basis types.
 # TODO: 'xt' is not needed, as basis-related configuration will handle it.
 
@@ -299,37 +299,43 @@ class Smooth(TermLike):
     Args:
         *varnames: Names of variables to smooth over. For single variables,
             creates a univariate smooth. For multiple variables, creates an
-            isotropic multi-dimensional smooth (use with caution for different scales).
-        k: Maximum number of basis functions (dimension of basis). If None,
-            mgcv chooses automatically. Higher values allow more complexity but
-            risk overfitting.
-        bs: Basis function type. If None, uses thin plate splines. See
-            pymgcv.bases for available options (CubicSpline, BSpline, etc.).
-        m: Order of penalty (affects smoothness). If None, uses basis default.
-            Higher values create smoother functions.
-        by: Variable name for 'by' variable that scales the smooth. The smooth
-            effect is multiplied by this variable's values.
-        id: Identifier for grouping smooths with shared penalties. Use when
-            you want multiple smooths to have the same smoothing parameter.
+            isotropic multi-dimensional smooth.
+        k: The dimension of the basis used to represent the smooth term. The
+            default depends on the number of variables that the smooth is a
+            function of.
+        bs: Basis function type. For available options see
+            [Basis Functions](./api/bases.md).
+            Default to [`ThinPlateSpline`][pymgcv.bases.ThinPlateSpline].
+        m: Order of penalty. This is not supported for all basis functions.
+        by: variable name used to scale the smooth. If it's a numeric vector, it
+            scales the smooth, and the "by" variable should not be included as a
+            seperate main effect (as the smooth is usually not centered). If the "by"
+            variable is a factor, a separate smooth is created for each factor level.
+            These smooths are centered, so the factor typically should be included as a
+            main effect.
+        id: Identifier for grouping smooths with shared penalties. Use when you want
+            multiple smooths to have the same smoothing parameter. If using a
+            categorical by variable, providing an id will ensure a shared smoothing
+            parameter for each level.
         fx: If True, creates a fixed-effect smooth (no smoothing parameter
             estimation). Useful when you want a specific amount of smoothing.
     """
 
     varnames: tuple[str, ...]
+    by: str | None
     k: int | None
     bs: BasisLike | None
     m: int | None
-    by: str | None
     id: str | None
     fx: bool
 
     def __init__(
         self,
         *varnames: str,
+        by: str | None = None,
         k: int | None = None,
         bs: BasisLike | None = None,
         m: int | None = None,
-        by: str | None = None,
         id: str | None = None,
         fx: bool = False,
     ):
@@ -345,26 +351,19 @@ class Smooth(TermLike):
 
     def __str__(self) -> str:
         """Convert smooth term to mgcv formula syntax."""
-        fx_value = None if not self.fx else self.fx  # Map False to None
-        kwargs = {
-            "k": self.k,
-            "bs": self.bs,
-            "m": self.m,
-            "by": self.by,
-            "id": self.id,
-            "fx": fx_value,
-        }
+        kwargs = {field.name: getattr(self, field.name) for field in fields(self)}
+        kwargs.pop("varnames")
+        by = kwargs.pop("by")
+
+        # Filter out values matching default
+        kwargs["fx"] = kwargs["fx"] if kwargs["fx"] else None
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
-        map_to_str = {
-            "bs": lambda bs: f"'{bs}'",
-            "id": lambda id: f"'{id}'",
-            "fx": lambda fx: str(fx).upper(),
-        }
-
         smooth_string = f"s({','.join(self.varnames)}"
+        if by is not None:
+            smooth_string += f",by={by}"
         for key, val in kwargs.items():
-            smooth_string += f",{key}={map_to_str.get(key, str)(val)}"
+            smooth_string += f",{key}={_to_r_literal_string(val)}"
         return smooth_string + ")"
 
     def simple_string(self, formula_idx: int = 0) -> str:
@@ -421,66 +420,35 @@ class Smooth(TermLike):
         return to_py(pred), to_py(se)
 
 
-def _sequence_to_rvec_str(seq: Sequence, converter: Callable[[Any], str] = str) -> str:
-    """Convert Python sequence to R vector string representation.
-
-    Args:
-        seq: Python sequence to convert
-        converter: Function to convert individual elements to strings
-
-    Returns:
-        R vector syntax string, e.g., "c(1,2,3)" or "c('a','b','c')"
-    """
-    return f"c({','.join(converter(x) for x in seq)})"
-
-
 # TODO, tensnor smooth d=c(2,1), common, in which case all the sequences should be length 2.
 # Worth testing this case. A more intuitive interface would be to specify a list of smooths.
 @dataclass
 class TensorSmooth(TermLike):
     """Tensor product smooth for scale-invariant multi-dimensional smoothing.
 
-    Tensor smooths create smooth functions of multiple variables that are
-    scale-invariant, meaning the smoothing is appropriate even when variables
-    have different units or scales.
-
-    Args:
-        *varnames: Names of variables for the tensor smooth. Usually 2-4 variables.
-        k: Sequence of basis dimensions for each variable. If None, uses mgcv defaults.
-            Length must match number of variables.
-        bs: Sequence of basis types for each variable. If None, uses defaults.
-            Can mix different basis types for different variables.
-        d: Sequence specifying the dimension of each variable's smooth.
-            Rarely needed - defaults are usually appropriate.
-        m: Sequence of penalty orders for each variable. Controls smoothness.
-        by: Variable name for 'by' variable scaling the tensor smooth.
-        id: Identifier for sharing penalties across multiple tensor smooths.
-        fx: If True, fix smoothing parameters (no automatic estimation).
-        np: If False, use a single penalty for the tensor product.
-            If True (default), use separate penalties for each marginal.
-        interaction_only: If True, creates ti() instead of te() - interaction only,
-            excluding main effects of individual variables.
+    Tensor smooths create smooth functions of multiple variables using marginal
+    smooths in order to be robust to variables on different scales.
     """
 
     varnames: tuple[str, ...]
+    by: str | None
     k: tuple[int, ...] | None
     bs: tuple[BasisLike, ...] | None
     d: tuple[int, ...] | None
     m: tuple[int, ...] | None
-    by: str | None
     id: str | None
-    fx: bool | None
-    np: bool | None
+    fx: bool
+    np: bool
     interaction_only: bool
 
     def __init__(
         self,
         *varnames: str,
+        by: str | None = None,
         k: Sequence[int] | None = None,
         bs: Sequence[BasisLike] | None = None,
         d: Sequence[int] | None = None,
         m: Sequence[int] | None = None,
-        by: str | None = None,
         id: str | None = None,
         fx: bool = False,
         np: bool = True,
@@ -488,17 +456,27 @@ class TensorSmooth(TermLike):
     ):
         """Initialize a tensor smooth term.
 
+        For the sequence arguments, the length must match the number of variables if
+        ``d`` is not provided, else they must match the length of ``d``.
+
         Args:
-            *varnames: Variable names for the tensor smooth (2+ recommended).
-            k: Basis dimensions for each variable (None for automatic).
-            bs: Basis types for each variable (None for defaults).
-            d: Dimensions for each variable's smooth (rarely needed).
-            m: Penalty orders for each variable (None for defaults).
-            by: By variable name (None for no by variable).
-            id: Identifier for shared penalties (None for unique).
-            fx: Fix smoothing parameters (False for automatic estimation).
-            np: Use separate penalties for marginals (True recommended).
-            interaction_only: Create ti() instead of te() (False for full tensor).
+            *varnames: Names of variables for the tensor smooth.
+            k: Sequence of basis dimensions for each marginal basis.
+            bs: Sequence of basis types for each variable. If None, uses defaults.
+                Can mix different basis types for different variables.
+            d: Sequence specifying the dimension of each variable's smooth. For example,
+                (2, 1) would specify to use one two dimensional marginal smooth and one
+                1 dimensional marginal smooth. This is useful for space-time smooths (2
+                dimensional space and 1 time dimension).
+            m: Sequence of penalty orders for each variable.
+            by: Variable name for 'by' variable scaling the tensor smooth.
+            id: Identifier for sharing penalties across multiple tensor smooths.
+            fx: indicates whether the term is a fixed d.f. regression spline (True) or
+                a penalized regression spline (False). Defaults to False.
+            np: If False, use a single penalty for the tensor product.
+                If True (default), use separate penalties for each marginal.
+            interaction_only: If True, creates ti() instead of te() - interaction only,
+                excluding main effects of individual variables.
         """
         if len(varnames) < 2:
             raise ValueError("Tensor smooths require at least 2 variables")
@@ -510,8 +488,8 @@ class TensorSmooth(TermLike):
         self.m = tuple(m) if m is not None else None
         self.by = by
         self.id = id
-        self.fx = None if not fx else fx
-        self.np = None if not np else np
+        self.fx = fx
+        self.np = np
         self.interaction_only = interaction_only
 
     def __str__(self) -> str:
@@ -520,32 +498,24 @@ class TensorSmooth(TermLike):
         Returns:
             String in mgcv te() or ti() syntax, e.g., "te(x1,x2,k=c(10,15))"
         """
-        kwargs = {
-            "k": self.k,
-            "bs": self.bs,
-            "d": self.d,
-            "m": self.m,
-            "by": self.by,
-            "id": self.id,
-            "fx": self.fx,
-            "np": self.np,
-        }
-        kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        kwargs = {field.name: getattr(self, field.name) for field in fields(self)}
+        kwargs.pop("interaction_only")
+        kwargs.pop("varnames")
+        by = kwargs.pop("by")
 
-        map_to_str = {
-            "k": _sequence_to_rvec_str,
-            "bs": lambda bs: _sequence_to_rvec_str(bs, converter=lambda b: f"'{b}'"),
-            "d": _sequence_to_rvec_str,
-            "m": _sequence_to_rvec_str,
-            "id": lambda id: f"'{id}'",
-            "fx": lambda fx: str(fx).upper(),
-            "np": lambda np: str(np).upper(),
-        }
+        # Map to None if matching default
+        kwargs["fx"] = kwargs["fx"] if kwargs["fx"] else None
+        kwargs["np"] = kwargs["np"] if not kwargs["np"] else None
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
 
         prefix = "ti" if self.interaction_only else "te"
         smooth_string = f"{prefix}({','.join(self.varnames)}"
+
+        if by is not None:
+            smooth_string += f",by={by}"
+
         for key, val in kwargs.items():
-            smooth_string += f",{key}={map_to_str.get(key, str)(val)}"
+            smooth_string += f",{key}={_to_r_literal_string(val)}"
         return smooth_string + ")"
 
     def simple_string(self, formula_idx: int = 0) -> str:
@@ -651,3 +621,30 @@ class Offset(TermLike):
         """
         effect = data[self.varnames[0]].to_numpy()
         return effect, np.zeros_like(effect)
+
+
+@singledispatch
+def _to_r_literal_string(arg: object) -> str:
+    """Attempts to convert simple types into a string representation in R.
+
+    Currently, any (non string) sequence will be converted to a vector
+    i.e. c(...). Note, strings are quoted (so cannot be used for variables).
+    """
+    return f"'{str(arg)}'"
+
+
+@_to_r_literal_string.register
+def _(arg: bool) -> str:  # noqa: FBT001
+    return str(arg).upper()
+
+
+@_to_r_literal_string.register
+def _(arg: int) -> str:
+    return str(arg)
+
+
+@_to_r_literal_string.register
+def _(arg: Sequence) -> str:
+    if isinstance(arg, str):
+        return f"'{arg}'"
+    return f"c({','.join([_to_r_literal_string(item) for item in arg])})"
