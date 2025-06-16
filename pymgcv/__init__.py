@@ -15,7 +15,7 @@ Quick Start:
     ```python
     import pandas as pd
     import numpy as np
-    from pymgcv import gam, ModelSpecification, Smooth, Linear
+    from pymgcv import gam, Model, Smooth, Linear
 
     # Generate sample data
     n = 200
@@ -24,8 +24,8 @@ Quick Start:
     data = pd.DataFrame({'x': x, 'y': y})
 
     # Define and fit model
-    spec = ModelSpecification(response_predictors={'y': [Smooth('x')]})
-    model = gam(spec, data)
+    model = Model(response_predictors={'y': [Smooth('x')]})
+    model = gam(model, data)
 
     # Print summary and make predictions
     print(model.summary())
@@ -34,21 +34,21 @@ Quick Start:
 
 Main Components:
 - gam: Main function for fitting GAM models
-- ModelSpecification: Class for defining model structure
+- Model: Class for defining model structure
 - Term types: Linear, Smooth, TensorSmooth, Interaction, Offset
-- Basis functions: Various spline and basis types in pymgcv.bases
+- Basis functions: Various spline and basis types in pymgcv.basis_functions
 - Plotting utilities: Visualization functions in pymgcv.plot
 
 See the documentation for detailed examples and API reference.
 """
 
-from .gam import ModelSpecification, gam
+from .gam import Model, gam
 from .terms import Interaction, Linear, Offset, Smooth, TensorSmooth
 
 __all__ = [
     # Core functionality
     "gam",
-    "ModelSpecification",
+    "Model",
     # Term types
     "Linear",
     "Smooth",

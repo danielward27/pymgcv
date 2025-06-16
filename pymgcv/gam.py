@@ -31,7 +31,7 @@ rstats = importr("stats")
 
 
 @dataclass
-class ModelSpecification:
+class Model:
     r"""Defines the model to use.
 
     This class encapsulates the GAM model specification, including the
@@ -155,12 +155,12 @@ class FittedGAM:
     Args:
         rgam: The underlying R mgcv model object from fitting
         data: Original DataFrame used for model fitting
-        model_specification: The ModelSpecification used to create this model
+        model_specification: The Model used to create this model
     """
 
     rgam: ro.vectors.ListVector
     data: pd.DataFrame
-    model_specification: ModelSpecification
+    model_specification: Model
 
     def predict(
         self,
@@ -346,13 +346,7 @@ class FittedGAM:
             data: DataFrame containing the predictor variables needed for the term
 
         Returns:
-            DataFrame with columns:
-            - 'fit': The partial effect values (contribution of this term)
-            - 'se': Standard errors of the partial effect
-
-        Raises:
-            KeyError: If the target name is not found in the model
-            ValueError: If the term is not found in the model specification
+            DataFrame with columns "fit" and "se":
 
         Example:
             ```python
@@ -460,14 +454,14 @@ FitMethodOptions = Literal[
 
 
 def gam(
-    specification: ModelSpecification,
+    specification: Model,
     data: pd.DataFrame,
     method: FitMethodOptions = "GCV.Cp",
 ) -> FittedGAM:
     """Fit a Generalized Additive Model.
 
     Args:
-        specification: ModelSpecification object defining the model structure,
+        specification: Model object defining the model structure,
             including terms for response variables and family parameters, plus
             the error distribution family
         data: DataFrame containing all variables referenced in the specification.

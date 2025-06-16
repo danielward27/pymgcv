@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from pymgcv.bases import CubicSpline, SplineOnSphere
+from pymgcv.basis_functions import CubicSpline, ThinPlateSpline
 from pymgcv.terms import Interaction, Linear, Smooth, TensorSmooth, TermLike
 
 
@@ -34,8 +34,8 @@ test_cases = [
         expected_simple_with_idx="s.1(a)",
     ),
     TermTestCase(
-        term=Smooth("a", "b", m=3),
-        expected_str="s(a,b,m=3)",
+        term=Smooth("a", "b", bs=ThinPlateSpline(m=3)),
+        expected_str="s(a,b,bs='ts',m=3)",
         expected_simple="s(a,b)",
         expected_simple_with_idx="s.1(a,b)",
     ),
@@ -45,7 +45,6 @@ test_cases = [
             "b",
             k=10,
             bs=CubicSpline(cyclic=True),
-            m=5,
             by="var",
             id="2",
             fx=True,
@@ -68,10 +67,9 @@ test_cases = [
     ),
     TermTestCase(
         term=TensorSmooth(
-            "long",
-            "lat",
-            bs=[SplineOnSphere(), SplineOnSphere()],
-            m=[2, 3],
+            "x1",
+            "x2",
+            bs=[ThinPlateSpline(m=2), CubicSpline()],
             d=[5, 3],
             by="var",
             np=False,
@@ -79,9 +77,9 @@ test_cases = [
             fx=True,
             interaction_only=True,
         ),
-        expected_str="ti(long,lat,by=var,bs=c('sos','sos'),d=c(5,3),m=c(2,3),id='my_id',fx=TRUE,np=FALSE)",
-        expected_simple="ti(long,lat):var",
-        expected_simple_with_idx="ti.1(long,lat):var",
+        expected_str="ti(x1,x2,by=var,bs=c('ts','cr'),d=c(5,3),m=c(2,3),id='my_id',fx=TRUE,np=FALSE)",
+        expected_simple="ti(x1,x2):var",
+        expected_simple_with_idx="ti.1(x1,x2):var",
     ),
     TermTestCase(
         term=TensorSmooth("x", "y", bs=[CubicSpline(), CubicSpline()]),

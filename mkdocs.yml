@@ -50,14 +50,13 @@ markdown_extensions:
   - pymdownx.inlinehilite
 
 nav:
-  - Introduction: home.ipynb
-  # - Examples:
-  # - GAMLSS: examples/gamlss.ipynb
-  # - Factor Interactions: examples/smooth_factor_by.ipynb
+  - Introduction: index.ipynb
+  - Examples:
+      - GAMLSS: examples/gamlss.ipynb
   - API Reference:
       - Fitting GAMs: api/gam.md
       - Terms: api/terms.md
-      - Basis Functions: api/bases.md
+      - Basis Functions: api/basis_functions.md
       - Plotting: api/plot.md
 
 plugins:

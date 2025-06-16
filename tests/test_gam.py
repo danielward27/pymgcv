@@ -7,11 +7,11 @@ import pytest
 import rpy2.robjects as ro
 
 from pymgcv import Smooth, TensorSmooth, terms
-from pymgcv.bases import MarkovRandomField, RandomEffect
+from pymgcv.basis_functions import MarkovRandomField, RandomEffect
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
 from pymgcv.gam import (
     FittedGAM,
-    ModelSpecification,
+    Model,
     gam,
 )
 from pymgcv.rgam_utils import _get_intercepts_and_se
@@ -64,7 +64,7 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = ModelSpecification({"y": [terms.Linear("x")]})
+            model = Model({"y": [terms.Linear("x")]})
             return gam(model, data=data)
 
     class SingleSmoothGAM(AbstractTestCase):
@@ -84,7 +84,7 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = ModelSpecification(
+            model = Model(
                 {"y": [terms.Smooth("x")]},
             )
             return gam(model, data=data)
@@ -105,7 +105,7 @@ def get_test_cases():
             return pd.DataFrame({"y": y, "x0": x0, "x1": x1})
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = ModelSpecification(
+            model = Model(
                 {"y": [TensorSmooth("x0", "x1")]},
             )
             return gam(model, data=data)
@@ -135,7 +135,7 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = ModelSpecification(
+            model = Model(
                 {
                     "y": [
                         Smooth("x"),
@@ -166,7 +166,7 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = ModelSpecification(
+            model = Model(
                 {"y": [terms.Interaction("a", "b")]},
             )
             return gam(model, data=data)
@@ -189,7 +189,7 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = ModelSpecification(
+            model = Model(
                 {"y": [terms.Linear("x0"), terms.Smooth("x1"), terms.Smooth("x2")]},
             )
             return gam(model, data=data)
@@ -221,7 +221,7 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = ModelSpecification(
+            model = Model(
                 {"y0": [terms.Smooth("x", k=5)], "y1": [terms.Linear("x")]},
                 family="mvn(d=2)",
             )
@@ -254,7 +254,7 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = ModelSpecification(
+            model = Model(
                 {"y": [terms.Smooth("x0")]},
                 other_predictors={"log_scale": [terms.Smooth("x1")]},
                 family="gaulss()",
@@ -278,7 +278,7 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = ModelSpecification(
+            model = Model(
                 {"y": [terms.Smooth("x"), terms.Offset("z")]},
             )
             return gam(model, data=data)
@@ -334,7 +334,7 @@ def get_test_cases():
 
         def pymgcv_gam(self, data) -> FittedGAM:
             polys = list(rlistvec_to_dict(self.add_to_r_env["polys"]).values())
-            model = ModelSpecification(
+            model = Model(
                 {"y": [Smooth("district", bs=MarkovRandomField(polys=polys))]},
             )
             return gam(model, data=data)
@@ -412,7 +412,7 @@ def test_categorical_by_variables_not_supported():
         },
     )
 
-    model = ModelSpecification({"y": [Smooth("x", by="z")]})
+    model = Model({"y": [Smooth("x", by="z")]})
     with pytest.raises(TypeError, match="Categorical by variables not yet supported"):
         gam(model, data=data)
 
@@ -440,7 +440,7 @@ def test_factor_by():
     factor = df["group"]
     assert isinstance(factor, pd.Series)
     smooths, indicators = smooth_by_factor("x", smooth_type=Smooth, factor=factor)
-    model = ModelSpecification({"y": smooths})
+    model = Model({"y": smooths})
     gam(
         model,
         data=pd.concat([df, indicators], axis=1),
@@ -456,7 +456,7 @@ def test_intercept_and_se():
         },
     )
 
-    model = ModelSpecification(
+    model = Model(
         {"y": [terms.Smooth("x0")]},
         other_predictors={"log_scale": [terms.Smooth("x1")]},
         family="gaulss()",
