@@ -18,7 +18,7 @@ requires = ["hatchling"]
 
 
 [tool.pytest.ini_options]
-beartype_packages = 'pymgcv' 
+beartype_packages = 'pymgcv'
 
 
 [project.optional-dependencies]
@@ -30,7 +30,7 @@ dev = [
     "hippogriffe",
     "mkdocs",
     "mkdocs-material",
-    "mkdocs-jupyter",
+    "mkdocs-ipynb",
     "mkdocstrings[python]",
     "pymdown-extensions",
     "griffe-inherited-docstrings",
