@@ -1,8 +1,7 @@
 """The available terms for constructing GAM models."""
 
-from collections.abc import Sequence
+from collections.abc import Iterable
 from dataclasses import dataclass
-from functools import singledispatch
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
@@ -12,8 +11,7 @@ from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import BasisLike, CubicSpline, ThinPlateSpline
 from pymgcv.converters import data_to_rdf, to_py
-
-# TODO from pymgcv.gam import FittedGAM causes circular import
+from pymgcv.formula_utils import _to_r_constructor_string, _Var
 
 mgcv = importr("mgcv")
 rbase = importr("base")
@@ -21,20 +19,6 @@ rstats = importr("stats")
 
 
 # TODO: Not supporting 'sp' or 'pc' basis types.
-# TODO: 'xt' is not needed, as basis-related configuration will handle it.
-
-# For now, we only support terms that do not implicitly expand into multiple terms in mgcv.
-# This simplifies the interface:
-# - Each term in the equation maps directly to one term in the mgcv model.
-# - Plotting becomes straightforward, as we can refer to the original formula terms
-#   without tracking internal expansions.
-#
-# We will support these expanding terms in some form, either through utilities to
-#     simplify the definition, or by supporting them directly. But for now:
-# - Only numeric 'by' variables are supported.
-# - Factor 'by' variables and factor interactions must be manually specified.
-
-# We can provide utility functions to help define these more complex terms when needed.
 
 
 @runtime_checkable
@@ -75,23 +59,52 @@ class TermLike(Protocol):
     def _partial_effect(
         self,
         data: pd.DataFrame,
-        gam: Any,
+        fit: Any,
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Compute partial effects and standard errors for this term.
 
         Args:
             data: DataFrame containing predictor variables.
-            gam: Fitted GAM model object.
+            fit: Fitted GAM model object.
             target: Name of the target variable (response or family parameter).
 
         Returns:
             Tuple of (effects, standard_errors) as numpy array.
         """
 
+    def __add__(self, other):
+        """Supports adding of terms to create lists of terms."""
+        ...
+
+    def __radd__(self, other):
+        """Supports adding of terms to create lists of terms."""
+        ...
+
+
+class _AddMixin:
+    def __add__(self, other) -> list:
+        """Mixin class allowing adding of terms to terms and lists.
+
+        It is important to note this is doing nothing but defining a list of terms.
+        It arguably makes formulas more readable though!
+        """
+        if isinstance(other, list):
+            return [self] + other
+        if isinstance(other, TermLike):
+            return [self, other]
+        return NotImplemented
+
+    def __radd__(self, other):
+        if isinstance(other, list):
+            return other + [self]
+        if isinstance(other, TermLike):
+            return [other, self]
+        return NotImplemented
+
 
 @dataclass
-class Linear(TermLike):
+class Linear(_AddMixin, TermLike):
     """Linear (parametric) term with no basis expansion.
 
     If the variable is a categorical variable, the term will be expanded (one-hot
@@ -122,7 +135,7 @@ class Linear(TermLike):
     def _partial_effect(
         self,
         data: pd.DataFrame,
-        gam: Any,
+        fit: Any,
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Compute linear term partial effects.
@@ -131,15 +144,15 @@ class Linear(TermLike):
         multiplied by the variable values. Standard errors are computed
         using the coefficient variance.
         """
-        formula_idx = list(gam.model_specification.all_formulae.keys()).index(target)
+        formula_idx = list(fit.gam.all_formulae.keys()).index(target)
         mgcv_label = self.simple_string(formula_idx)
-        coef = rstats.coef(gam.rgam)
+        coef = rstats.coef(fit.rgam)
         slope = to_py(coef.rx2[mgcv_label]).item()
         data_array = data[self.varnames[0]].to_numpy()
         param_idx = rbase.which(coef.names.ro == mgcv_label)
         assert len(param_idx) == 1
         variance = to_py(
-            gam.rgam.rx2["Vp"].rx(param_idx, param_idx),
+            fit.rgam.rx2["Vp"].rx(param_idx, param_idx),
         ).item()  # TODO not sure this is actually correct?
         se = np.abs(data_array) * np.sqrt(variance)
         return data_array * slope, se
@@ -149,7 +162,7 @@ class Linear(TermLike):
 
 
 @dataclass
-class Interaction(TermLike):
+class Interaction(_AddMixin, TermLike):
     """Parametric interaction term between multiple variables.
 
     Any categorical variables involved in an interaction are expanded into indicator
@@ -205,7 +218,7 @@ class Interaction(TermLike):
     def _partial_effect(
         self,
         data: pd.DataFrame,
-        gam: Any,
+        fit: Any,
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Compute interaction term partial effects.
@@ -214,27 +227,27 @@ class Interaction(TermLike):
         using the fitted coefficients and covariance matrix.
         """
         data = data[list(self.varnames)]
-        formula_idx = list(gam.model_specification.all_formulae.keys()).index(target)
+        formula_idx = list(fit.gam.all_formulae.keys()).index(target)
         predict_mat = rstats.model_matrix(
             ro.Formula(f"~{str(self)}-1"),
             data=data_to_rdf(data),
         )
         coef_names = rbase.colnames(predict_mat)
         post_fix = "" if formula_idx == 0 else f".{formula_idx}"
-        all_coefs = rstats.coef(gam.rgam)
+        all_coefs = rstats.coef(fit.rgam)
         coef_names = rbase.paste0(rbase.colnames(predict_mat), post_fix)
         coefs = all_coefs.rx(coef_names)
-        fit = predict_mat @ coefs
-        cov = gam.rgam.rx2["Vp"]
+        fitted_vals = predict_mat @ coefs
+        cov = fit.rgam.rx2["Vp"]
         cov.rownames = all_coefs.names
         cov.colnames = all_coefs.names
         subcov = cov.rx(coef_names, coef_names)
         se = rbase.sqrt(rbase.rowSums((predict_mat @ subcov).ro * predict_mat))
-        return to_py(fit).squeeze(axis=-1), to_py(se)
+        return to_py(fitted_vals).squeeze(axis=-1), to_py(se)
 
 
 @dataclass
-class Smooth(TermLike):
+class Smooth(_AddMixin, TermLike):
     """Smooth term using spline basis functions.
 
     Note:
@@ -293,19 +306,33 @@ class Smooth(TermLike):
     def __str__(self) -> str:
         """Convert smooth term to mgcv formula syntax."""
         from_basis = self.bs._pass_to_s()
-        m = from_basis.get("m", _AsVar("NA"))
-        xt = from_basis.get("xt", _AsVar("NULL"))
+        m = from_basis.get("m", ro.NA_Logical)
+        xt = from_basis.get("xt", ro.NULL)
+
         kwargs = {
+            "by": _Var(self.by) if self.by is not None else ro.NA_Logical,
             "k": self.k,
-            "fx": self.fx,
             "bs": str(self.bs),
             "m": m,
-            "by": _AsVar(self.by if self.by is not None else "NA"),
-            "xt": xt,  # TODO xt as var!
-            "id": self.id if self.id is not None else _AsVar("NULL"),
+            "xt": xt,
+            "id": self.id if self.id is not None else ro.NULL,
+            "fx": self.fx,
         }
-        kwarg_strings = [f"{k}={_to_r_literal_string(v)}" for k, v in kwargs.items()]
-        return f"s({','.join(self.varnames)},{','.join(kwarg_strings)})"
+        kwarg_strings = [
+            f"{k}={_to_r_constructor_string(v)}" for k, v in kwargs.items()
+        ]
+        defaults = [
+            "k=-1L",
+            "fx=FALSE",
+            'bs="tp"',  # Note quote order matters!
+            "m=NA",
+            "by=NA",
+            "xt=NULL",
+            "id=NULL",
+        ]
+        kwarg_strings = [s for s in kwarg_strings if s not in defaults]
+        kwarg_string = "" if len(kwarg_strings) == 0 else f",{','.join(kwarg_strings)}"
+        return f"s({','.join(self.varnames)}{kwarg_string})"
 
     def simple_string(self, formula_idx: int = 0) -> str:
         """Generate simplified smooth identifier."""
@@ -320,13 +347,13 @@ class Smooth(TermLike):
     def _partial_effect(
         self,
         data: pd.DataFrame,
-        gam: Any,
+        fit: Any,
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
         return _smooth_or_tensorsmooth_partial_effect(
             term=self,
             target=target,
-            gam=gam,
+            fit=fit,
             data=data,
         )
 
@@ -335,7 +362,7 @@ class Smooth(TermLike):
 # Worth testing this case. A far more intuitive interface would be to specify a list of smooths.
 # But that deviates pretty far from the mgcv way.
 @dataclass
-class TensorSmooth(TermLike):
+class TensorSmooth(_AddMixin, TermLike):
     """Tensor product smooth for scale-invariant multi-dimensional smoothing.
 
     Tensor smooths create smooth functions of multiple variables using marginal
@@ -344,8 +371,8 @@ class TensorSmooth(TermLike):
 
     varnames: tuple[str, ...]
     by: str | None
-    k: tuple[int, ...] | None
-    bs: tuple[BasisLike, ...]
+    k: int | tuple[int, ...] | None
+    bs: BasisLike | tuple[BasisLike, ...]
     d: tuple[int, ...] | None
     id: str | None
     fx: bool
@@ -356,9 +383,9 @@ class TensorSmooth(TermLike):
         self,
         *varnames: str,
         by: str | None = None,
-        k: Sequence[int] | None = None,
-        bs: Sequence[BasisLike] | None = None,
-        d: Sequence[int] | None = None,
+        k: int | Iterable[int] | None = None,
+        bs: BasisLike | Iterable[BasisLike] | None = None,
+        d: Iterable[int] | None = None,
         id: str | None = None,
         fx: bool = False,
         np: bool = True,
@@ -371,14 +398,17 @@ class TensorSmooth(TermLike):
 
         Args:
             *varnames: Names of variables for the tensor smooth.
-            k: Sequence of basis dimensions for each marginal basis.
-            bs: Sequence of basis types for each variable. If None, uses defaults.
-                Can mix different basis types for different variables.
+            k: The basis dimension for each marginal smooth. If an integer, all
+                marginal smooths will have the same basis dimension.
+            bs: basis type to use, or an iterable of basis types for each marginal
+                smooth.
             d: Sequence specifying the dimension of each variable's smooth. For example,
                 (2, 1) would specify to use one two dimensional marginal smooth and one
-                1 dimensional marginal smooth. This is useful for space-time smooths (2
-                dimensional space and 1 time dimension).
-            by: Variable name for 'by' variable scaling the tensor smooth.
+                1 dimensional marginal smooth, where three variables are provided. This
+                is useful for space-time smooths (2 dimensional space and 1 time
+                dimension).
+            by: Variable name for 'by' variable scaling the tensor smooth, or creating
+                a smooth for each level of a categorical by variable.
             id: Identifier for sharing penalties across multiple tensor smooths.
             fx: indicates whether the term is a fixed d.f. regression spline (True) or
                 a penalized regression spline (False). Defaults to False.
@@ -390,16 +420,11 @@ class TensorSmooth(TermLike):
         if len(varnames) < 2:
             raise ValueError("Tensor smooths require at least 2 variables")
 
-        if d is None:
-            d = (1,) * len(varnames)
-
-        if bs is None:
-            bs = (CubicSpline(),) * len(d)  # TODO better default for >1d
-
+        bs = CubicSpline() if bs is None else bs
         self.varnames = varnames
-        self.k = tuple(k) if k is not None else None
-        self.bs = tuple(bs)
-        self.d = tuple(d) if d is not None else None
+        self.k = k if isinstance(k, int) else (None if k is None else tuple(k))
+        self.bs = bs if isinstance(bs, BasisLike) else tuple(bs)
+        self.d = tuple(d) if d is not None else d
         self.by = by
         self.id = id
         self.fx = fx
@@ -412,24 +437,55 @@ class TensorSmooth(TermLike):
         Returns:
             String in mgcv te() or ti() syntax, e.g., "te(x1,x2,k=c(10,15))"
         """
-        from_bases = [bs._pass_to_s() for bs in self.bs]
-        ms = [bs.get("m", _AsVar("NA")) for bs in from_bases]
-        xts = [bs.get("xt", _AsVar("NULL")) for bs in from_bases]
+        if isinstance(self.bs, BasisLike):
+            from_bases = self.bs._pass_to_s()
+            m = from_bases.get("m", ro.NA_Logical)
+            xt = from_bases.get("xt", ro.NULL)
+        else:
+            from_bases = [bs._pass_to_s() for bs in self.bs]
+            m = [bs.get("m", ro.NA_Logical) for bs in from_bases]
+
+            if all(x == ro.NA_Logical for x in m):
+                m = ro.NA_Logical
+
+            xt = [bs.get("xt", ro.NULL) for bs in from_bases]
+            if all(x == ro.NULL for x in xt):
+                xt = ro.NULL
+
+        if isinstance(self.bs, BasisLike):
+            bs = str(self.bs)
+        else:
+            bs = ro.StrVector([str(bs) for bs in self.bs])
+
         kwargs = {
-            "k": self.k if self.k is not None else _AsVar("NA"),
-            "bs": self.bs,
-            "m": ms,
-            "d": self.d,
-            "by": _AsVar(self.by if self.by is not None else "NA"),
+            "by": _Var(self.by) if self.by is not None else ro.NA_Logical,
+            "k": self.k if self.k is not None else ro.NA_Logical,
+            "bs": bs,
+            "m": m,
+            "d": ro.NA_Logical if self.d is None else ro.IntVector(self.d),
+            "id": self.id if self.id is not None else ro.NULL,
             "fx": self.fx,
             "np": self.np,
-            "xt": xts,
-            "id": self.id,
+            "xt": xt,
         }
-        kwarg_strings = [f"{k}={_to_r_literal_string(v)}" for k, v in kwargs.items()]
-        print(f"({','.join(self.varnames)},{','.join(kwarg_strings)})")
+        kwarg_strings = [
+            f"{k}={_to_r_constructor_string(v)}" for k, v in kwargs.items()
+        ]
+        defaults = [
+            "by=NA",
+            "k=NA",
+            'bs="cr"',
+            "m=NA",
+            "d=NA",
+            "fx=FALSE",
+            "np=TRUE",
+            "xt=NULL",
+            "id=NULL",
+        ]
+        kwarg_strings = [s for s in kwarg_strings if s not in defaults]
+        kwarg_string = "" if len(kwarg_strings) == 0 else f",{','.join(kwarg_strings)}"
         prefix = "ti" if self.interaction_only else "te"
-        return f"{prefix}({','.join(self.varnames)},{','.join(kwarg_strings)})"
+        return f"{prefix}({','.join(self.varnames)}{kwarg_string})"
 
     def simple_string(self, formula_idx: int = 0) -> str:
         """Generate simplified tensor smooth identifier.
@@ -447,19 +503,19 @@ class TensorSmooth(TermLike):
     def _partial_effect(
         self,
         data: pd.DataFrame,
-        gam: Any,
+        fit: Any,
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
         return _smooth_or_tensorsmooth_partial_effect(
             target=target,
             term=self,
-            gam=gam,
+            fit=fit,
             data=data,
         )
 
 
 @dataclass
-class Offset(TermLike):
+class Offset(_AddMixin, TermLike):
     """Offset term, added to the linear predictor as is.
 
     This means:
@@ -494,7 +550,7 @@ class Offset(TermLike):
     def _partial_effect(
         self,
         data: pd.DataFrame,
-        gam: Any,
+        fit: Any,
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Compute offset partial effects.
@@ -506,48 +562,10 @@ class Offset(TermLike):
         return effect, np.zeros_like(effect)
 
 
-@singledispatch
-def _to_r_literal_string(arg: object) -> str:
-    """Attempts to convert simple types into a string representation in R.
-
-    Currently, any (non string) sequence will be converted to a vector
-    i.e. c(...). Note, strings are quoted (so cannot be used for variables).
-    Wrap in _AsVar if it needs to be passed as a variable.
-    """
-    return f"'{str(arg)}'"
-
-
-@dataclass
-class _AsVar:
-    varname: str
-
-
-@_to_r_literal_string.register
-def _(arg: _AsVar) -> str:
-    return arg.varname
-
-
-@_to_r_literal_string.register
-def _(arg: bool) -> str:  # noqa: FBT001
-    return str(arg).upper()
-
-
-@_to_r_literal_string.register
-def _(arg: int) -> str:
-    return str(arg)
-
-
-@_to_r_literal_string.register
-def _(arg: Sequence) -> str:
-    if isinstance(arg, str):
-        return f"'{arg}'"
-    return f"c({','.join([_to_r_literal_string(item) for item in arg])})"
-
-
 def _smooth_or_tensorsmooth_partial_effect(
     target: str,
     term: TensorSmooth | Smooth,
-    gam: Any,
+    fit: Any,
     data: pd.DataFrame,
 ):
     """Predict (partial effect) and standard error for a smooth term."""
@@ -555,9 +573,9 @@ def _smooth_or_tensorsmooth_partial_effect(
     by = None if term.by is None else data.pop(term.by)
     if term.by is not None:
         by = data.pop(term.by)
-    formula_idx = list(gam.model_specification.all_formulae.keys()).index(target)
+    formula_idx = list(fit.gam.all_formulae.keys()).index(target)
     smooth_name = term.simple_string(formula_idx)
-    smooths = list(gam.rgam.rx2["smooth"])
+    smooths = list(fit.rgam.rx2["smooth"])
     labels = [smooth.rx2["label"][0] for smooth in smooths]
     smooth = smooths[labels.index(smooth_name)]
 
@@ -570,14 +588,14 @@ def _smooth_or_tensorsmooth_partial_effect(
     predict_mat = mgcv.PredictMat(smooth, data_to_rdf(data))
     first = round(smooth.rx2["first.para"][0])
     last = round(smooth.rx2["last.para"][0])
-    coefs = rstats.coef(gam.rgam)[(first - 1) : last]
+    coefs = rstats.coef(fit.rgam)[(first - 1) : last]
     pred = rbase.drop(predict_mat @ coefs)
     # TODO factor by?
     pred = pred if by is None else pred * by
 
     # Compute SEs
     covariance = rbase.as_matrix(
-        gam.rgam.rx2["Vp"].rx(rbase.seq(first, last), rbase.seq(first, last)),
+        fit.rgam.rx2["Vp"].rx(rbase.seq(first, last), rbase.seq(first, last)),
     )
     se = rbase.sqrt(
         rbase.rowSums(

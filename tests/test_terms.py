@@ -3,7 +3,10 @@ from dataclasses import dataclass
 import pytest
 
 from pymgcv.basis_functions import CubicSpline, ThinPlateSpline
-from pymgcv.terms import Interaction, Linear, Smooth, TensorSmooth, TermLike
+from pymgcv.terms import Interaction, Offset, TermLike
+from pymgcv.terms import Linear as L
+from pymgcv.terms import Smooth as S
+from pymgcv.terms import TensorSmooth as T
 
 
 @dataclass
@@ -16,7 +19,7 @@ class TermTestCase:
 
 test_cases = [
     TermTestCase(
-        term=Linear("a"),
+        term=L("a"),
         expected_str="a",
         expected_simple="a",
         expected_simple_with_idx="a.1",
@@ -28,19 +31,25 @@ test_cases = [
         expected_simple_with_idx="a:b:c.1",
     ),
     TermTestCase(
-        term=Smooth("a"),
+        term=S("a"),
         expected_str="s(a)",
         expected_simple="s(a)",
         expected_simple_with_idx="s.1(a)",
     ),
     TermTestCase(
-        term=Smooth("a", "b", bs=ThinPlateSpline(m=3)),
-        expected_str="s(a,b,bs='ts',m=3)",
+        term=S("a", by="b"),
+        expected_str="s(a,by=b)",
+        expected_simple="s(a):b",
+        expected_simple_with_idx="s.1(a):b",
+    ),
+    TermTestCase(
+        term=S("a", "b", bs=ThinPlateSpline(m=3)),
+        expected_str="s(a,b,m=3L)",
         expected_simple="s(a,b)",
         expected_simple_with_idx="s.1(a,b)",
     ),
     TermTestCase(
-        term=Smooth(
+        term=S(
             "a",
             "b",
             k=10,
@@ -49,41 +58,42 @@ test_cases = [
             id="2",
             fx=True,
         ),
-        expected_str="s(a,b,by=var,k=10,bs='cc',m=5,id='2',fx=TRUE)",
+        expected_str='s(a,b,by=var,k=10L,bs="cc",id="2",fx=TRUE)',
         expected_simple="s(a,b):var",
         expected_simple_with_idx="s.1(a,b):var",
     ),
     TermTestCase(
-        term=TensorSmooth("a", "b"),
+        term=T("a", "b"),
         expected_str="te(a,b)",
         expected_simple="te(a,b)",
         expected_simple_with_idx="te.1(a,b)",
     ),
     TermTestCase(
-        term=TensorSmooth("a", "b", interaction_only=True),
+        term=T("a", "b", interaction_only=True),
         expected_str="ti(a,b)",
         expected_simple="ti(a,b)",
         expected_simple_with_idx="ti.1(a,b)",
     ),
     TermTestCase(
-        term=TensorSmooth(
+        term=T(
             "x1",
             "x2",
+            "x3",
             bs=[ThinPlateSpline(m=2), CubicSpline()],
-            d=[5, 3],
+            d=[2, 1],
             by="var",
             np=False,
             id="my_id",
             fx=True,
             interaction_only=True,
         ),
-        expected_str="ti(x1,x2,by=var,bs=c('ts','cr'),d=c(5,3),m=c(2,3),id='my_id',fx=TRUE,np=FALSE)",
-        expected_simple="ti(x1,x2):var",
-        expected_simple_with_idx="ti.1(x1,x2):var",
+        expected_str='ti(x1,x2,x3,by=var,bs=c("tp", "cr"),m=list(2L, NA),d=2:1,id="my_id",fx=TRUE,np=FALSE)',
+        expected_simple="ti(x1,x2,x3):var",
+        expected_simple_with_idx="ti.1(x1,x2,x3):var",
     ),
     TermTestCase(
-        term=TensorSmooth("x", "y", bs=[CubicSpline(), CubicSpline()]),
-        expected_str="te(x,y,bs=c('cr','cr'))",
+        term=T("x", "y", bs=[CubicSpline(), CubicSpline()]),
+        expected_str='te(x,y,bs=c("cr", "cr"))',
         expected_simple="te(x,y)",
         expected_simple_with_idx="te.1(x,y)",
     ),
@@ -95,3 +105,13 @@ def test_smooth_to_str(test_case: TermTestCase):
     assert str(test_case.term) == test_case.expected_str
     assert test_case.term.simple_string() == test_case.expected_simple
     assert test_case.term.simple_string(1) == test_case.expected_simple_with_idx
+
+
+def test_term_addition():
+    l0 = L("x0")
+    l1 = S("x1")
+    l2 = T("x2", "x3")
+    expected = [l0, l1, l2]
+    assert l0 + l1 + l2 == expected
+    assert expected + Offset("x3") == expected + [Offset("x3")]
+    assert Interaction("x3", "x4") + expected == [Interaction("x3", "x4")] + expected

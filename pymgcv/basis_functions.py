@@ -296,4 +296,4 @@ class MarkovRandomField(BasisLike):
 
     def _pass_to_s(self) -> dict[str, Any]:
         """Return spatial structure parameters - NOT YET IMPLEMENTED."""
-        return NotImplementedError()
+        raise NotImplementedError()
