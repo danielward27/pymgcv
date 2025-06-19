@@ -350,7 +350,7 @@ class Smooth(_AddMixin, TermLike):
         fit: Any,
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
-        return _smooth_or_tensorsmooth_partial_effect(
+        return _smooth_partial_effect(
             term=self,
             target=target,
             fit=fit,
@@ -506,7 +506,7 @@ class TensorSmooth(_AddMixin, TermLike):
         fit: Any,
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
-        return _smooth_or_tensorsmooth_partial_effect(
+        return _smooth_partial_effect(
             target=target,
             term=self,
             fit=fit,
@@ -562,45 +562,60 @@ class Offset(_AddMixin, TermLike):
         return effect, np.zeros_like(effect)
 
 
-def _smooth_or_tensorsmooth_partial_effect(
+def _mgcv_smooth_prediction_and_se(
+    mgcv_smooth: Any,
+    data: pd.DataFrame,
+    fit: Any,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute prediction and standard error for a smooth given data."""
+    predict_mat = mgcv.PredictMat(mgcv_smooth, data_to_rdf(data))
+    first = round(mgcv_smooth.rx2["first.para"][0])
+    last = round(mgcv_smooth.rx2["last.para"][0])
+    coefs = rstats.coef(fit.rgam)[(first - 1) : last]
+    pred = rbase.drop(predict_mat @ coefs)
+    cov = rbase.as_matrix(
+        fit.rgam.rx2["Vp"].rx(rbase.seq(first, last), rbase.seq(first, last)),
+    )
+    se = rbase.sqrt(rbase.rowSums((predict_mat @ cov).ro * predict_mat))
+    se = rbase.pmax(0, se)
+    return to_py(pred), to_py(se)
+
+
+def _smooth_partial_effect(
     target: str,
     term: TensorSmooth | Smooth,
     fit: Any,
     data: pd.DataFrame,
 ):
-    """Predict (partial effect) and standard error for a smooth term."""
+    """Predict (partial effect) and standard error for a smooth or tensorsmooth term."""
     data = data.copy()
-    by = None if term.by is None else data.pop(term.by)
-    if term.by is not None:
-        by = data.pop(term.by)
-    formula_idx = list(fit.gam.all_formulae.keys()).index(target)
-    smooth_name = term.simple_string(formula_idx)
-    smooths = list(fit.rgam.rx2["smooth"])
-    labels = [smooth.rx2["label"][0] for smooth in smooths]
-    smooth = smooths[labels.index(smooth_name)]
-
     required_cols = list(term.varnames)
+
     if term.by is not None:
         required_cols.append(term.by)
 
     data = data[required_cols]
 
-    predict_mat = mgcv.PredictMat(smooth, data_to_rdf(data))
-    first = round(smooth.rx2["first.para"][0])
-    last = round(smooth.rx2["last.para"][0])
-    coefs = rstats.coef(fit.rgam)[(first - 1) : last]
-    pred = rbase.drop(predict_mat @ coefs)
-    # TODO factor by?
-    pred = pred if by is None else pred * by
+    formula_idx = list(fit.gam.all_formulae.keys()).index(target)
+    smooth_name = term.simple_string(formula_idx)
+    smooths = {s.rx2["label"][0]: s for s in fit.rgam.rx2["smooth"]}
 
-    # Compute SEs
-    covariance = rbase.as_matrix(
-        fit.rgam.rx2["Vp"].rx(rbase.seq(first, last), rbase.seq(first, last)),
-    )
-    se = rbase.sqrt(
-        rbase.rowSums(
-            (predict_mat @ covariance).ro * predict_mat,
-        ),
-    )
-    se = rbase.pmax(0, se)
-    return to_py(pred), to_py(se)
+    if term.by is not None and data[term.by].dtype == "category":
+        levels = data[term.by].cat.categories
+
+        fit_vals = np.empty(len(data))
+        se = np.empty(len(data))
+
+        for lev in levels:
+            is_lev = data[term.by] == lev
+            data_lev = data[is_lev]
+            if len(data_lev) == 0:
+                continue
+            smooth = smooths[smooth_name + lev]
+            fit_lev, se_lev = _mgcv_smooth_prediction_and_se(smooth, data_lev, fit)
+            fit_vals[is_lev] = fit_lev
+            se[is_lev] = se_lev
+    else:
+        fit_vals, se = _mgcv_smooth_prediction_and_se(smooths[smooth_name], data, fit)
+
+    return fit_vals, se

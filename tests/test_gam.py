@@ -267,32 +267,87 @@ def get_test_cases():
             model = GAM({"y": S("x") + terms.Offset("z")})
             return model.fit(data=data)
 
-    # class SmoothByFactorGAM(AbstractTestCase):  # TODO not currently supported in this form.
-    #     mgcv_call = "gam(y~s(x, by=group), data=data)"
-    #     add_to_r_env = {}
+    class SmoothByCategoricalGAM(AbstractTestCase):
+        mgcv_call = """
+                gam(y~s(x, by=group), data=data)
+                """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {"y": ["s(x):group", "intercept"]}
 
-    #     def get_data(self) -> pd.DataFrame:
-    #         rng = np.random.default_rng(
-    #         n = 50
-    #         group = pd.Series(pd.Categorical(rng.choice(["a", "b", "c"], n)))
-    #         x = np.linspace(0, 10, n)
-    #         y = np.sin(x) + group.cat.codes + rng.normal(scale=0.1, size=n)
-    #         return pd.DataFrame(
-    #             {
-    #                 "group": group,
-    #                 "x": x,
-    #                 "y": y,
-    #             },
-    #         )
+        def get_data(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "x": np.random.randn(100),
+                    "group": pd.Categorical(np.random.choice(["a", "b", "c"], 100)),
+                    "y": np.random.randn(100),
+                },
+            )
 
-    # def pymgcv_gam(self, data) -> FittedGAM:
-    #     return gam(
-    #         dependent="y",
-    #         terms=[
-    #             S("x", by="group"),
-    #         ],  # TODO are strings supported?
-    #         data=data,
-    #     )
+        def pymgcv_gam(self, data) -> FittedGAM:
+            model = GAM({"y": S("x", by="group")})
+            return model.fit(data=data)
+
+    class SmoothByNumericGAM(AbstractTestCase):
+        mgcv_call = """
+                    gam(y~s(x, by=by_var), data=data)
+                    """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {"y": ["s(x):by_var", "intercept"]}
+
+        def get_data(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "x": np.random.randn(100),
+                    "by_var": np.random.randn(100),
+                    "y": np.random.randn(100),
+                },
+            )
+
+        def pymgcv_gam(self, data) -> FittedGAM:
+            model = GAM({"y": S("x", by="by_var")})
+            return model.fit(data=data)
+
+    class TensorByCategoricalGAM(AbstractTestCase):
+        mgcv_call = """
+                gam(y~te(x0,x1, by=group), data=data)
+                """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {"y": ["te(x0,x1):group", "intercept"]}
+
+        def get_data(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "x0": np.random.randn(100),
+                    "x1": np.random.randn(100),
+                    "group": pd.Categorical(np.random.choice(["a", "b", "c"], 100)),
+                    "y": np.random.randn(100),
+                },
+            )
+
+        def pymgcv_gam(self, data) -> FittedGAM:
+            model = GAM({"y": T("x0", "x1", by="group")})
+            return model.fit(data=data)
+
+    class TensorByNumericGAM(AbstractTestCase):
+        mgcv_call = """
+                    gam(y~te(x0,x1,by=by_var), data=data)
+                    """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {"y": ["te(x0,x1):by_var", "intercept"]}
+
+        def get_data(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "x0": np.random.randn(100),
+                    "x1": np.random.randn(100),
+                    "by_var": np.random.randn(100),
+                    "y": np.random.randn(100),
+                },
+            )
+
+        def pymgcv_gam(self, data) -> FittedGAM:
+            model = GAM({"y": T("x0", "x1", by="by_var")})
+            return model.fit(data=data)
 
     class MarkovRandomFieldGAM(AbstractTestCase):
         mgcv_call = """
@@ -323,11 +378,9 @@ def get_test_cases():
             )
             return model.fit(data=data)
 
-    # TODO MRF and SmoothByFactor not included yet!
+    # TODO MRF not included yet!
     # TODO:
     # multivariate gam
-    # list formulas: gam(list(y0~s(x0)+s(x1),y1~s(x2)+s(x3)),family=mvn(d=2),data=dat)
-    # Offset gam
 
     return [
         SingleLinearGAM(),
@@ -339,6 +392,10 @@ def get_test_cases():
         MultivariateMultiFormula(),
         LocationScaleMultiFormula(),
         OffsetGAM(),
+        SmoothByCategoricalGAM(),
+        SmoothByNumericGAM(),
+        TensorByCategoricalGAM(),
+        TensorByNumericGAM(),
     ]
 
 
@@ -387,20 +444,6 @@ def test_partial_effects_colsum_matches_predict(test_case: AbstractTestCase):
         assert pytest.approx(pred["fit"]) == term_fit.sum(axis=1)
 
 
-def test_categorical_by_variables_not_supported():
-    data = pd.DataFrame(
-        {
-            "x": np.random.randn(100),
-            "y": np.random.randn(100),
-            "z": pd.Categorical(np.random.choice(["a", "b", "c"], 100)),
-        },
-    )
-
-    model = GAM({"y": S("x", by="z")})
-    with pytest.raises(TypeError, match="Categorical by variables not yet supported"):
-        model.fit(data=data)
-
-
 def test_intercept_and_se():
     data = pd.DataFrame(
         {
@@ -429,11 +472,8 @@ def test_intercept_and_se():
 
     for name, expected_values in expected.items():
         got_values = intercept[name]
-        for fit_or_se in ["fit", "se"]:
-            assert (
-                pytest.approx(expected_values[fit_or_se], abs=1e-3)
-                == got_values[fit_or_se]
-            )
+        assert pytest.approx(expected_values["fit"], abs=1e-3) == got_values["fit"]
+        assert pytest.approx(expected_values["se"], abs=1e-3) == got_values["se"]
 
     # TODO test model with no intercept
 
@@ -455,11 +495,9 @@ def test_partial_effect_against_partial_effects(test_case: AbstractTestCase):
                     raise e
                 continue
 
-            for fit_or_se in ["fit", "se"]:
-                assert (
-                    pytest.approx(
-                        partial_effects[target][fit_or_se][term.simple_string()],
-                        abs=1e-6,
-                    )
-                    == effect[fit_or_se]
-                )
+            name = term.simple_string()
+            expected_fit = pytest.approx(partial_effects[target]["fit"][name], abs=1e-6)
+            expected_se = pytest.approx(partial_effects[target]["se"][name], abs=1e-6)
+
+            assert expected_fit == effect["fit"]
+            assert expected_se == effect["se"]

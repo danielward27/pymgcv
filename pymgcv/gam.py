@@ -150,7 +150,6 @@ class GAM:
         Performs comprehensive validation including:
         - Checking that all term variables exist in the data
         - Validating 'by' variables are present
-        - Ensuring categorical 'by' variables are not used (not yet supported)
         - Checking for reserved variable names that conflict with mgcv
 
         Args:
@@ -172,16 +171,6 @@ class GAM:
             if term.by is not None:
                 if term.by not in data.columns:
                     raise ValueError(f"Variable {term.by} not found in data.")
-
-                if data[term.by].dtype == "category":
-                    raise TypeError(
-                        """Categorical by variables not yet supported. The reason for
-                        this is that these implicitly expand into multiple terms in the
-                        model, which leads to complications as the model terms no longer
-                        have a one to one mapping to the predicted terms. This behaviour
-                        will be supported as needed. For now, see
-                        ``smooth_by_factor``.""",
-                    )
 
             disallowed = ["Intercept", "intercept", "s(", "te(", "ti(", "t2(", ":", "*"]
 
@@ -354,46 +343,34 @@ class FittedGAM:
             to_py(predictions.rx2["se.fit"]),
             columns=to_py(rbase.colnames(predictions.rx2["se.fit"])),
         )
+        intercepts = _get_intercepts_and_se(self.rgam)
         # Partition results based on formulas
-        formulae = self.gam.all_formulae
         results = {}
-
-        formulae_without_offset = {
-            k: [term for term in terms if not isinstance(term, Offset)]
-            for k, terms in formulae.items()
-        }
-        for i, (name, terms) in enumerate(formulae_without_offset.items()):
-            rename = {term.simple_string(i): term.simple_string() for term in terms}
-            results[name] = pd.concat(
-                {
-                    "fit": fit.rename(columns=rename, errors="raise")[
-                        rename.values()
-                    ].copy(),
-                    "se": se.rename(columns=rename, errors="raise")[
-                        rename.values()
-                    ].copy(),
-                },
-                axis=1,
-            )
-
-        # Add offset terms
-        for k, terms in formulae.items():
+        for i, (name, terms) in enumerate(self.gam.all_formulae.items()):
+            result = {"fit": {}, "se": {}}
             for term in terms:
                 if isinstance(term, Offset):
-                    results[k]["fit", term.simple_string()] = data[term.varnames[0]]
-                    results[k]["se", term.simple_string()] = 0
+                    result["fit"][term.simple_string()] = data[term.varnames[0]]
+                    result["se"][term.simple_string()] = 0
+                    continue
 
-        # Add intercepts
-        intercepts = _get_intercepts_and_se(self.rgam)
-        formula_names = list(results.keys())
-        for name, vals in intercepts.items():
-            idx = 0 if name == "(Intercept)" else int(name.split(".")[-1])
-            formula_name = formula_names[idx]
-            results[formula_name]["fit", "intercept"] = vals["fit"]
-            results[formula_name] = results[formula_name].sort_index(axis=1)
-            results[formula_name]["se", "intercept"] = vals["se"]
+                if term.by is not None and data[term.by].dtype == "category":
+                    levels = data[term.by].cat.categories.to_list()
+                    cols = [f"{term.simple_string(i)}{lev}" for lev in levels]
+                    result["fit"][term.simple_string()] = fit[cols].sum(axis=1)
+                    result["se"][term.simple_string()] = se[cols].sum(axis=1)
+                    continue
 
-        return {k: v.sort_index(axis=1) for k, v in results.items()}
+                result["fit"][term.simple_string()] = fit[term.simple_string(i)]
+                result["se"][term.simple_string()] = se[term.simple_string(i)]
+            results[name] = result
+
+            intercept_name = f"(Intercept){'' if i == 0 else f'.{i}'}"
+            result["fit"]["intercept"] = intercepts[intercept_name]["fit"]
+            result["se"]["intercept"] = intercepts[intercept_name]["se"]
+            result = pd.concat({k: pd.DataFrame(v) for k, v in result.items()}, axis=1)
+            results[name] = result
+        return results
 
     def partial_effect(
         self,
