@@ -6,17 +6,14 @@ import pandas as pd
 import pytest
 import rpy2.robjects as ro
 
-from pymgcv import Smooth, TensorSmooth, terms
+from pymgcv import terms
 from pymgcv.basis_functions import MarkovRandomField, RandomEffect
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
-from pymgcv.gam import (
-    FittedGAM,
-    Model,
-    gam,
-)
+from pymgcv.gam import GAM, FittedGAM
 from pymgcv.rgam_utils import _get_intercepts_and_se
-from pymgcv.term_utils import smooth_by_factor
-from pymgcv.terms import Smooth
+from pymgcv.terms import Linear as L
+from pymgcv.terms import Smooth as S
+from pymgcv.terms import TensorSmooth as T
 
 mgcv = ro.packages.importr("mgcv")  # type: ignore
 
@@ -64,8 +61,8 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = Model({"y": [terms.Linear("x")]})
-            return gam(model, data=data)
+            model = GAM({"y": L("x")})
+            return model.fit(data=data)
 
     class SingleSmoothGAM(AbstractTestCase):
         mgcv_call = """
@@ -84,10 +81,8 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = Model(
-                {"y": [terms.Smooth("x")]},
-            )
-            return gam(model, data=data)
+            model = GAM({"y": S("x")})
+            return model.fit(data=data)
 
     class SingleTensorSmoothGAM(AbstractTestCase):
         mgcv_call = """
@@ -105,10 +100,10 @@ def get_test_cases():
             return pd.DataFrame({"y": y, "x0": x0, "x1": x1})
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = Model(
-                {"y": [TensorSmooth("x0", "x1")]},
+            model = GAM(
+                {"y": [T("x0", "x1")]},
             )
-            return gam(model, data=data)
+            return model.fit(data=data)
 
     class SingleRandomEffect(AbstractTestCase):  # TODO fix
         mgcv_call = "gam(y~s(x) + s(group, bs='re'), data=data)"
@@ -135,15 +130,8 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = Model(
-                {
-                    "y": [
-                        Smooth("x"),
-                        Smooth("group", bs=RandomEffect()),
-                    ],
-                },
-            )
-            return gam(model, data=data)
+            model = GAM({"y": S("x") + S("group", bs=RandomEffect())})
+            return model.fit(data=data)
 
     class SingleFactorInteractionGAM(AbstractTestCase):
         mgcv_call = """
@@ -166,10 +154,10 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = Model(
+            model = GAM(
                 {"y": [terms.Interaction("a", "b")]},
             )
-            return gam(model, data=data)
+            return model.fit(data=data)
 
     class SimpleGAM(AbstractTestCase):
         mgcv_call = """
@@ -189,10 +177,8 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = Model(
-                {"y": [terms.Linear("x0"), terms.Smooth("x1"), terms.Smooth("x2")]},
-            )
-            return gam(model, data=data)
+            model = GAM({"y": L("x0") + S("x1") + S("x2")})
+            return model.fit(data=data)
 
     class MultivariateMultiFormula(AbstractTestCase):
         mgcv_call = """
@@ -221,11 +207,11 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = Model(
-                {"y0": [terms.Smooth("x", k=5)], "y1": [terms.Linear("x")]},
+            model = GAM(
+                {"y0": S("x", k=5), "y1": L("x")},
                 family="mvn(d=2)",
             )
-            return gam(model, data=data)
+            return model.fit(data=data)
 
     class LocationScaleMultiFormula(AbstractTestCase):
         mgcv_call = """
@@ -254,12 +240,12 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = Model(
-                {"y": [terms.Smooth("x0")]},
-                other_predictors={"log_scale": [terms.Smooth("x1")]},
+            model = GAM(
+                {"y": S("x0")},
+                other_predictors={"log_scale": S("x1")},
                 family="gaulss()",
             )
-            return gam(model, data=data)
+            return model.fit(data=data)
 
     class OffsetGAM(AbstractTestCase):
         mgcv_call = """
@@ -278,37 +264,90 @@ def get_test_cases():
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
-            model = Model(
-                {"y": [terms.Smooth("x"), terms.Offset("z")]},
+            model = GAM({"y": S("x") + terms.Offset("z")})
+            return model.fit(data=data)
+
+    class SmoothByCategoricalGAM(AbstractTestCase):
+        mgcv_call = """
+                gam(y~s(x, by=group), data=data)
+                """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {"y": ["s(x):group", "intercept"]}
+
+        def get_data(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "x": np.random.randn(100),
+                    "group": pd.Categorical(np.random.choice(["a", "b", "c"], 100)),
+                    "y": np.random.randn(100),
+                },
             )
-            return gam(model, data=data)
 
-    # class SmoothByFactorGAM(AbstractTestCase):  # TODO not currently supported in this form.
-    #     mgcv_call = "gam(y~s(x, by=group), data=data)"
-    #     add_to_r_env = {}
+        def pymgcv_gam(self, data) -> FittedGAM:
+            model = GAM({"y": S("x", by="group")})
+            return model.fit(data=data)
 
-    #     def get_data(self) -> pd.DataFrame:
-    #         rng = np.random.default_rng(
-    #         n = 50
-    #         group = pd.Series(pd.Categorical(rng.choice(["a", "b", "c"], n)))
-    #         x = np.linspace(0, 10, n)
-    #         y = np.sin(x) + group.cat.codes + rng.normal(scale=0.1, size=n)
-    #         return pd.DataFrame(
-    #             {
-    #                 "group": group,
-    #                 "x": x,
-    #                 "y": y,
-    #             },
-    #         )
+    class SmoothByNumericGAM(AbstractTestCase):
+        mgcv_call = """
+                    gam(y~s(x, by=by_var), data=data)
+                    """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {"y": ["s(x):by_var", "intercept"]}
 
-    # def pymgcv_gam(self, data) -> FittedGAM:
-    #     return gam(
-    #         dependent="y",
-    #         terms=[
-    #             Smooth("x", by="group"),
-    #         ],  # TODO are strings supported?
-    #         data=data,
-    #     )
+        def get_data(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "x": np.random.randn(100),
+                    "by_var": np.random.randn(100),
+                    "y": np.random.randn(100),
+                },
+            )
+
+        def pymgcv_gam(self, data) -> FittedGAM:
+            model = GAM({"y": S("x", by="by_var")})
+            return model.fit(data=data)
+
+    class TensorByCategoricalGAM(AbstractTestCase):
+        mgcv_call = """
+                gam(y~te(x0,x1, by=group), data=data)
+                """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {"y": ["te(x0,x1):group", "intercept"]}
+
+        def get_data(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "x0": np.random.randn(100),
+                    "x1": np.random.randn(100),
+                    "group": pd.Categorical(np.random.choice(["a", "b", "c"], 100)),
+                    "y": np.random.randn(100),
+                },
+            )
+
+        def pymgcv_gam(self, data) -> FittedGAM:
+            model = GAM({"y": T("x0", "x1", by="group")})
+            return model.fit(data=data)
+
+    class TensorByNumericGAM(AbstractTestCase):
+        mgcv_call = """
+                    gam(y~te(x0,x1,by=by_var), data=data)
+                    """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {"y": ["te(x0,x1):by_var", "intercept"]}
+
+        def get_data(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "x0": np.random.randn(100),
+                    "x1": np.random.randn(100),
+                    "by_var": np.random.randn(100),
+                    "y": np.random.randn(100),
+                },
+            )
+
+        def pymgcv_gam(self, data) -> FittedGAM:
+            model = GAM({"y": T("x0", "x1", by="by_var")})
+            return model.fit(data=data)
 
     class MarkovRandomFieldGAM(AbstractTestCase):
         mgcv_call = """
@@ -334,16 +373,14 @@ def get_test_cases():
 
         def pymgcv_gam(self, data) -> FittedGAM:
             polys = list(rlistvec_to_dict(self.add_to_r_env["polys"]).values())
-            model = Model(
-                {"y": [Smooth("district", bs=MarkovRandomField(polys=polys))]},
+            model = GAM(
+                {"y": S("district", bs=MarkovRandomField(polys=polys))},
             )
-            return gam(model, data=data)
+            return model.fit(data=data)
 
-    # TODO MRF and SmoothByFactor not included yet!
+    # TODO MRF not included yet!
     # TODO:
     # multivariate gam
-    # list formulas: gam(list(y0~s(x0)+s(x1),y1~s(x2)+s(x3)),family=mvn(d=2),data=dat)
-    # Offset gam
 
     return [
         SingleLinearGAM(),
@@ -355,6 +392,10 @@ def get_test_cases():
         MultivariateMultiFormula(),
         LocationScaleMultiFormula(),
         OffsetGAM(),
+        SmoothByCategoricalGAM(),
+        SmoothByNumericGAM(),
+        TensorByCategoricalGAM(),
+        TensorByNumericGAM(),
     ]
 
 
@@ -403,50 +444,6 @@ def test_partial_effects_colsum_matches_predict(test_case: AbstractTestCase):
         assert pytest.approx(pred["fit"]) == term_fit.sum(axis=1)
 
 
-def test_categorical_by_variables_not_supported():
-    data = pd.DataFrame(
-        {
-            "x": np.random.randn(100),
-            "y": np.random.randn(100),
-            "z": pd.Categorical(np.random.choice(["a", "b", "c"], 100)),
-        },
-    )
-
-    model = Model({"y": [Smooth("x", by="z")]})
-    with pytest.raises(TypeError, match="Categorical by variables not yet supported"):
-        gam(model, data=data)
-
-
-def test_factor_by():
-    np.random.seed(42)
-    n = 200
-
-    # Create dataframe
-    df = pd.DataFrame(
-        {
-            "x": np.random.uniform(0, 10, n),
-            "group": np.random.choice(["A", "B"], size=n),
-        },
-    )
-
-    # Create response with different smooth functions for groups A and B
-    df["y"] = np.where(
-        df["group"] == "A",
-        np.sin(df["x"]) + np.random.normal(0, 0.2, n),
-        np.cos(df["x"]) + np.random.normal(0, 0.2, n),
-    )
-    df["group"] = df["group"].astype("category")
-
-    factor = df["group"]
-    assert isinstance(factor, pd.Series)
-    smooths, indicators = smooth_by_factor("x", smooth_type=Smooth, factor=factor)
-    model = Model({"y": smooths})
-    gam(
-        model,
-        data=pd.concat([df, indicators], axis=1),
-    )  # TODO can we test against MGCV?
-
-
 def test_intercept_and_se():
     data = pd.DataFrame(
         {
@@ -456,12 +453,12 @@ def test_intercept_and_se():
         },
     )
 
-    model = Model(
-        {"y": [terms.Smooth("x0")]},
-        other_predictors={"log_scale": [terms.Smooth("x1")]},
+    model = GAM(
+        {"y": S("x0")},
+        other_predictors={"log_scale": S("x1")},
         family="gaulss()",
     )
-    fit = gam(model, data=data)
+    fit = model.fit(data=data)
     intercept = _get_intercepts_and_se(fit.rgam)
 
     # Use regex to check values match model summary
@@ -475,11 +472,8 @@ def test_intercept_and_se():
 
     for name, expected_values in expected.items():
         got_values = intercept[name]
-        for fit_or_se in ["fit", "se"]:
-            assert (
-                pytest.approx(expected_values[fit_or_se], abs=1e-3)
-                == got_values[fit_or_se]
-            )
+        assert pytest.approx(expected_values["fit"], abs=1e-3) == got_values["fit"]
+        assert pytest.approx(expected_values["se"], abs=1e-3) == got_values["se"]
 
     # TODO test model with no intercept
 
@@ -491,7 +485,7 @@ def test_partial_effect_against_partial_effects(test_case: AbstractTestCase):
 
     partial_effects = fit.partial_effects(data)
 
-    all_formulae = fit.model_specification.all_formulae
+    all_formulae = fit.gam.all_formulae
     for target, terms in all_formulae.items():
         for term in terms:
             try:
@@ -501,11 +495,9 @@ def test_partial_effect_against_partial_effects(test_case: AbstractTestCase):
                     raise e
                 continue
 
-            for fit_or_se in ["fit", "se"]:
-                assert (
-                    pytest.approx(
-                        partial_effects[target][fit_or_se][term.simple_string()],
-                        abs=1e-6,
-                    )
-                    == effect[fit_or_se]
-                )
+            name = term.simple_string()
+            expected_fit = pytest.approx(partial_effects[target]["fit"][name], abs=1e-6)
+            expected_se = pytest.approx(partial_effects[target]["se"][name], abs=1e-6)
+
+            assert expected_fit == effect["fit"]
+            assert expected_se == effect["se"]

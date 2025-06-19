@@ -17,15 +17,15 @@ build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 
-[tool.pytest.ini_options]
-beartype_packages = 'pymgcv'
+# [tool.pytest.ini_options]
+# beartype_packages = 'pymgcv'
 
 
 [project.optional-dependencies]
 dev = [
     "pytest",
-    "beartype",
-    "pytest-beartype",
+    # "beartype",
+    # "pytest-beartype",
     "ruff",
     "hippogriffe",
     "mkdocs",

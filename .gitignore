@@ -179,3 +179,5 @@ _temp*
 # pixi environments
 .pixi
 *.egg-info
+
+.zed

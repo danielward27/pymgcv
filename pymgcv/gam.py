@@ -3,16 +3,9 @@
 This module provides the main interface for fitting Generalized Additive Models (GAMs)
 using R's mgcv library through rpy2. It includes classes for model specification,
 fitted model objects, and the main fitting function.
-
-The module handles:
-- Model specification with flexible term definitions
-- GAM fitting with various smoothing parameter estimation methods
-- Predictions and partial effects computation
-- Model diagnostics and summaries
 """
 
-from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
@@ -29,30 +22,55 @@ rbase = importr("base")
 rutils = importr("utils")
 rstats = importr("stats")
 
+FitMethodOptions = Literal[
+    "GCV.Cp",
+    "GACV.Cp",
+    "NCV",
+    "QNCV",
+    "REML",
+    "P-REML",
+    "ML",
+    "P-ML",
+]
+
 
 @dataclass
-class Model:
-    r"""Defines the model to use.
+class GAM:
+    r"""Defines the model to use and provides a fit method.
 
     This class encapsulates the GAM model specification, including the
     family, and the terms for modeling response variable(s) and family parameters.
 
     Args:
         response_predictors: Dictionary mapping response variable names to lists of
-            [`TermLike`][pymgcv.terms.TermLike] objects used to predict $g([\mathbb{E}[Y])$  For single response
-            models, use a single key-value pair. For multivariate models, include
-            multiple response variables.
+            [`TermLike`][pymgcv.terms.TermLike] objects used to predict
+            $g([\mathbb{E}[Y])$ For single response models, use a single key-value pair.
+            For multivariate models, include multiple response variables.
         other_predictors: Dictionary mapping family parameter names to lists of
             terms for modeling those parameters. Keys are used as labels during
             prediction and should match the order expected by the mgcv family.
-            Common examples include 'scale' for location-scale models.
         family: String specifying the mgcv family for the error distribution.
             This is passed directly to R's mgcv and can include family arguments.
     """
 
     response_predictors: dict[str, list[TermLike]]
-    other_predictors: dict[str, list[TermLike]] = field(default_factory=dict)
+    other_predictors: dict[str, list[TermLike]]
     family: str = "gaussian"
+
+    def __init__(
+        self,
+        response_predictors: dict[str, list[TermLike] | TermLike],
+        other_predictors: dict[str, list[TermLike] | TermLike] = None,
+        family: str = "gaussian",
+    ):
+        other_predictors = {} if other_predictors is None else other_predictors
+
+        def _ensure_list_of_terms(d):
+            return {k: [v] if isinstance(v, TermLike) else v for k, v in d.items()}
+
+        self.response_predictors = _ensure_list_of_terms(response_predictors)
+        self.other_predictors = _ensure_list_of_terms(other_predictors)
+        self.family = family
 
     def __post_init__(self):
         if len(self.response_predictors) > 1 and self.other_predictors:
@@ -74,6 +92,50 @@ class Model:
                     )
                 within_formula_names.add(name)
 
+        if any(k in self.response_predictors for k in self.other_predictors):
+            raise ValueError(
+                "Cannot have key in other_predictors matching a response variable.",
+            )
+
+    def fit(
+        self,
+        data: pd.DataFrame,
+        method: FitMethodOptions = "GCV.Cp",
+    ):
+        """Fit a Generalized Additive GAM.
+
+        Note, this returns a FittedGAM object (does not mutate the model!), so
+        assign the result to a variable.
+
+        Args:
+            specification: GAM object defining the model structure,
+                including terms for response variables and family parameters, plus
+                the error distribution family
+            data: DataFrame containing all variables referenced in the specification.
+                Variable names must match those used in the model terms.
+            method: Method for smoothing parameter estimation, matching the mgcv,
+                options, including:
+                - "GCV.Cp": Generalized Cross Validation (default, recommended)
+                - "REML": Restricted Maximum Likelihood (good for mixed models)
+
+        Returns:
+            FittedGAM object containing the fitted model and methods for prediction,
+                analysis.
+        """
+        # TODO missing options.
+        self._check_valid_data(data)
+
+        return FittedGAM(
+            mgcv.gam(
+                self._to_r_formulae(),
+                data=data_to_rdf(data),
+                family=ro.rl(self.family),
+                method=method,
+            ),
+            data=data.copy(),
+            gam=self,
+        )
+
     @property
     def all_formulae(self) -> dict[str, list[TermLike]]:
         """All formulae (response and for family parameters)"""
@@ -88,7 +150,6 @@ class Model:
         Performs comprehensive validation including:
         - Checking that all term variables exist in the data
         - Validating 'by' variables are present
-        - Ensuring categorical 'by' variables are not used (not yet supported)
         - Checking for reserved variable names that conflict with mgcv
 
         Args:
@@ -111,17 +172,14 @@ class Model:
                 if term.by not in data.columns:
                     raise ValueError(f"Variable {term.by} not found in data.")
 
-                if data[term.by].dtype == "category":
-                    raise TypeError(
-                        """Categorical by variables not yet supported. The reason for
-                        this is that these implicitly expand into multiple terms in the
-                        model, which leads to complications as the model terms no longer
-                        have a one to one mapping to the predicted terms. This behaviour
-                        will be supported as needed. For now, see
-                        ``smooth_by_factor``.""",
-                    )
+            disallowed = ["Intercept", "intercept", "s(", "te(", "ti(", "t2(", ":", "*"]
 
-        # TODO error if any varnames clash with "intercept".
+            for var in data.columns:
+                if any(dis in var for dis in disallowed):
+                    raise ValueError(
+                        f"Variable name '{var}' risks clashing with terms generated by mgcv, "
+                        "please rename this variable.",
+                    )
 
     def _to_r_formulae(self) -> ro.Formula | list[ro.Formula]:
         """Convert the model specification to R formula objects.
@@ -148,19 +206,19 @@ class Model:
 
 @dataclass
 class FittedGAM:
-    """The fitted GAM model with methods for predicting and analyzing.
+    """The fitted GAM model with methods for predicting.
 
-    Generally returned by fitting methods (rather than directly).
+    Generally returned by fitting methods (rather than being created directly).
 
     Args:
         rgam: The underlying R mgcv model object from fitting
         data: Original DataFrame used for model fitting
-        model_specification: The Model used to create this model
+        gam: The GAM.
     """
 
     rgam: ro.vectors.ListVector
     data: pd.DataFrame
-    model_specification: Model
+    gam: GAM
 
     def predict(
         self,
@@ -198,7 +256,7 @@ class FittedGAM:
             print(predictions[('se', 'y')])   # Standard errors for 'y'
             ```
         """
-        self.model_specification._check_valid_data(data)
+        self.gam._check_valid_data(data)
         predictions = rstats.predict(
             self.rgam,
             newdata=data_to_rdf(data),
@@ -206,7 +264,7 @@ class FittedGAM:
         )
         predictions = rlistvec_to_dict(predictions)
 
-        all_targets = self.model_specification.all_formulae.keys()
+        all_targets = self.gam.all_formulae.keys()
 
         # TODO we assume 1 column for each linear predictor
         n = data.shape[0]
@@ -285,46 +343,34 @@ class FittedGAM:
             to_py(predictions.rx2["se.fit"]),
             columns=to_py(rbase.colnames(predictions.rx2["se.fit"])),
         )
+        intercepts = _get_intercepts_and_se(self.rgam)
         # Partition results based on formulas
-        formulae = self.model_specification.all_formulae
         results = {}
-
-        formulae_without_offset = {
-            k: [term for term in terms if not isinstance(term, Offset)]
-            for k, terms in formulae.items()
-        }
-        for i, (name, terms) in enumerate(formulae_without_offset.items()):
-            rename = {term.simple_string(i): term.simple_string() for term in terms}
-            results[name] = pd.concat(
-                {
-                    "fit": fit.rename(columns=rename, errors="raise")[
-                        rename.values()
-                    ].copy(),
-                    "se": se.rename(columns=rename, errors="raise")[
-                        rename.values()
-                    ].copy(),
-                },
-                axis=1,
-            )
-
-        # Add offset terms
-        for k, terms in formulae.items():
+        for i, (name, terms) in enumerate(self.gam.all_formulae.items()):
+            result = {"fit": {}, "se": {}}
             for term in terms:
                 if isinstance(term, Offset):
-                    results[k]["fit", term.simple_string()] = data[term.varnames[0]]
-                    results[k]["se", term.simple_string()] = 0
+                    result["fit"][term.simple_string()] = data[term.varnames[0]]
+                    result["se"][term.simple_string()] = 0
+                    continue
 
-        # Add intercepts
-        intercepts = _get_intercepts_and_se(self.rgam)
-        formula_names = list(results.keys())
-        for name, vals in intercepts.items():
-            idx = 0 if name == "(Intercept)" else int(name.split(".")[-1])
-            formula_name = formula_names[idx]
-            results[formula_name]["fit", "intercept"] = vals["fit"]
-            results[formula_name] = results[formula_name].sort_index(axis=1)
-            results[formula_name]["se", "intercept"] = vals["se"]
+                if term.by is not None and data[term.by].dtype == "category":
+                    levels = data[term.by].cat.categories.to_list()
+                    cols = [f"{term.simple_string(i)}{lev}" for lev in levels]
+                    result["fit"][term.simple_string()] = fit[cols].sum(axis=1)
+                    result["se"][term.simple_string()] = se[cols].sum(axis=1)
+                    continue
 
-        return {k: v.sort_index(axis=1) for k, v in results.items()}
+                result["fit"][term.simple_string()] = fit[term.simple_string(i)]
+                result["se"][term.simple_string()] = se[term.simple_string(i)]
+            results[name] = result
+
+            intercept_name = f"(Intercept){'' if i == 0 else f'.{i}'}"
+            result["fit"]["intercept"] = intercepts[intercept_name]["fit"]
+            result["se"]["intercept"] = intercepts[intercept_name]["se"]
+            result = pd.concat({k: pd.DataFrame(v) for k, v in result.items()}, axis=1)
+            results[name] = result
+        return results
 
     def partial_effect(
         self,
@@ -421,7 +467,7 @@ class FittedGAM:
             additional model terms are needed.
         """
         partial_effect = self.partial_effect(target, term, data)["fit"]
-        fit = self.predict(data)["fit"][target]
+        fit = self.predict(data)[target]["fit"]
         y = data[target]
         return (y - fit) + partial_effect
 
@@ -439,76 +485,3 @@ class FittedGAM:
     def coefficients(self) -> np.ndarray:  # TODO consider returning as dict?
         """Extract model coefficients from the fitted GAM."""
         return rlistvec_to_dict(self.rgam)["coefficients"]
-
-
-FitMethodOptions = Literal[
-    "GCV.Cp",
-    "GACV.Cp",
-    "NCV",
-    "QNCV",
-    "REML",
-    "P-REML",
-    "ML",
-    "P-ML",
-]
-
-
-def gam(
-    specification: Model,
-    data: pd.DataFrame,
-    method: FitMethodOptions = "GCV.Cp",
-) -> FittedGAM:
-    """Fit a Generalized Additive Model.
-
-    Args:
-        specification: Model object defining the model structure,
-            including terms for response variables and family parameters, plus
-            the error distribution family
-        data: DataFrame containing all variables referenced in the specification.
-            Variable names must match those used in the model terms.
-        method: Method for smoothing parameter estimation, matching the mgcv,
-            options, including:
-            - "GCV.Cp": Generalized Cross Validation (default, recommended)
-            - "REML": Restricted Maximum Likelihood (good for mixed models)
-
-    Returns:
-        FittedGAM object containing the fitted model and methods for prediction,
-            analysis.
-    """
-    # TODO missing options.
-    specification._check_valid_data(data)
-    _check_valid_varnames(data.columns)
-
-    return FittedGAM(
-        mgcv.gam(
-            specification._to_r_formulae(),
-            data=data_to_rdf(data),
-            family=ro.rl(specification.family),
-            method=method,
-        ),
-        data=data.copy(),
-        model_specification=specification,
-    )
-
-
-def _check_valid_varnames(varnames: Iterable[str]) -> None:
-    """Validate variable names don't conflict with mgcv syntax.
-
-    Checks that variable names in the dataset don't contain strings that
-    could be interpreted as mgcv formula syntax, which would cause parsing
-    errors or unexpected behavior.
-
-    Args:
-        varnames: Iterable of variable names to validate
-
-    Raises:
-        ValueError: If any variable name contains reserved mgcv syntax
-    """
-    disallowed = ["Intercept", "intercept", "s(", "te(", "ti(", "t2(", ":", "*"]
-
-    for var in varnames:
-        if any(dis in var for dis in disallowed):
-            raise ValueError(
-                f"Variable name '{var}' risks clashing with terms generated by mgcv, "
-                "please rename this variable.",
-            )

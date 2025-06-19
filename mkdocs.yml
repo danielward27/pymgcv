@@ -83,6 +83,7 @@ plugins:
             show_symbol_type_heading: true
             show_symbol_type_toc: true
             separate_signature: true
+            filters: ["!^_"] # Document init in class!
 
 extra_css:
   - stylesheets/extra.css
