@@ -42,38 +42,38 @@ class GAM:
     family, and the terms for modeling response variable(s) and family parameters.
 
     Args:
-        response_predictors: Dictionary mapping response variable names to lists of
+        predictors: Dictionary mapping response variable names to lists of
             [`TermLike`][pymgcv.terms.TermLike] objects used to predict
             $g([\mathbb{E}[Y])$ For single response models, use a single key-value pair.
             For multivariate models, include multiple response variables.
-        other_predictors: Dictionary mapping family parameter names to lists of
+        family_predictors: Dictionary mapping family parameter names to lists of
             terms for modeling those parameters. Keys are used as labels during
             prediction and should match the order expected by the mgcv family.
         family: String specifying the mgcv family for the error distribution.
             This is passed directly to R's mgcv and can include family arguments.
     """
 
-    response_predictors: dict[str, list[TermLike]]
-    other_predictors: dict[str, list[TermLike]]
+    predictors: dict[str, list[TermLike]]
+    family_predictors: dict[str, list[TermLike]]
     family: str = "gaussian"
 
     def __init__(
         self,
-        response_predictors: dict[str, list[TermLike] | TermLike],
-        other_predictors: dict[str, list[TermLike] | TermLike] = None,
+        predictors: dict[str, list[TermLike] | TermLike],
+        family_predictors: dict[str, list[TermLike] | TermLike] | None = None,
         family: str = "gaussian",
     ):
-        other_predictors = {} if other_predictors is None else other_predictors
+        family_predictors = {} if family_predictors is None else family_predictors
 
         def _ensure_list_of_terms(d):
             return {k: [v] if isinstance(v, TermLike) else v for k, v in d.items()}
 
-        self.response_predictors = _ensure_list_of_terms(response_predictors)
-        self.other_predictors = _ensure_list_of_terms(other_predictors)
+        self.predictors = _ensure_list_of_terms(predictors)
+        self.family_predictors = _ensure_list_of_terms(family_predictors)
         self.family = family
 
     def __post_init__(self):
-        if len(self.response_predictors) > 1 and self.other_predictors:
+        if len(self.predictors) > 1 and self.family_predictors:
             raise ValueError(  # TODO I assume this is possible in mgcv
                 "Simultaneous use of multiple dependent variables and predictors of "
                 "family parameters is not yet supported.",
@@ -92,9 +92,9 @@ class GAM:
                     )
                 within_formula_names.add(name)
 
-        if any(k in self.response_predictors for k in self.other_predictors):
+        if any(k in self.predictors for k in self.family_predictors):
             raise ValueError(
-                "Cannot have key in other_predictors matching a response variable.",
+                "Cannot have key in family_predictors matching a response variable.",
             )
 
     def fit(
@@ -139,7 +139,7 @@ class GAM:
     @property
     def all_formulae(self) -> dict[str, list[TermLike]]:
         """All formulae (response and for family parameters)"""
-        return self.response_predictors | self.other_predictors
+        return self.predictors | self.family_predictors
 
     def _check_valid_data(
         self,
@@ -195,10 +195,10 @@ class GAM:
             response formulae first, then family parameter formulae.
         """
         formulae = []
-        for dependent, terms in self.response_predictors.items():
+        for dependent, terms in self.predictors.items():
             formulae.append(ro.Formula(f"{dependent}~{'+'.join(map(str, terms))}"))
 
-        for terms in self.other_predictors.values():
+        for terms in self.family_predictors.values():
             formulae.append(ro.Formula(f"~{'+'.join(map(str, terms))}"))
 
         return formulae if len(formulae) > 1 else formulae[0]

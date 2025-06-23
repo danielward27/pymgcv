@@ -27,6 +27,13 @@ from pymgcv import terms
 from pymgcv.gam import FittedGAM
 
 
+def plot_all(
+    gam: FittedGAM,
+):
+    """Utility for plotting all terms in a model."""
+    raise NotImplementedError()
+
+
 def plot_continuous_1d(
     target: str,
     term: terms.Linear | terms.Smooth,
