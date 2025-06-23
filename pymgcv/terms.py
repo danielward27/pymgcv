@@ -138,7 +138,17 @@ class Linear(_AddMixin, TermLike):
         fit: Any,
         target: str,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Compute linear term partial effects.
+        if data[self.varnames[0]].dtype == "category":
+            return self._partial_effect_if_categorical(data, fit, target)
+        return self._partial_effect_if_numeric(data, fit, target)
+
+    def _partial_effect_if_numeric(
+        self,
+        data: pd.DataFrame,
+        fit: Any,
+        target: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Compute numeric linear term partial effects.
 
         For linear terms, the partial effect is simply the coefficient
         multiplied by the variable values. Standard errors are computed
@@ -147,6 +157,7 @@ class Linear(_AddMixin, TermLike):
         formula_idx = list(fit.gam.all_formulae.keys()).index(target)
         mgcv_label = self.simple_string(formula_idx)
         coef = rstats.coef(fit.rgam)
+        breakpoint()
         slope = to_py(coef.rx2[mgcv_label]).item()
         data_array = data[self.varnames[0]].to_numpy()
         param_idx = rbase.which(coef.names.ro == mgcv_label)
@@ -157,8 +168,32 @@ class Linear(_AddMixin, TermLike):
         se = np.abs(data_array) * np.sqrt(variance)
         return data_array * slope, se
 
-
-# TODO can above logic be comined with interaction?
+    def _partial_effect_if_categorical(
+        self,
+        data: pd.DataFrame,
+        fit: Any,
+        target: str,
+    ):
+        # TODO Copied from interaction!!! Can this, interaction and numeric linear be combined?
+        # TODO consider risk of inconsistent factor level order
+        data = data[self.varnames[0]]
+        formula_idx = list(fit.gam.all_formulae.keys()).index(target)
+        predict_mat = rstats.model_matrix(
+            ro.Formula(f"~{str(self)}-1"),
+            data=data_to_rdf(data),
+        ).rx(True, -1)  # Drop first level
+        # TODO does this follow factor level order?
+        post_fix = "" if formula_idx == 0 else f".{formula_idx}"
+        all_coefs = rstats.coef(fit.rgam)
+        coef_names = rbase.paste0(rbase.colnames(predict_mat), post_fix)
+        coefs = all_coefs.rx(coef_names)
+        fitted_vals = predict_mat @ coefs
+        cov = fit.rgam.rx2["Vp"]
+        cov.rownames = all_coefs.names
+        cov.colnames = all_coefs.names
+        subcov = cov.rx(coef_names, coef_names)
+        se = rbase.sqrt(rbase.rowSums((predict_mat @ subcov).ro * predict_mat))
+        return to_py(fitted_vals).squeeze(axis=-1), to_py(se)
 
 
 @dataclass
@@ -235,7 +270,10 @@ class Interaction(_AddMixin, TermLike):
         coef_names = rbase.colnames(predict_mat)
         post_fix = "" if formula_idx == 0 else f".{formula_idx}"
         all_coefs = rstats.coef(fit.rgam)
-        coef_names = rbase.paste0(rbase.colnames(predict_mat), post_fix)
+        coef_names = rbase.paste0(
+            rbase.colnames(predict_mat),
+            post_fix,
+        )  # TODO we overwrite coef_names?
         coefs = all_coefs.rx(coef_names)
         fitted_vals = predict_mat @ coefs
         cov = fit.rgam.rx2["Vp"]
@@ -619,3 +657,7 @@ def _smooth_partial_effect(
         fit_vals, se = _mgcv_smooth_prediction_and_se(smooths[smooth_name], data, fit)
 
     return fit_vals, se
+
+
+# TODO just take formula_idx as argument, instead of target
+# then fit can be rgam object.

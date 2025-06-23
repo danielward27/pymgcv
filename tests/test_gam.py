@@ -64,6 +64,28 @@ def get_test_cases():
             model = GAM({"y": L("x")})
             return model.fit(data=data)
 
+    class SingleCategoricalLinearGAM(AbstractTestCase):
+        mgcv_call = """
+                gam(y~group, data=data)
+                """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {"y": ["group", "intercept"]}
+
+        def get_data(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "group": pd.Series(
+                        np.random.choice(["A", "B", "C"], 200),
+                        dtype="category",
+                    ),
+                    "y": np.random.normal(0, 0.2, 200),
+                },
+            )
+
+        def pymgcv_gam(self, data) -> FittedGAM:
+            model = GAM({"y": L("group")})
+            return model.fit(data=data)
+
     class SingleSmoothGAM(AbstractTestCase):
         mgcv_call = """
             gam(y~s(x), data=data)
@@ -349,6 +371,25 @@ def get_test_cases():
             model = GAM({"y": T("x0", "x1", by="by_var")})
             return model.fit(data=data)
 
+    class PoissonGAM(AbstractTestCase):
+        mgcv_call = """
+                    gam(counts~s(x), data=data, family=poisson)
+                    """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {"counts": ["s(x)", "intercept"]}
+
+        def get_data(self) -> pd.DataFrame:
+            return pd.DataFrame(
+                {
+                    "x": np.random.randn(100),
+                    "counts": np.random.poisson(size=100),
+                },
+            )
+
+        def pymgcv_gam(self, data) -> FittedGAM:
+            model = GAM({"counts": S("x")}, family="poisson")
+            return model.fit(data=data)
+
     class MarkovRandomFieldGAM(AbstractTestCase):
         mgcv_call = """
         gam(crime ~ s(district,bs="mrf",xt=list(polys=polys)),data=columb,method="REML")
@@ -384,6 +425,7 @@ def get_test_cases():
 
     return [
         SingleLinearGAM(),
+        SingleCategoricalLinearGAM(),
         SingleSmoothGAM(),
         SingleTensorSmoothGAM(),
         SingleRandomEffect(),
@@ -396,6 +438,7 @@ def get_test_cases():
         SmoothByNumericGAM(),
         TensorByCategoricalGAM(),
         TensorByNumericGAM(),
+        PoissonGAM(),
     ]
 
 
