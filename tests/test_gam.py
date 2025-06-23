@@ -264,7 +264,7 @@ def get_test_cases():
         def pymgcv_gam(self, data) -> FittedGAM:
             model = GAM(
                 {"y": S("x0")},
-                other_predictors={"log_scale": S("x1")},
+                family_predictors={"log_scale": S("x1")},
                 family="gaulss()",
             )
             return model.fit(data=data)
@@ -498,7 +498,7 @@ def test_intercept_and_se():
 
     model = GAM(
         {"y": S("x0")},
-        other_predictors={"log_scale": S("x1")},
+        family_predictors={"log_scale": S("x1")},
         family="gaulss()",
     )
     fit = model.fit(data=data)

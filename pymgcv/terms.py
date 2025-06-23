@@ -157,7 +157,6 @@ class Linear(_AddMixin, TermLike):
         formula_idx = list(fit.gam.all_formulae.keys()).index(target)
         mgcv_label = self.simple_string(formula_idx)
         coef = rstats.coef(fit.rgam)
-        breakpoint()
         slope = to_py(coef.rx2[mgcv_label]).item()
         data_array = data[self.varnames[0]].to_numpy()
         param_idx = rbase.which(coef.names.ro == mgcv_label)
