@@ -53,11 +53,12 @@ nav:
   - Introduction: index.ipynb
   - Examples:
       - GAMLSS: examples/gamlss.ipynb
+      - Smooth-by-categorical: examples/smooth_by_categorical.ipynb
   - API Reference:
-      - Fitting GAMs: api/gam.md
-      - Terms: api/terms.md
-      - Basis Functions: api/basis_functions.md
-      - Plotting: api/plot.md
+      - api/gam.md
+      - api/terms.md
+      - api/basis_functions.md
+      - api/plot.md
 
 plugins:
   - search:

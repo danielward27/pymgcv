@@ -13,7 +13,7 @@ import pandas as pd
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
-from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
+from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py, to_rpy
 from pymgcv.rgam_utils import _get_intercepts_and_se
 from pymgcv.terms import Offset, TermLike
 
@@ -443,33 +443,30 @@ class FittedGAM:
 
         Returns:
             Series containing the partial residuals for the specified term
-
-        Example:
-            ```python
-            # Compute partial residuals for smooth term
-            partial_resid = model.partial_residuals('y', Smooth('x1'), data)
-
-            # Plot partial residuals to assess model fit
-            import matplotlib.pyplot as plt
-            plt.scatter(data['x1'], partial_resid, alpha=0.6)
-
-            # Overlay the fitted smooth for comparison
-            smooth_effect = model.partial_effect('y', Smooth('x1'), data)
-            plt.plot(data['x1'], smooth_effect['fit'], 'red', linewidth=2)
-            plt.xlabel('x1')
-            plt.ylabel('Partial residuals')
-            plt.title('Partial residual plot for s(x1)')
-            ```
-
-        Note:
-            If the partial residuals show systematic patterns around the fitted
-            smooth curve, it may indicate that a different functional form or
-            additional model terms are needed.
         """
-        partial_effect = self.partial_effect(target, term, data)["fit"]
-        fit = self.predict(data)[target]["fit"]
-        y = data[target]
-        return (y - fit) + partial_effect
+        partial_effects = self.partial_effects(data)[target]["fit"]  # Link scale
+        link_fit = partial_effects.sum(axis=1).to_numpy()
+        term_effect = partial_effects.pop(term.simple_string()).to_numpy()
+
+        family = self.gam.family
+        if "(" not in family:
+            family = f"{family}()"
+
+        rfam = ro.r(family)
+        inv_link_fn = rfam.rx2("linkinv")
+        d_mu_d_eta_fn = rfam.rx2("mu.eta")
+        rpy_link_fit = to_rpy(link_fit)
+        response_residual = data[target] - to_py(inv_link_fn(rpy_link_fit))
+
+        # We want to transform residuals to link scale.
+        # link(response) - link(response_fit) not sensible (e.g. poisson with log link risks log(0))
+        # Instead use first order taylor expansion of link function around the fit
+        d_mu_d_eta = to_py(d_mu_d_eta_fn(rpy_link_fit))
+        d_mu_d_eta = np.maximum(d_mu_d_eta, 1e-6)  # Numerical stability
+
+        # If ĝ is the f.d. approxmator to link, below is ĝ(response) - ĝ(response_fit)
+        link_residual = response_residual / d_mu_d_eta
+        return link_residual + term_effect
 
     def summary(self) -> str:
         """Generate a comprehensive summary of the fitted GAM model.

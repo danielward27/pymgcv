@@ -117,7 +117,7 @@ def rlistvec_to_dict(x: ro.ListVector) -> dict:
 
 
 def data_to_rdf(
-    data: pd.DataFrame,
+    data: pd.DataFrame | pd.Series,
     as_array_prefixes: Iterable[str] = (),
 ) -> ro.vectors.DataFrame:
     """Convert pandas DataFrame to R data.frame for use with mgcv.
@@ -138,31 +138,10 @@ def data_to_rdf(
         R data.frame object ready for use with mgcv functions
 
     Raises:
-        TypeError: If input is not a pandas DataFrame
-
-    Examples:
-        ```python
-        import pandas as pd
-
-        # Basic conversion
-        df = pd.DataFrame({'x': [1, 2, 3], 'y': [4, 5, 6]})
-        r_df = data_to_rdf(df)
-
-        # With functional data (columns func_1, func_2, func_3 -> func array)
-        func_df = pd.DataFrame({
-            'x': [1, 2, 3],
-            'func_1': [0.1, 0.2, 0.3],
-            'func_2': [0.4, 0.5, 0.6],
-            'func_3': [0.7, 0.8, 0.9]
-        })
-        r_df = data_to_rdf(func_df, as_array_prefixes=['func'])
-        ```
-
-    Note:
-        This function is specifically designed for mgcv compatibility and
-        handles edge cases that generic pandas-to-R conversion might miss.
+        TypeError: If input is not a pandas DataFrame or Series
     """
-    if not isinstance(data, pd.DataFrame):
+    data = pd.DataFrame(data)
+    if not isinstance(data, pd.DataFrame | pd.Series):
         raise TypeError("Data must be a pandas DataFrame.")
     if any(data.dtypes == "object") or any(data.dtypes == "string"):
         raise TypeError("DataFrame contains unsupported object or string types.")

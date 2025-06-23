@@ -4,6 +4,4 @@ The basics of fitting a gam are we first create a [`GAM`][pymgcv.gam.GAM] object
 
 ::: pymgcv.gam.GAM
 
-::: pymgcv.gam.gam
-
 ::: pymgcv.gam.FittedGAM
