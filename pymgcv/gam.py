@@ -5,6 +5,7 @@ using R's mgcv library through rpy2. It includes classes for model specification
 fitted model objects, and the main fitting function.
 """
 
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Literal
 
@@ -14,8 +15,7 @@ import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py, to_rpy
-from pymgcv.rgam_utils import _get_intercepts_and_se
-from pymgcv.terms import Offset, TermLike
+from pymgcv.terms import Intercept, Offset, TermLike
 
 mgcv = importr("mgcv")
 rbase = importr("base")
@@ -55,14 +55,17 @@ class GAM:
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
-    family: str = "gaussian"
+    family: str
 
     def __init__(
         self,
         predictors: dict[str, list[TermLike] | TermLike],
         family_predictors: dict[str, list[TermLike] | TermLike] | None = None,
+        *,
         family: str = "gaussian",
+        add_intercepts: bool = True,
     ):
+        predictors, family_predictors = deepcopy((predictors, family_predictors))
         family_predictors = {} if family_predictors is None else family_predictors
 
         def _ensure_list_of_terms(d):
@@ -72,30 +75,29 @@ class GAM:
         self.family_predictors = _ensure_list_of_terms(family_predictors)
         self.family = family
 
+        if add_intercepts:
+            for v in self.all_formulae.values():
+                v.append(Intercept())
+
     def __post_init__(self):
-        if len(self.predictors) > 1 and self.family_predictors:
-            raise ValueError(  # TODO I assume this is possible in mgcv
-                "Simultaneous use of multiple dependent variables and predictors of "
-                "family parameters is not yet supported.",
-            )
-
         for terms in self.all_formulae.values():
-            within_formula_names = set()
+            labels = set()
             for term in terms:
-                name = term.simple_string()
-                if name in within_formula_names:
+                label = term.label()
+                if label in labels:
                     raise ValueError(
-                        f"Duplicate term name '{name}' found in formulae. "
-                        "pymgcv does not support this. If you believe to have "
-                        "a legitimate use case for this, try duplicating the term "
-                        "and renaming it.",
+                        f"Duplicate term with label '{label}' found in formula. pymgcv "
+                        "does not support duplicate terms. If this is intentional, "
+                        "consider duplicating the corresponding variable in your data "
+                        "under a new name and using it for one of the terms.",
                     )
-                within_formula_names.add(name)
+                labels.add(label)
 
-        if any(k in self.predictors for k in self.family_predictors):
-            raise ValueError(
-                "Cannot have key in family_predictors matching a response variable.",
-            )
+        for k in self.predictors:
+            if k in self.family_predictors:
+                raise ValueError(
+                    f"Cannot have key {k} in both predictors and family_predictors.",
+                )
 
     def fit(
         self,
@@ -195,11 +197,15 @@ class GAM:
             response formulae first, then family parameter formulae.
         """
         formulae = []
-        for dependent, terms in self.predictors.items():
-            formulae.append(ro.Formula(f"{dependent}~{'+'.join(map(str, terms))}"))
+        for target, terms in self.all_formulae.items():
+            if target in self.family_predictors:
+                target = ""  # no left hand side
 
-        for terms in self.family_predictors.values():
-            formulae.append(ro.Formula(f"~{'+'.join(map(str, terms))}"))
+            formula_str = f"{target}~{'+'.join(map(str, terms))}"
+            if not any(isinstance(term, Intercept) for term in terms):
+                formula_str += "-1"
+
+            formulae.append(ro.Formula(formula_str))
 
         return formulae if len(formulae) > 1 else formulae[0]
 
@@ -343,33 +349,30 @@ class FittedGAM:
             to_py(predictions.rx2["se.fit"]),
             columns=to_py(rbase.colnames(predictions.rx2["se.fit"])),
         )
-        intercepts = _get_intercepts_and_se(self.rgam)
         # Partition results based on formulas
         results = {}
-        for i, (name, terms) in enumerate(self.gam.all_formulae.items()):
+        for i, (target, terms) in enumerate(self.gam.all_formulae.items()):
             result = {"fit": {}, "se": {}}
             for term in terms:
-                if isinstance(term, Offset):
-                    result["fit"][term.simple_string()] = data[term.varnames[0]]
-                    result["se"][term.simple_string()] = 0
-                    continue
+                match term:
+                    case Offset() | Intercept():
+                        partial_effect = self.partial_effect(target, term, data)
+                        result["fit"][term.label()] = partial_effect["fit"]
+                        result["se"][term.label()] = partial_effect["se"]
 
-                if term.by is not None and data[term.by].dtype == "category":
-                    levels = data[term.by].cat.categories.to_list()
-                    cols = [f"{term.simple_string(i)}{lev}" for lev in levels]
-                    result["fit"][term.simple_string()] = fit[cols].sum(axis=1)
-                    result["se"][term.simple_string()] = se[cols].sum(axis=1)
-                    continue
+                    case _ if term.by is not None and data[term.by].dtype == "category":
+                        levels = data[term.by].cat.categories.to_list()
+                        cols = [f"{term.mgcv_identifier(i)}{lev}" for lev in levels]
+                        result["fit"][term.label()] = fit[cols].sum(axis=1)
+                        result["se"][term.label()] = se[cols].sum(axis=1)
 
-                result["fit"][term.simple_string()] = fit[term.simple_string(i)]
-                result["se"][term.simple_string()] = se[term.simple_string(i)]
-            results[name] = result
+                    case _:
+                        result["fit"][term.label()] = fit[term.mgcv_identifier(i)]
+                        result["se"][term.label()] = se[term.mgcv_identifier(i)]
 
-            intercept_name = f"(Intercept){'' if i == 0 else f'.{i}'}"
-            result["fit"]["intercept"] = intercepts[intercept_name]["fit"]
-            result["se"]["intercept"] = intercepts[intercept_name]["se"]
+            results[target] = result
             result = pd.concat({k: pd.DataFrame(v) for k, v in result.items()}, axis=1)
-            results[name] = result
+            results[target] = result
         return results
 
     def partial_effect(
@@ -416,6 +419,7 @@ class FittedGAM:
             for centered smooth terms).
         """
         effect, se = term._partial_effect(data, self, target)
+        assert len(data) == len(effect)
         return pd.DataFrame({"fit": effect, "se": se})
 
     def partial_residuals(
@@ -446,7 +450,7 @@ class FittedGAM:
         """
         partial_effects = self.partial_effects(data)[target]["fit"]  # Link scale
         link_fit = partial_effects.sum(axis=1).to_numpy()
-        term_effect = partial_effects.pop(term.simple_string()).to_numpy()
+        term_effect = partial_effects.pop(term.label()).to_numpy()
 
         family = self.gam.family
         if "(" not in family:

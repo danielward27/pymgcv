@@ -1,4 +1,3 @@
-import re
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -10,7 +9,6 @@ from pymgcv import terms
 from pymgcv.basis_functions import MarkovRandomField, RandomEffect
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
 from pymgcv.gam import GAM, FittedGAM
-from pymgcv.rgam_utils import _get_intercepts_and_se
 from pymgcv.terms import Linear as L
 from pymgcv.terms import Smooth as S
 from pymgcv.terms import TensorSmooth as T
@@ -50,7 +48,7 @@ def get_test_cases():
                 gam(y~x, data=data)
                 """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["x", "intercept"]}
+        expected_predict_terms_structure = {"y": ["Linear(x)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
             return pd.DataFrame(
@@ -69,7 +67,7 @@ def get_test_cases():
                 gam(y~group, data=data)
                 """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["group", "intercept"]}
+        expected_predict_terms_structure = {"y": ["Linear(group)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
             return pd.DataFrame(
@@ -91,7 +89,7 @@ def get_test_cases():
             gam(y~s(x), data=data)
             """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["s(x)", "intercept"]}
+        expected_predict_terms_structure = {"y": ["Smooth(x)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
             x = np.random.uniform(0, 1, 200)
@@ -111,7 +109,7 @@ def get_test_cases():
         gam(y~te(x0, x1), data=data)
         """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["te(x0,x1)", "intercept"]}
+        expected_predict_terms_structure = {"y": ["TensorSmooth(x0,x1)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
             rng = np.random.default_rng(seed=42)
@@ -130,7 +128,9 @@ def get_test_cases():
     class SingleRandomEffect(AbstractTestCase):  # TODO fix
         mgcv_call = "gam(y~s(x) + s(group, bs='re'), data=data)"
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["s(x)", "s(group)", "intercept"]}
+        expected_predict_terms_structure = {
+            "y": ["Smooth(x)", "Smooth(group)", "intercept"],
+        }
 
         def get_data(self) -> pd.DataFrame:
             rng = np.random.default_rng(1)
@@ -160,7 +160,7 @@ def get_test_cases():
             gam(y~a:b, data=data)
             """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["a:b", "intercept"]}
+        expected_predict_terms_structure = {"y": ["Interaction(a,b)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
             return pd.DataFrame(
@@ -186,7 +186,9 @@ def get_test_cases():
             gam(y~x0+s(x1)+s(x2), data=data)
             """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["x0", "s(x1)", "s(x2)", "intercept"]}
+        expected_predict_terms_structure = {
+            "y": ["Linear(x0)", "Smooth(x1)", "Smooth(x2)", "intercept"],
+        }
 
         def get_data(self) -> pd.DataFrame:
             return pd.DataFrame(
@@ -215,8 +217,8 @@ def get_test_cases():
             """
         add_to_r_env = {}
         expected_predict_terms_structure = {
-            "y0": ["s(x)", "intercept"],
-            "y1": ["x", "intercept"],
+            "y0": ["Smooth(x)", "intercept"],
+            "y1": ["Linear(x)", "intercept"],
         }
 
         def get_data(self) -> pd.DataFrame:
@@ -248,8 +250,8 @@ def get_test_cases():
             """
         add_to_r_env = {}
         expected_predict_terms_structure = {
-            "y": ["s(x0)", "intercept"],
-            "log_scale": ["s(x1)", "intercept"],
+            "y": ["Smooth(x0)", "intercept"],
+            "log_scale": ["Smooth(x1)", "intercept"],
         }
 
         def get_data(self) -> pd.DataFrame:
@@ -274,7 +276,9 @@ def get_test_cases():
             gam(y~s(x) + offset(z), data=data)
             """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["s(x)", "offset(z)", "intercept"]}
+        expected_predict_terms_structure = {
+            "y": ["Smooth(x)", "Offset(z)", "intercept"],
+        }
 
         def get_data(self) -> pd.DataFrame:
             return pd.DataFrame(
@@ -294,7 +298,7 @@ def get_test_cases():
                 gam(y~s(x, by=group), data=data)
                 """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["s(x):group", "intercept"]}
+        expected_predict_terms_structure = {"y": ["Smooth(x,by=group)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
             return pd.DataFrame(
@@ -314,7 +318,7 @@ def get_test_cases():
                     gam(y~s(x, by=by_var), data=data)
                     """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["s(x):by_var", "intercept"]}
+        expected_predict_terms_structure = {"y": ["Smooth(x,by=by_var)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
             return pd.DataFrame(
@@ -334,7 +338,9 @@ def get_test_cases():
                 gam(y~te(x0,x1, by=group), data=data)
                 """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["te(x0,x1):group", "intercept"]}
+        expected_predict_terms_structure = {
+            "y": ["TensorSmooth(x0,x1,by=group)", "intercept"],
+        }
 
         def get_data(self) -> pd.DataFrame:
             return pd.DataFrame(
@@ -355,7 +361,9 @@ def get_test_cases():
                     gam(y~te(x0,x1,by=by_var), data=data)
                     """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"y": ["te(x0,x1):by_var", "intercept"]}
+        expected_predict_terms_structure = {
+            "y": ["TensorSmooth(x0,x1,by=by_var)", "intercept"],
+        }
 
         def get_data(self) -> pd.DataFrame:
             return pd.DataFrame(
@@ -376,7 +384,7 @@ def get_test_cases():
                     gam(counts~s(x), data=data, family=poisson)
                     """
         add_to_r_env = {}
-        expected_predict_terms_structure = {"counts": ["s(x)", "intercept"]}
+        expected_predict_terms_structure = {"counts": ["Smooth(x)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
             return pd.DataFrame(
@@ -395,7 +403,7 @@ def get_test_cases():
         gam(crime ~ s(district,bs="mrf",xt=list(polys=polys)),data=columb,method="REML")
         """
         add_to_r_env: dict
-        expected_predict_terms_structure = {"crime": ["s(district)", "intercept"]}
+        expected_predict_terms_structure = {"crime": ["Smooth(district)", "intercept"]}
 
         def __init__(self):
             polys = ro.packages.data(mgcv).fetch("columb.polys")["columb.polys"]
@@ -470,7 +478,7 @@ def test_predict_terms_structure(test_case: AbstractTestCase):
     for term_name, fit_and_se in all_terms.items():
         for fit_or_se in ["fit", "se"]:
             actual = fit_and_se[fit_or_se].columns.values.tolist()
-            assert sorted(actual) == sorted(expected[term_name])
+            assert sorted(expected[term_name]) == sorted(actual)
 
 
 @pytest.mark.parametrize("test_case", test_cases, ids=[type(t) for t in test_cases])
@@ -485,40 +493,6 @@ def test_partial_effects_colsum_matches_predict(test_case: AbstractTestCase):
     for target, pred in predictions.items():
         term_fit = term_predictions[target]["fit"]
         assert pytest.approx(pred["fit"]) == term_fit.sum(axis=1)
-
-
-def test_intercept_and_se():
-    data = pd.DataFrame(
-        {
-            "x0": np.random.uniform(0, 1, 200),
-            "x1": np.random.normal(0, 0.2, 200),
-            "y": np.random.normal(0, 0.2, 200),
-        },
-    )
-
-    model = GAM(
-        {"y": S("x0")},
-        family_predictors={"log_scale": S("x1")},
-        family="gaulss()",
-    )
-    fit = model.fit(data=data)
-    intercept = _get_intercepts_and_se(fit.rgam)
-
-    # Use regex to check values match model summary
-    summary_str = fit.summary()
-    pattern = r"^\(Intercept\)\.?\d*\s+([-eE0-9.+]+)\s+([-eE0-9.+]+)"
-    matches = re.findall(pattern, summary_str, re.MULTILINE)
-    expected = {
-        "(Intercept)": {"fit": float(matches[0][0]), "se": float(matches[0][1])},
-        "(Intercept).1": {"fit": float(matches[1][0]), "se": float(matches[1][1])},
-    }
-
-    for name, expected_values in expected.items():
-        got_values = intercept[name]
-        assert pytest.approx(expected_values["fit"], abs=1e-3) == got_values["fit"]
-        assert pytest.approx(expected_values["se"], abs=1e-3) == got_values["se"]
-
-    # TODO test model with no intercept
 
 
 @pytest.mark.parametrize("test_case", test_cases, ids=[type(t) for t in test_cases])
@@ -538,7 +512,7 @@ def test_partial_effect_against_partial_effects(test_case: AbstractTestCase):
                     raise e
                 continue
 
-            name = term.simple_string()
+            name = term.label()
             expected_fit = pytest.approx(partial_effects[target]["fit"][name], abs=1e-6)
             expected_se = pytest.approx(partial_effects[target]["se"][name], abs=1e-6)
 

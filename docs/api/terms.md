@@ -8,3 +8,4 @@ Terms are the building blocks of GAM models. Each term represents a different wa
 ::: pymgcv.terms.TensorSmooth
 ::: pymgcv.terms.Interaction
 ::: pymgcv.terms.Offset
+::: pymgcv.terms.Intercept
