@@ -43,8 +43,17 @@ class TermLike(Protocol):
         """Convert the term to mgcv formula syntax."""
         ...
 
-    def simple_string(self, formula_idx: int = 0) -> str:
-        """Generate a simplified identifier for the term.
+    def label(self) -> str:
+        """The label used by pymgcv for the term in plotting and columns.
+
+        All labels must be unique in a formula. Labels should be implemented
+        such that each unique label must map to a unique mgcv identifier (but
+        not necessarily the other way around).
+        """
+        ...
+
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
+        """Generate the mgcv identifier for the term.
 
         This representation is used internally for term identification and
         matches the format used by mgcv when predicting separate terms.
@@ -116,7 +125,7 @@ class Linear(_AddMixin, TermLike):
         name: Name of the variable to include as a linear term.
     """
 
-    varnames: tuple[str]
+    varnames: tuple[str, ...]
     by: str | None
 
     def __init__(self, name: str):
@@ -127,7 +136,10 @@ class Linear(_AddMixin, TermLike):
         """Return variable name for mgcv formula."""
         return self.varnames[0]
 
-    def simple_string(self, formula_idx: int = 0) -> str:
+    def label(self) -> str:
+        return f"Linear({self.varnames[0]})"
+
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Return term identifier with optional formula index."""
         idx = "" if formula_idx == 0 else f".{formula_idx}"
         return self.varnames[0] + idx
@@ -155,7 +167,7 @@ class Linear(_AddMixin, TermLike):
         using the coefficient variance.
         """
         formula_idx = list(fit.gam.all_formulae.keys()).index(target)
-        mgcv_label = self.simple_string(formula_idx)
+        mgcv_label = self.mgcv_identifier(formula_idx)
         coef = rstats.coef(fit.rgam)
         slope = to_py(coef.rx2[mgcv_label]).item()
         data_array = data[self.varnames[0]].to_numpy()
@@ -177,14 +189,20 @@ class Linear(_AddMixin, TermLike):
         # TODO consider risk of inconsistent factor level order
         data = data[self.varnames[0]]
         formula_idx = list(fit.gam.all_formulae.keys()).index(target)
+        post_fix = "" if formula_idx == 0 else f".{formula_idx}"
         predict_mat = rstats.model_matrix(
             ro.Formula(f"~{str(self)}-1"),
             data=data_to_rdf(data),
-        ).rx(True, -1)  # Drop first level
+        )
         # TODO does this follow factor level order?
-        post_fix = "" if formula_idx == 0 else f".{formula_idx}"
-        all_coefs = rstats.coef(fit.rgam)
         coef_names = rbase.paste0(rbase.colnames(predict_mat), post_fix)
+        all_coefs = rstats.coef(fit.rgam)
+
+        if coef_names[0] not in all_coefs.names:
+            # Drop first level if done by mgcv
+            predict_mat = predict_mat.rx(True, -1)
+            coef_names = coef_names[1:]
+
         coefs = all_coefs.rx(coef_names)
         fitted_vals = predict_mat @ coefs
         cov = fit.rgam.rx2["Vp"]
@@ -244,7 +262,10 @@ class Interaction(_AddMixin, TermLike):
         """Return interaction in mgcv formula syntax (colon-separated)."""
         return ":".join(self.varnames)
 
-    def simple_string(self, formula_idx: int = 0) -> str:
+    def label(self):
+        return f"Interaction({','.join(self.varnames)})"
+
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Return interaction identifier with optional formula index."""
         idx = "" if formula_idx == 0 else f".{formula_idx}"
         return ":".join(self.varnames) + idx
@@ -371,15 +392,19 @@ class Smooth(_AddMixin, TermLike):
         kwarg_string = "" if len(kwarg_strings) == 0 else f",{','.join(kwarg_strings)}"
         return f"s({','.join(self.varnames)}{kwarg_string})"
 
-    def simple_string(self, formula_idx: int = 0) -> str:
+    def label(self) -> str:
+        by = f",by={self.by}" if self.by else ""
+        return f"Smooth({','.join(self.varnames)}{by})"
+
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Generate simplified smooth identifier."""
         idx = "" if formula_idx == 0 else f".{formula_idx}"
-        simple_string = f"s{idx}({','.join(self.varnames)})"
+        mgcv_identifier = f"s{idx}({','.join(self.varnames)})"
 
         if self.by is not None:
-            simple_string += f":{self.by}"
+            mgcv_identifier += f":{self.by}"
 
-        return simple_string
+        return mgcv_identifier
 
     def _partial_effect(
         self,
@@ -395,8 +420,7 @@ class Smooth(_AddMixin, TermLike):
         )
 
 
-# TODO, tensnor smooth d=c(2,1), common, in which case all the sequences should be length 2.
-# Worth testing this case. A far more intuitive interface would be to specify a list of smooths.
+# A far more intuitive interface would be to specify a list of smooths.
 # But that deviates pretty far from the mgcv way.
 @dataclass
 class TensorSmooth(_AddMixin, TermLike):
@@ -524,7 +548,11 @@ class TensorSmooth(_AddMixin, TermLike):
         prefix = "ti" if self.interaction_only else "te"
         return f"{prefix}({','.join(self.varnames)}{kwarg_string})"
 
-    def simple_string(self, formula_idx: int = 0) -> str:
+    def label(self) -> str:
+        by = f",by={self.by}" if self.by else ""
+        return f"TensorSmooth({','.join(self.varnames)}{by})"
+
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Generate simplified tensor smooth identifier.
 
         Returns:
@@ -532,10 +560,10 @@ class TensorSmooth(_AddMixin, TermLike):
         """
         idx = "" if formula_idx == 0 else f".{formula_idx}"
         prefix = "ti" if self.interaction_only else "te"
-        simple_string = f"{prefix}{idx}({','.join(self.varnames)})"
+        mgcv_identifier = f"{prefix}{idx}({','.join(self.varnames)})"
         if self.by is not None:
-            simple_string += ":" + self.by
-        return simple_string
+            mgcv_identifier += ":" + self.by
+        return mgcv_identifier
 
     def _partial_effect(
         self,
@@ -565,7 +593,7 @@ class Offset(_AddMixin, TermLike):
             data.
     """
 
-    varnames: tuple[str]
+    varnames: tuple[str, ...]
     by: str | None
 
     def __init__(self, name: str):
@@ -576,7 +604,10 @@ class Offset(_AddMixin, TermLike):
         """Return offset in mgcv formula syntax."""
         return f"offset({self.varnames[0]})"
 
-    def simple_string(self, formula_idx: int = 0) -> str:
+    def label(self) -> str:
+        return f"Offset({self.varnames[0]})"
+
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Return offset identifier.
 
         Note: mgcv doesn't include offsets as parametric terms in predictions,
@@ -634,7 +665,7 @@ def _smooth_partial_effect(
     data = data[required_cols]
 
     formula_idx = list(fit.gam.all_formulae.keys()).index(target)
-    smooth_name = term.simple_string(formula_idx)
+    smooth_name = term.mgcv_identifier(formula_idx)
     smooths = {s.rx2["label"][0]: s for s in fit.rgam.rx2["smooth"]}
 
     if term.by is not None and data[term.by].dtype == "category":
@@ -657,6 +688,52 @@ def _smooth_partial_effect(
 
     return fit_vals, se
 
+
+class Intercept(_AddMixin, TermLike):
+    """Intercept term.
+
+    By default, this is added to all formulas in the model. If you want to control
+    the intercept term, then [`GAM`][pymgcv.gam.GAM] should have ``add_intercepts``
+    set to `False`, in which case, only intercepts explicitly added will be included
+    in the model.
+    """
+
+    varnames: tuple[str, ...]
+    by: str | None
+
+    def __init__(self):
+        self.varnames = ()
+        self.by = None
+
+    def __str__(self) -> str:
+        """Return variable name for mgcv formula."""
+        return "1"
+
+    def label(self) -> str:
+        return "intercept"
+
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
+        """Return term identifier with optional formula index."""
+        return f"(Intercept){'' if formula_idx == 0 else f'.{formula_idx}'}"
+
+    def _partial_effect(
+        self,
+        data: pd.DataFrame,
+        fit: Any,
+        target: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        formula_idx = list(fit.gam.all_formulae.keys()).index(target)
+        coef = fit.rgam.rx2("coefficients")
+        vp_diag = np.diag(np.array(fit.rgam.rx2("Vp")))
+        coef_names = list(coef.names)
+        assert len(coef_names) == len(vp_diag)
+        intercept_name = self.mgcv_identifier(formula_idx)
+        intercept = to_py(coef.rx2[intercept_name]).item()
+        se = np.sqrt(vp_diag[coef_names.index(intercept_name)]).item()
+        return np.full(len(data), intercept), np.full(len(data), se)
+
+
+# TODO We can do rx2 with the name, likely better than which!
 
 # TODO just take formula_idx as argument, instead of target
 # then fit can be rgam object.

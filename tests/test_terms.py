@@ -103,8 +103,8 @@ test_cases = [
 @pytest.mark.parametrize("test_case", test_cases)
 def test_smooth_to_str(test_case: TermTestCase):
     assert str(test_case.term) == test_case.expected_str
-    assert test_case.term.simple_string() == test_case.expected_simple
-    assert test_case.term.simple_string(1) == test_case.expected_simple_with_idx
+    assert test_case.term.mgcv_identifier() == test_case.expected_simple
+    assert test_case.term.mgcv_identifier(1) == test_case.expected_simple_with_idx
 
 
 def test_term_addition():
