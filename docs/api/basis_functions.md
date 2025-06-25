@@ -10,4 +10,5 @@ Basis functions control how smooth terms behave in your GAM models. Different ba
 ::: pymgcv.basis_functions.SplineOnSphere
 ::: pymgcv.basis_functions.RandomEffect
 ::: pymgcv.basis_functions.MarkovRandomField
+::: pymgcv.basis_functions.RandomWigglyCurve
 ::: pymgcv.basis_functions.BasisLike
