@@ -6,7 +6,12 @@ import pytest
 import rpy2.robjects as ro
 
 from pymgcv import terms
-from pymgcv.basis_functions import MarkovRandomField, RandomEffect
+from pymgcv.basis_functions import (
+    CubicSpline,
+    MarkovRandomField,
+    RandomEffect,
+    RandomWigglyCurve,
+)
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
 from pymgcv.gam import GAM, FittedGAM
 from pymgcv.terms import Linear as L
@@ -51,10 +56,11 @@ def get_test_cases():
         expected_predict_terms_structure = {"y": ["Linear(x)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
-                    "x": np.random.uniform(0, 1, 200),
-                    "y": np.random.normal(0, 0.2, 200),
+                    "x": rng.uniform(0, 1, 200),
+                    "y": rng.normal(0, 0.2, 200),
                 },
             )
 
@@ -70,13 +76,14 @@ def get_test_cases():
         expected_predict_terms_structure = {"y": ["Linear(group)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
                     "group": pd.Series(
-                        np.random.choice(["A", "B", "C"], 200),
+                        rng.choice(["A", "B", "C"], 200),
                         dtype="category",
                     ),
-                    "y": np.random.normal(0, 0.2, 200),
+                    "y": rng.normal(0, 0.2, 200),
                 },
             )
 
@@ -92,11 +99,12 @@ def get_test_cases():
         expected_predict_terms_structure = {"y": ["Smooth(x)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
-            x = np.random.uniform(0, 1, 200)
+            rng = np.random.default_rng(seed=42)
+            x = rng.uniform(0, 1, 200)
             return pd.DataFrame(
                 {
                     "x": x,
-                    "y": np.random.normal(0, 0.2, 200),
+                    "y": rng.normal(0, 0.2, 200),
                 },
             )
 
@@ -125,7 +133,7 @@ def get_test_cases():
             )
             return model.fit(data=data)
 
-    class SingleRandomEffect(AbstractTestCase):  # TODO fix
+    class SingleRandomEffect(AbstractTestCase):
         mgcv_call = "gam(y~s(x) + s(group, bs='re'), data=data)"
         add_to_r_env = {}
         expected_predict_terms_structure = {
@@ -133,7 +141,7 @@ def get_test_cases():
         }
 
         def get_data(self) -> pd.DataFrame:
-            rng = np.random.default_rng(1)
+            rng = np.random.default_rng(42)
             n = 50
             group = pd.Series(
                 pd.Categorical(
@@ -163,15 +171,16 @@ def get_test_cases():
         expected_predict_terms_structure = {"y": ["Interaction(a,b)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
                     "a": pd.Categorical(
-                        np.random.choice(["A", "B"], size=200, replace=True),
+                        rng.choice(["A", "B"], size=200, replace=True),
                     ),
                     "b": pd.Categorical(
-                        np.random.choice(["C", "D", "E"], size=200, replace=True),
+                        rng.choice(["C", "D", "E"], size=200, replace=True),
                     ),
-                    "y": np.random.uniform(0, 1, size=200),
+                    "y": rng.uniform(0, 1, size=200),
                 },
             )
 
@@ -191,12 +200,13 @@ def get_test_cases():
         }
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
-                    "x0": np.random.uniform(0, 1, 200),
-                    "x1": np.random.uniform(0, 1, 200),
-                    "x2": np.random.uniform(0, 1, 200),
-                    "y": np.random.normal(0, 0.2, 200),
+                    "x0": rng.uniform(0, 1, 200),
+                    "x1": rng.uniform(0, 1, 200),
+                    "x2": rng.uniform(0, 1, 200),
+                    "y": rng.normal(0, 0.2, 200),
                 },
             )
 
@@ -222,11 +232,12 @@ def get_test_cases():
         }
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
-                    "x": np.random.uniform(0, 1, 200),
-                    "y0": np.random.normal(0, 0.2, 200),
-                    "y1": np.random.normal(0, 0.2, 200),
+                    "x": rng.uniform(0, 1, 200),
+                    "y0": rng.normal(0, 0.2, 200),
+                    "y1": rng.normal(0, 0.2, 200),
                 },
             )
 
@@ -255,11 +266,12 @@ def get_test_cases():
         }
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
-                    "x0": np.random.uniform(0, 1, 200),
-                    "x1": np.random.normal(0, 0.2, 200),
-                    "y": np.random.normal(0, 0.2, 200),
+                    "x0": rng.uniform(0, 1, 200),
+                    "x1": rng.normal(0, 0.2, 200),
+                    "y": rng.normal(0, 0.2, 200),
                 },
             )
 
@@ -281,11 +293,12 @@ def get_test_cases():
         }
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
-                    "x": np.random.uniform(0, 1, 200),
-                    "z": np.random.uniform(0, 1, 200),
-                    "y": np.random.normal(0, 0.2, 200),
+                    "x": rng.uniform(0, 1, 200),
+                    "z": rng.uniform(0, 1, 200),
+                    "y": rng.normal(0, 0.2, 200),
                 },
             )
 
@@ -301,11 +314,12 @@ def get_test_cases():
         expected_predict_terms_structure = {"y": ["Smooth(x,by=group)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
-                    "x": np.random.randn(100),
-                    "group": pd.Categorical(np.random.choice(["a", "b", "c"], 100)),
-                    "y": np.random.randn(100),
+                    "x": rng.standard_normal(100),
+                    "group": pd.Categorical(rng.choice(["a", "b", "c"], 100)),
+                    "y": rng.standard_normal(100),
                 },
             )
 
@@ -321,11 +335,12 @@ def get_test_cases():
         expected_predict_terms_structure = {"y": ["Smooth(x,by=by_var)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
-                    "x": np.random.randn(100),
-                    "by_var": np.random.randn(100),
-                    "y": np.random.randn(100),
+                    "x": rng.standard_normal(100),
+                    "by_var": rng.standard_normal(100),
+                    "y": rng.standard_normal(100),
                 },
             )
 
@@ -343,17 +358,42 @@ def get_test_cases():
         }
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
-                    "x0": np.random.randn(100),
-                    "x1": np.random.randn(100),
-                    "group": pd.Categorical(np.random.choice(["a", "b", "c"], 100)),
-                    "y": np.random.randn(100),
+                    "x0": rng.standard_normal(100),
+                    "x1": rng.standard_normal(100),
+                    "group": pd.Categorical(rng.choice(["a", "b", "c"], 100)),
+                    "y": rng.standard_normal(100),
                 },
             )
 
         def pymgcv_gam(self, data) -> FittedGAM:
             model = GAM({"y": T("x0", "x1", by="group")})
+            return model.fit(data=data)
+
+    class RandomWigglyCurveSmoothGAM(AbstractTestCase):
+        mgcv_call = """
+            gam(y~s(x,group,bs="fs",xt=list(bs="cr")),data=data)
+        """
+        add_to_r_env = {}
+        expected_predict_terms_structure = {
+            "y": ["Smooth(x,group)", "intercept"],
+        }
+
+        def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
+            return pd.DataFrame(
+                {
+                    "x": rng.standard_normal(100),
+                    "group": pd.Categorical(rng.choice(["a", "b", "c"], 100)),
+                    "y": rng.standard_normal(100),
+                },
+            )
+
+        def pymgcv_gam(self, data) -> FittedGAM:
+            bs = RandomWigglyCurve(CubicSpline())
+            model = GAM({"y": S("x", "group", bs=bs)})
             return model.fit(data=data)
 
     class TensorByNumericGAM(AbstractTestCase):
@@ -366,12 +406,13 @@ def get_test_cases():
         }
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
-                    "x0": np.random.randn(100),
-                    "x1": np.random.randn(100),
-                    "by_var": np.random.randn(100),
-                    "y": np.random.randn(100),
+                    "x0": rng.standard_normal(100),
+                    "x1": rng.standard_normal(100),
+                    "by_var": rng.standard_normal(100),
+                    "y": rng.standard_normal(100),
                 },
             )
 
@@ -387,10 +428,11 @@ def get_test_cases():
         expected_predict_terms_structure = {"counts": ["Smooth(x)", "intercept"]}
 
         def get_data(self) -> pd.DataFrame:
+            rng = np.random.default_rng(seed=42)
             return pd.DataFrame(
                 {
-                    "x": np.random.randn(100),
-                    "counts": np.random.poisson(size=100),
+                    "x": rng.standard_normal(100),
+                    "counts": rng.poisson(size=100),
                 },
             )
 
@@ -437,6 +479,7 @@ def get_test_cases():
         SingleSmoothGAM(),
         SingleTensorSmoothGAM(),
         SingleRandomEffect(),
+        RandomWigglyCurveSmoothGAM(),
         SingleFactorInteractionGAM(),
         SimpleGAM(),
         MultivariateMultiFormula(),

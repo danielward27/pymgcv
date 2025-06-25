@@ -733,6 +733,43 @@ class Intercept(_AddMixin, TermLike):
         return np.full(len(data), intercept), np.full(len(data), se)
 
 
+@dataclass
+class _RandomWigglyToByInterface(_AddMixin, TermLike):
+    """This wraps a term using a RandomWigglyCurve basis to a term with a by variable.
+
+    This isn't a real usable term, but provides a consistent interface for plotting
+    between categorical by variables and random wiggly curve terms.
+    """
+
+    random_wiggly_term: Smooth | TensorSmooth
+    by: str | None
+
+    def __init__(self, random_wiggly_term: Smooth | TensorSmooth):
+        # TODO edge case of by being set and "fs" basis being used!
+        self.random_wiggly_term = random_wiggly_term
+        self.by = random_wiggly_term.varnames[-1]
+        self.varnames = random_wiggly_term.varnames[:-1]
+
+    def __str__(self) -> str:
+        """Return variable name for mgcv formula."""
+        raise NotImplementedError()
+
+    def label(self) -> str:
+        return self.random_wiggly_term.label()
+
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
+        raise NotImplementedError()
+
+    def _partial_effect(
+        self,
+        data: pd.DataFrame,
+        fit: Any,
+        target: str,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        breakpoint()
+        return self.random_wiggly_term._partial_effect(data, fit, target)
+
+
 # TODO We can do rx2 with the name, likely better than which!
 
 # TODO just take formula_idx as argument, instead of target
