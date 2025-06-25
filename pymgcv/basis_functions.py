@@ -5,11 +5,7 @@ terms to control the shape and properties of the estimated smooth functions.
 """
 
 from collections.abc import Iterable
-from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
-
-import numpy as np
-import rpy2.robjects as ro
+from dataclasses import dataclass, field
 
 # The design here is a bit strange and warrants some explanation. We want a clean
 # interface, which means that ideally we can pass arguments to the basis that relate to
@@ -21,6 +17,15 @@ import rpy2.robjects as ro
 # xt can be large (e.g. arrays) so we cannot map this to a string, so we map it to
 # a variable name. m tends to be small, so we store it as a python variable and convert
 # to a string in the formula.
+from typing import Protocol, TypedDict, runtime_checkable
+
+import numpy as np
+import rpy2.robjects as ro
+
+
+class _PassToS(TypedDict, total=False):
+    xt: ro.ListVector
+    m: int | float | tuple[int | float, ...]
 
 
 @runtime_checkable
@@ -40,7 +45,7 @@ class BasisLike(Protocol):
         """
         ...
 
-    def _pass_to_s(self) -> dict[str, Any]:
+    def _pass_to_s(self) -> _PassToS:
         """Basis specific arguments to pass to mgcv.s.
 
         This handles:
@@ -54,7 +59,8 @@ class BasisLike(Protocol):
 
         Returns:
             A dictionary, mapping a keyword (e.g. xt or m) to a dictionary of
-            variable names and variable values.
+            variable names and variable values. xt should map to an rpy2 ListVector
+            if present.
         """
         ...
 
@@ -73,7 +79,7 @@ class RandomEffect(BasisLike):
         """Return mgcv identifier for random effects."""
         return "re"
 
-    def _pass_to_s(self) -> dict[str, dict[str, ro.RObject]]:
+    def _pass_to_s(self) -> _PassToS:
         return {}
 
 
@@ -99,8 +105,49 @@ class ThinPlateSpline(BasisLike):
         """Return mgcv identifier: 'ts' for shrinkage, 'tp' for standard."""
         return "ts" if self.shrinkage else "tp"
 
-    def _pass_to_s(self) -> dict[str, Any]:
+    def _pass_to_s(self) -> _PassToS:
         return {"m": self.m} if self.m is not None else {}
+
+
+@dataclass
+class RandomWigglyCurve(BasisLike):
+    """Smooth for each level of a categorical variable.
+
+    When using this basis, the first variable of the smooth should
+    be a numeric variable, and the second should be a categorical variable.
+
+    Unlike using a categorical by variable e.g. `S(x, by="group")`:
+
+    - The terms share a smoothing parameter.
+    - The terms are fully penalized, with seperate penalties on each null space
+        component (e.g. intercepts). The terms are non-centered, and can
+        be used with an intercept without introducing indeterminacy, due to the
+        penalization.
+
+    Args:
+        bs: Any singly penalized basis function. Defaults to
+            `ThinPlateSpline`. Only the type of the basis is passed
+            to mgcv (i.e. what is returned by `str(bs)`). This is a limitation
+            of mgcv (e.g. you cannot do )
+            mgcv provides no way to pass more details for setting up the
+            basis function.
+    """
+
+    bs: BasisLike = field(default_factory=ThinPlateSpline)
+
+    def __str__(self) -> str:
+        """Return mgcv identifier for random effects."""
+        return "fs"
+
+    def _pass_to_s(self) -> _PassToS:
+        listvec = ro.ListVector([str(self.bs)])
+        listvec.names = ["bs"]
+        to_s = self.bs._pass_to_s()
+        if "xt" in to_s:
+            to_s["xt"] = to_s["xt"] + listvec
+        else:
+            to_s["xt"] = listvec
+        return to_s
 
 
 @dataclass(kw_only=True)
@@ -139,7 +186,7 @@ class CubicSpline(BasisLike):
         """Return mgcv identifier: 'cs', 'cc', or 'cr'."""
         return "cs" if self.shrinkage else "cc" if self.cyclic else "cr"
 
-    def _pass_to_s(self) -> dict[str, dict[str, ro.RObject]]:
+    def _pass_to_s(self) -> _PassToS:
         """No additional parameters needed for cubic splines."""
         return {}
 
@@ -180,7 +227,7 @@ class DuchonSpline(BasisLike):
         """Return mgcv identifier for Duchon splines."""
         return "ds"
 
-    def _pass_to_s(self) -> dict[str, Any]:
+    def _pass_to_s(self) -> _PassToS:
         return {"m": (self.m, self.s)}
 
 
@@ -206,7 +253,7 @@ class SplineOnSphere(BasisLike):
         """Return mgcv identifier for splines on sphere."""
         return "sos"
 
-    def _pass_to_s(self) -> dict[str, Any]:
+    def _pass_to_s(self) -> _PassToS:
         """No additional parameters needed for splines on sphere."""
         return {}
 
@@ -237,7 +284,7 @@ class BSpline(BasisLike):
         """Return mgcv identifier for B-splines."""
         return "bs"
 
-    def _pass_to_s(self) -> dict[str, Any]:
+    def _pass_to_s(self) -> _PassToS:
         return {"m": [self.degree] + self.penalty_orders}
 
 
@@ -269,7 +316,7 @@ class PSpline(BasisLike):
         """Return mgcv identifier: 'cp' for cyclic, 'ps' for standard."""
         return "cp" if self.cyclic else "ps"
 
-    def _pass_to_s(self) -> dict[str, Any]:
+    def _pass_to_s(self) -> _PassToS:
         # Note (unlike b-splines) seems mgcv uses m[1] for the penalty order, not degree so subtract 1
         return {"m": (self.degree - 1, self.penalty_order)}
 
@@ -294,6 +341,6 @@ class MarkovRandomField(BasisLike):
         """Return mgcv identifier for Markov Random Fields."""
         return "mrf"
 
-    def _pass_to_s(self) -> dict[str, Any]:
+    def _pass_to_s(self) -> _PassToS:
         """Return spatial structure parameters - NOT YET IMPLEMENTED."""
         raise NotImplementedError()
