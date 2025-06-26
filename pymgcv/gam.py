@@ -438,7 +438,52 @@ class FittedGAM:
         strvec = rutils.capture_output(rbase.summary(self.rgam))
         return "\n".join(tuple(strvec))
 
-    @property
-    def coefficients(self) -> np.ndarray:  # TODO consider returning as dict?
-        """Extract model coefficients from the fitted GAM."""
-        return rlistvec_to_dict(self.rgam)["coefficients"]
+    def coefficients(self) -> pd.Series:  # TODO consider returning as dict?
+        """Extract model coefficients from the fitted GAM.
+
+        Returns a series where the index if the mgcv-style name of the parameter.
+        """
+        coef = self.rgam.rx2["coefficients"]
+        names = coef.names
+        return pd.Series(to_py(coef), index=names)
+
+    def covariance(
+        self,
+        *,
+        sandwich=False,
+        freq=False,
+        unconditional=False,
+    ) -> pd.DataFrame:
+        """Extract the covariance matrix from the fitted GAM.
+
+        Extracts the Bayesian posterior covariance matrix of the parameters or
+        frequentist covariance matrix of the parameter estimators from the fitted GAM.
+        Returns a pandas dataframe, where the column names and index are the mgcv-style
+        parameter names.
+
+        Args:
+            sandwich: If True, compute sandwich estimate of covariance matrix.
+                Currently expensive for discrete bam fits.
+            freq: If True, return the frequentist covariance matrix of the parameter
+                estimators. If False, return the Bayesian posterior covariance matrix
+                of the parameters. The latter option includes the expected squared bias
+                according to the Bayesian smoothing prior.
+            unconditional: If True (and freq=False), return the Bayesian smoothing
+                parameter uncertainty corrected covariance matrix, if available.
+
+        Returns:
+            The covariance matrix as a numpy array.
+
+        """
+        if unconditional and freq:
+            raise ValueError("Unconditional and freq cannot both be True")
+        coef_names = self.rgam.rx2["coefficients"].names
+        cov = to_py(
+            rstats.vcov(
+                self.rgam,
+                sandwich=sandwich,
+                freq=freq,
+                unconditional=unconditional,
+            ),
+        )
+        return pd.DataFrame(cov, index=coef_names, columns=coef_names)

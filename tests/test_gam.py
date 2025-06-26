@@ -561,3 +561,14 @@ def test_partial_effect_against_partial_effects(test_case: AbstractTestCase):
 
             assert expected_fit == effect["fit"]
             assert expected_se == effect["se"]
+
+
+@pytest.mark.parametrize("test_case", test_cases, ids=[type(t) for t in test_cases])
+def test_coef_and_cov(test_case: AbstractTestCase):
+    data = test_case.get_data()
+    fit = test_case.pymgcv_gam(data)
+    coef = fit.coefficients()
+    cov = fit.covariance()
+    assert cov.shape[0] == cov.shape[1]
+    assert cov.shape[0] == coef.shape[0]
+    assert np.all(coef.index == cov.index)
