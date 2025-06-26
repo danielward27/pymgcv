@@ -791,10 +791,13 @@ class _RandomWigglyToByInterface(_AddMixin, TermLike):
         *,
         data: pd.DataFrame,
         rgam: Any,
-        idx: int,
+        formula_idx: int,
     ) -> tuple[np.ndarray, np.ndarray]:
-        breakpoint()
-        return self.random_wiggly_term._partial_effect(data, fit, target)
+        return self.random_wiggly_term._partial_effect(
+            data=data,
+            rgam=rgam,
+            formula_idx=formula_idx,
+        )
 
 
 # TODO We can do rx2 with the name, likely better than which!

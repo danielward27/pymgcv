@@ -38,7 +38,7 @@ class GAMTestCase:
 
 
 # Factory functions for test cases
-def single_linear_gam() -> GAMTestCase:
+def linear_gam() -> GAMTestCase:
     rng = np.random.default_rng(seed=42)
     data = pd.DataFrame({"x": rng.uniform(0, 1, 200), "y": rng.normal(0, 0.2, 200)})
     return GAMTestCase(
@@ -49,11 +49,11 @@ def single_linear_gam() -> GAMTestCase:
     )
 
 
-def single_categorical_linear_gam() -> GAMTestCase:
+def categorical_linear_gam() -> GAMTestCase:
     rng = np.random.default_rng(seed=42)
     data = pd.DataFrame(
         {
-            "group": pd.Series(rng.choice(["A", "B", "C"], 200), dtype="category"),
+            "group": pd.Series(rng.choice(["a", "b", "c"], 200), dtype="category"),
             "y": rng.normal(0, 0.2, 200),
         },
     )
@@ -65,7 +65,7 @@ def single_categorical_linear_gam() -> GAMTestCase:
     )
 
 
-def single_smooth_gam() -> GAMTestCase:
+def smooth_1d_gam() -> GAMTestCase:
     rng = np.random.default_rng(seed=42)
     data = pd.DataFrame({"x": rng.uniform(0, 1, 200), "y": rng.normal(0, 0.2, 200)})
     return GAMTestCase(
@@ -76,7 +76,21 @@ def single_smooth_gam() -> GAMTestCase:
     )
 
 
-def single_tensor_smooth_gam() -> GAMTestCase:
+def smooth_2d_gam() -> GAMTestCase:
+    rng = np.random.default_rng(seed=42)
+    n = 200
+    x0, x1 = rng.uniform(0, 1, n), rng.uniform(0, 1, n)
+    y = np.sin(2 * np.pi * x0) * np.cos(2 * np.pi * x1) + rng.normal(0, 0.2, n)
+    data = pd.DataFrame({"y": y, "x0": x0, "x1": x1})
+    return GAMTestCase(
+        mgcv_call="gam(y~s(x0, x1), data=data)",
+        gam_model=GAM({"y": S("x0", "x1")}),
+        data=data,
+        expected_predict_terms_structure={"y": ["Smooth(x0,x1)", "intercept"]},
+    )
+
+
+def tensor_2d_gam() -> GAMTestCase:
     rng = np.random.default_rng(seed=42)
     n = 200
     x0, x1 = rng.uniform(0, 1, n), rng.uniform(0, 1, n)
@@ -84,13 +98,13 @@ def single_tensor_smooth_gam() -> GAMTestCase:
     data = pd.DataFrame({"y": y, "x0": x0, "x1": x1})
     return GAMTestCase(
         mgcv_call="gam(y~te(x0, x1), data=data)",
-        gam_model=GAM({"y": [T("x0", "x1")]}),
+        gam_model=GAM({"y": T("x0", "x1")}),
         data=data,
         expected_predict_terms_structure={"y": ["TensorSmooth(x0,x1)", "intercept"]},
     )
 
 
-def single_random_effect() -> GAMTestCase:
+def random_effect_gam() -> GAMTestCase:
     rng = np.random.default_rng(42)
     n = 50
     group = pd.Series(rng.choice(["a", "b", "c"], n), dtype="category")
@@ -107,44 +121,28 @@ def single_random_effect() -> GAMTestCase:
     )
 
 
-def single_factor_interaction_gam() -> GAMTestCase:
+def categorical_interaction_gam() -> GAMTestCase:
     rng = np.random.default_rng(seed=42)
     data = pd.DataFrame(
         {
-            "a": pd.Categorical(rng.choice(["A", "B"], size=200, replace=True)),
-            "b": pd.Categorical(rng.choice(["C", "D", "E"], size=200, replace=True)),
+            "group1": pd.Categorical(rng.choice(["a", "b"], size=200, replace=True)),
+            "group2": pd.Categorical(
+                rng.choice(["c", "d", "e"], size=200, replace=True),
+            ),
             "y": rng.uniform(0, 1, size=200),
         },
     )
     return GAMTestCase(
-        mgcv_call="gam(y~a:b, data=data)",
-        gam_model=GAM({"y": [terms.Interaction("a", "b")]}),
-        data=data,
-        expected_predict_terms_structure={"y": ["Interaction(a,b)", "intercept"]},
-    )
-
-
-def simple_gam() -> GAMTestCase:
-    rng = np.random.default_rng(seed=42)
-    data = pd.DataFrame(
-        {
-            "x0": rng.uniform(0, 1, 200),
-            "x1": rng.uniform(0, 1, 200),
-            "x2": rng.uniform(0, 1, 200),
-            "y": rng.normal(0, 0.2, 200),
-        },
-    )
-    return GAMTestCase(
-        mgcv_call="gam(y~x0+s(x1)+s(x2), data=data)",
-        gam_model=GAM({"y": L("x0") + S("x1") + S("x2")}),
+        mgcv_call="gam(y~group1:group2, data=data)",
+        gam_model=GAM({"y": terms.Interaction("group1", "group2")}),
         data=data,
         expected_predict_terms_structure={
-            "y": ["Linear(x0)", "Smooth(x1)", "Smooth(x2)", "intercept"],
+            "y": ["Interaction(group1,group2)", "intercept"],
         },
     )
 
 
-def multivariate_multi_formula():
+def multivariate_normal_gam():
     rng = np.random.default_rng(seed=42)
     data = pd.DataFrame(
         {
@@ -164,7 +162,7 @@ def multivariate_multi_formula():
     )
 
 
-def location_scale_multi_formula():
+def gaulss_gam():
     rng = np.random.default_rng(seed=42)
     data = pd.DataFrame(
         {
@@ -205,7 +203,7 @@ def offset_gam() -> GAMTestCase:
     )
 
 
-def smooth_by_categorical_gam() -> GAMTestCase:
+def smooth_1d_by_categorical_gam() -> GAMTestCase:
     rng = np.random.default_rng(seed=42)
     data = pd.DataFrame(
         {
@@ -222,7 +220,7 @@ def smooth_by_categorical_gam() -> GAMTestCase:
     )
 
 
-def smooth_by_numeric_gam() -> GAMTestCase:
+def smooth_1d_by_numeric_gam() -> GAMTestCase:
     rng = np.random.default_rng(seed=42)
     data = pd.DataFrame(
         {
@@ -239,7 +237,7 @@ def smooth_by_numeric_gam() -> GAMTestCase:
     )
 
 
-def tensor_by_categorical_gam() -> GAMTestCase:
+def tensor_2d_by_categorical_gam() -> GAMTestCase:
     rng = np.random.default_rng(seed=42)
     data = pd.DataFrame(
         {
@@ -259,7 +257,27 @@ def tensor_by_categorical_gam() -> GAMTestCase:
     )
 
 
-def random_wiggly_curve_smooth_gam() -> GAMTestCase:
+def tensor_2d_by_numeric_gam() -> GAMTestCase:
+    rng = np.random.default_rng(seed=42)
+    data = pd.DataFrame(
+        {
+            "x0": rng.standard_normal(100),
+            "x1": rng.standard_normal(100),
+            "by_var": rng.standard_normal(100),
+            "y": rng.standard_normal(100),
+        },
+    )
+    return GAMTestCase(
+        mgcv_call="gam(y~te(x0,x1,by=by_var), data=data)",
+        gam_model=GAM({"y": T("x0", "x1", by="by_var")}),
+        data=data,
+        expected_predict_terms_structure={
+            "y": ["TensorSmooth(x0,x1,by=by_var)", "intercept"],
+        },
+    )
+
+
+def smooth_1d_random_wiggly_curve_gam() -> GAMTestCase:
     rng = np.random.default_rng(seed=42)
     data = pd.DataFrame(
         {
@@ -277,22 +295,23 @@ def random_wiggly_curve_smooth_gam() -> GAMTestCase:
     )
 
 
-def tensor_by_numeric_gam() -> GAMTestCase:
+def tensor_2d_random_wiggly_curve_gam() -> GAMTestCase:
     rng = np.random.default_rng(seed=42)
     data = pd.DataFrame(
         {
             "x0": rng.standard_normal(100),
             "x1": rng.standard_normal(100),
-            "by_var": rng.standard_normal(100),
+            "group": pd.Categorical(rng.choice(["a", "b", "c"], 100)),
             "y": rng.standard_normal(100),
         },
     )
+    bs = RandomWigglyCurve()
     return GAMTestCase(
-        mgcv_call="gam(y~te(x0,x1,by=by_var), data=data)",
-        gam_model=GAM({"y": T("x0", "x1", by="by_var")}),
+        mgcv_call="gam(y~t(x0,x1,group,bs='fs'),data=data)",
+        gam_model=GAM({"y": T("x0", "x1", "group", bs=bs)}),
         data=data,
         expected_predict_terms_structure={
-            "y": ["TensorSmooth(x0,x1,by=by_var)", "intercept"],
+            "y": ["TensorSmooth(x0,x1,group)", "intercept"],
         },
     )
 
@@ -330,21 +349,21 @@ def markov_random_field_gam() -> GAMTestCase:
 
 def get_test_cases() -> dict[str, GAMTestCase]:
     test_cases = [
-        single_linear_gam,
-        single_categorical_linear_gam,
-        single_smooth_gam,
-        single_tensor_smooth_gam,
-        single_random_effect,
-        random_wiggly_curve_smooth_gam,
-        single_factor_interaction_gam,
-        simple_gam,
-        multivariate_multi_formula,
-        location_scale_multi_formula,
+        linear_gam,
+        categorical_linear_gam,
+        smooth_1d_gam,
+        smooth_2d_gam,
+        tensor_2d_gam,
+        random_effect_gam,
+        smooth_1d_random_wiggly_curve_gam,
+        categorical_interaction_gam,
+        multivariate_normal_gam,
+        gaulss_gam,
         offset_gam,
-        smooth_by_categorical_gam,
-        smooth_by_numeric_gam,
-        tensor_by_categorical_gam,
-        tensor_by_numeric_gam,
+        smooth_1d_by_categorical_gam,
+        smooth_1d_by_numeric_gam,
+        tensor_2d_by_categorical_gam,
+        tensor_2d_by_numeric_gam,
         poisson_gam,
         # markov_random_field_gam  # TODO: Uncomment when ready
     ]

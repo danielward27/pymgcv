@@ -23,7 +23,6 @@ import pandas as pd
 from matplotlib import rcParams
 from matplotlib.axes import Axes
 
-from pymgcv import terms
 from pymgcv.basis_functions import RandomWigglyCurve
 from pymgcv.gam import FittedGAM
 from pymgcv.terms import (
@@ -34,6 +33,8 @@ from pymgcv.terms import (
     _RandomWigglyToByInterface,
 )
 
+# TODO better default for plotting partial residuals
+
 
 def plot_term(
     target: str,
@@ -43,35 +44,36 @@ def plot_term(
     by_val=None,
     ax: Axes | None = None,
 ):
-    """Utility for plotting all terms in a model."""
-    if (
-        isinstance(term, Linear)
-        and len(term.varnames) == 1
-        and data[terms.varnames[0]].dtype == "category"
-    ):
-        ax = plot_categorical(target, term, fit, data, ax=ax)
+    """Utility for plotting a term in a model."""
+    raise NotImplementedError()
+    # if (
+    #     isinstance(term, Linear)
+    #     and len(term.varnames) == 1
+    #     and data[terms.varnames[0]].dtype == "category"
+    # ):
+    #     ax = plot_categorical(target, term, fit, data, ax=ax)
 
-    elif isinstance(term, Linear | Smooth):
-        if len(term.varnames) == 1:
-            ax = plot_continuous_1d(
-                target=target,
-                term=term,
-                gam=fit,
-                by_val=by_val,
-                data=data,
-                ax=ax,
-            )
-        elif len(term.varnames) == 2:
-            ax = plot_continuous_2d(
-                target=target,
-                term=term,
-                gam=fit,
-                by_val=by_val,
-                data=data,
-                ax=ax,
-            )
-        else:
-            raise NotImplementedError("Only 1D and 2D terms are supported.")
+    # elif isinstance(term, Linear | Smooth):
+    #     if len(term.varnames) == 1:
+    #         ax = plot_continuous_1d(
+    #             target=target,
+    #             term=term,
+    #             gam=fit,
+    #             by_val=by_val,
+    #             data=data,
+    #             ax=ax,
+    #         )
+    #     elif len(term.varnames) == 2:
+    #         ax = plot_continuous_2d(
+    #             target=target,
+    #             term=term,
+    #             gam=fit,
+    #             by_val=by_val,
+    #             data=data,
+    #             ax=ax,
+    #         )
+    #     else:
+    #         raise NotImplementedError("Only 1D and 2D terms are supported.")
 
 
 def plot_continuous_1d(
@@ -184,7 +186,7 @@ def plot_continuous_1d(
 
     # Add partial residuals
     partial_residuals = gam.partial_residuals(target, term, data)
-    ax.scatter(x, partial_residuals, **scatter_kwargs)
+    ax.scatter(data[term.varnames[0]], partial_residuals, **scatter_kwargs)
 
     # Plot interval
     ax.fill_between(
@@ -207,23 +209,18 @@ def plot_continuous_2d(
     data: pd.DataFrame,
     eval_density: int = 50,
     by_val: None | float | int | str = None,
-    colormesh_kwargs: dict | None = None,
+    contour_kwargs: dict | None = None,
+    contourf_kwargs: dict | None = None,
     scatter_kwargs: dict | None = None,
     ax: Axes | None = None,
 ) -> Axes:
-    """Plot 2D smooth surfaces as colored mesh plots with data overlay.
-
-    Creates a comprehensive 2D visualization showing:
-    - The estimated smooth surface as a colored mesh
-    - Original data points overlaid as scatter plot
-    - Automatic colorbar for interpreting surface values
-    - Proper axis labels from variable names
+    """Plot 2D smooth surfaces as contour plots with data overlay.
 
     This function is essential for understanding bivariate relationships
     and interactions between two continuous variables.
 
     Args:
-        response: Name of the response variable from the model specification.
+        target: Name of the response variable from the model specification.
         term: The bivariate term to plot. Must have exactly two variables.
             Can be Smooth('x1', 'x2') or TensorSmooth('x1', 'x2').
         gam: Fitted GAM model containing the term to plot.
@@ -236,10 +233,12 @@ def plot_continuous_2d(
             provided if the term has a "by" variable. If the by variable is categorical,
             this should be a string representing the category to plot, and only partial
             residuals for that category will be plotted.
-        colormesh_kwargs: Keyword arguments passed to matplotlib.pyplot.pcolormesh()
-            for the surface plot. Useful for controlling colormap, shading, etc.
-        scatter_kwargs: Keyword arguments passed to matplotlib.pyplot.scatter()
-            for the data points overlay. Default color is black with small points.
+        contour_kwargs: Keyword arguments passed to `matplotlib.pyplot.contour`
+            for the contour lines.
+        contourf_kwargs: Keyword arguments passed to `matplotlib.pyplot.contourf`
+            for the filled contours.
+        scatter_kwargs: Keyword arguments passed to `matplotlib.pyplot.scatter`
+            for the data points overlay.
         ax: Matplotlib Axes object to plot on. If None, uses current axes.
 
     Returns:
@@ -269,15 +268,20 @@ def plot_continuous_2d(
             categories = data[term.by].cat.categories
             # TODO maintain ordered/unordered?
             by_val_col = pd.Categorical(
-                [by_val] * eval_density,
+                [by_val] * eval_density**2,
                 categories=categories,
             )
             data = data[data[term.by] == by_val]
 
     ax = plt.gca() if ax is None else ax
-    colormesh_kwargs = {} if colormesh_kwargs is None else colormesh_kwargs
+
+    contour_kwargs = {} if contour_kwargs is None else contour_kwargs
+    contourf_kwargs = {} if contourf_kwargs is None else contourf_kwargs
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
 
+    contour_kwargs.setdefault("levels", 14)
+    contourf_kwargs.setdefault("levels", 14)
+    contourf_kwargs.setdefault("alpha", 0.8)
     scatter_kwargs.setdefault("color", "black")
     scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
 
@@ -295,19 +299,29 @@ def plot_continuous_2d(
     spaced_data = pd.DataFrame(
         {term.varnames[0]: x0_mesh.ravel(), term.varnames[1]: x1_mesh.ravel()},
     )
+    if term.by is not None:
+        spaced_data[term.by] = by_val_col
 
     pred = gam.partial_effect(
         target,
         term,
         data=spaced_data,
     )["fit"]
-    mesh = ax.pcolormesh(
+
+    mesh = ax.contourf(
         x0_mesh,
         x1_mesh,
         pred.to_numpy().reshape(x0_mesh.shape),
-        **colormesh_kwargs,
+        **contourf_kwargs,
     )
-    ax.figure.colorbar(mesh, ax=ax)
+    ax.contour(
+        x0_mesh,
+        x1_mesh,
+        pred.to_numpy().reshape(x0_mesh.shape),
+        **contour_kwargs,
+    )
+
+    ax.figure.colorbar(mesh, ax=ax, pad=0)
 
     ax.scatter(
         data[term.varnames[0]],
@@ -329,13 +343,33 @@ def plot_categorical(
     errorbar_kwargs: dict[str, Any] | None = None,
     scatter_kwargs: dict[str, Any] | None = None,
     ax: Axes | None = None,
-):
-    errorbar_kwargs = errorbar_kwargs or {}
+) -> Axes:
+    """Plot categorical terms with error bars and partial residuals.
+
+    Creates a plot showing:
+
+    - The estimated effect of each category level as points.
+    - Error bars representing confidence intervals.
+    - Partial residuals as jittered scatter points.
+
+    Args:
+        target: Name of the response variable from the model specification.
+        term: The categorical term to plot. Must be a Linear term with a single
+            categorical variable.
+        gam: Fitted GAM model containing the term to plot.
+        data: DataFrame containing the categorical variable and response.
+        n_standard_errors: Number of standard errors for confidence intervals.
+        errorbar_kwargs: Keyword arguments passed to `matplotlib.pyplot.errorbar`.
+        scatter_kwargs: Keyword arguments passed to `matplotlib.pyplot.scatter`.
+        ax: Matplotlib Axes object to plot on. If None, uses current axes.
+
+    """
+    errorbar_kwargs = {} if errorbar_kwargs is None else errorbar_kwargs
+    scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
+    scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
     errorbar_kwargs.setdefault("capsize", 10)
     errorbar_kwargs.setdefault("fmt", ".")
 
-    scatter_kwargs = scatter_kwargs or {}
-    scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
     ax = plt.gca() if ax is None else ax
 
     # TODO: level ordered/order invariance
