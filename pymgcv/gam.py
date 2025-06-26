@@ -241,26 +241,6 @@ class FittedGAM:
             data: DataFrame containing predictor variables. Must include all
                 variables referenced in the original model specification.
 
-        Returns:
-            DataFrame with hierarchical columns:
-            - Top level: 'fit' (predictions) and 'se' (standard errors)
-            - Second level: target variable names (response or family parameter names)
-
-            For single response models:
-                columns = [('fit', 'response_name'), ('se', 'response_name')]
-            For multi-target models:
-                columns = [('fit', 'target1'), ('se', 'target1'),
-                          ('fit', 'target2'), ('se', 'target2'), ...]
-
-        Raises:
-            ValueError: If required variables are missing from the input data
-
-        Example:
-            ```python
-            predictions = model.predict(new_data)
-            print(predictions[('fit', 'y')])  # Predictions for response 'y'
-            print(predictions[('se', 'y')])   # Standard errors for 'y'
-            ```
         """
         self.gam._check_valid_data(data)
         predictions = rstats.predict(
