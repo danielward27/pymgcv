@@ -294,7 +294,7 @@ class PSpline(BasisLike):
 
     Uses B-spline bases penalized by discrete penalties applied directly to the basis
     coefficients. Note for most use cases splines with derivative-based penalties (e.g.
-    [`ThinPlateSpline`][pymgcv.ThinPlateSpline] or [`CubicSpline`][pymgcv.CubicSplineg])
+    [`ThinPlateSpline`][pymgcv.ThinPlateSpline] or [`CubicSpline`][pymgcv.CubicSpline])
     tend to yield better MSE performance. ``BSpline(degree=3, penalty_order=2)`` is
     cubic-spline-like.
 

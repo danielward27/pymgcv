@@ -284,35 +284,6 @@ class FittedGAM:
             - Second level: term names (e.g., 's(x1)', 'x2', 'intercept')
 
             The sum of all fit columns equals the total prediction:
-            ```python
-            effects = model.partial_effects(data)
-            total_effect = effects['y']['fit'].sum(axis=1)
-            predictions = model.predict(data)[('fit', 'y')]
-            assert np.allclose(total_effect, predictions)
-            ```
-
-        Example:
-            ```python
-            effects = model.partial_effects(data)
-
-            # Get contribution of smooth term s(x1) to response y
-            smooth_contribution = effects['y'][('fit', 's(x1)')]
-
-            # Get standard error of the smooth term
-            smooth_se = effects['y'][('se', 's(x1)')]
-
-            # Plot partial effect
-            plt.plot(data['x1'], smooth_contribution)
-            plt.fill_between(data['x1'],
-                           smooth_contribution - 2*smooth_se,
-                           smooth_contribution + 2*smooth_se,
-                           alpha=0.3)
-            ```
-
-        Note:
-            Partial effects include all model components: smooth terms, linear terms,
-            interactions, offsets, and intercepts. The effects are centered around
-            their mean values following mgcv conventions.
         """
         predictions = rstats.predict(
             self.rgam,
@@ -398,7 +369,12 @@ class FittedGAM:
             with all other terms held at their reference values (typically zero
             for centered smooth terms).
         """
-        effect, se = term._partial_effect(data, self, target)
+        formula_idx = list(self.gam.all_formulae.keys()).index(target)
+        effect, se = term._partial_effect(
+            data=data,
+            rgam=self.rgam,
+            formula_idx=formula_idx,
+        )
         assert len(data) == len(effect)
         return pd.DataFrame({"fit": effect, "se": se})
 
