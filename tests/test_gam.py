@@ -29,6 +29,7 @@ def test_predict_terms_structure(test_case: GAMTestCase):
     fit = test_case.gam_model.fit(test_case.data)
     all_terms = fit.partial_effects(test_case.data)
     expected = test_case.expected_predict_terms_structure
+
     assert sorted(all_terms.keys()) == sorted(expected.keys())
 
     for term_name, fit_and_se in all_terms.items():
@@ -54,8 +55,8 @@ def test_partial_effect_against_partial_effects(test_case: GAMTestCase):
 
     partial_effects = fit.partial_effects(test_case.data)
 
-    all_formulae = fit.gam.all_formulae
-    for target, terms in all_formulae.items():
+    all_predictors = fit.gam.all_predictors
+    for target, terms in all_predictors.items():
         for term in terms:
             try:
                 effect = fit.partial_effect(target, term, test_case.data)

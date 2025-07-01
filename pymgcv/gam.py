@@ -76,21 +76,25 @@ class GAM:
         self.family = family
 
         if add_intercepts:
-            for v in self.all_formulae.values():
+            for v in self.all_predictors.values():
                 v.append(Intercept())
 
     def __post_init__(self):
-        for terms in self.all_formulae.values():
+        for terms in self.all_predictors.values():
+            identifiers = set()
             labels = set()
             for term in terms:
+                mgcv_id = term.mgcv_identifier()
                 label = term.label()
-                if label in labels:
+                if mgcv_id in identifiers or label in labels:
                     raise ValueError(
-                        f"Duplicate term with label '{label}' found in formula. pymgcv "
-                        "does not support duplicate terms. If this is intentional, "
-                        "consider duplicating the corresponding variable in your data "
-                        "under a new name and using it for one of the terms.",
+                        f"Duplicate term with label '{label}' and mgcv_identifier "
+                        f"'{mgcv_id}' found in formula. pymgcv does not support "
+                        "duplicate terms. If this is intentional, consider duplicating "
+                        "the corresponding variable in your data under a new name and "
+                        "using it for one of the terms.",
                     )
+                identifiers.add(mgcv_id)
                 labels.add(label)
 
         for k in self.predictors:
@@ -139,8 +143,8 @@ class GAM:
         )
 
     @property
-    def all_formulae(self) -> dict[str, list[TermLike]]:
-        """All formulae (response and for family parameters)"""
+    def all_predictors(self) -> dict[str, list[TermLike]]:
+        """All predictors (response and for family parameters)."""
         return self.predictors | self.family_predictors
 
     def _check_valid_data(
@@ -162,7 +166,7 @@ class GAM:
             TypeError: If categorical 'by' variables are detected (unsupported)
         """
         all_terms: list[TermLike] = []
-        for terms in (self.all_formulae).values():
+        for terms in (self.all_predictors).values():
             all_terms.extend(terms)
 
         for term in all_terms:
@@ -174,7 +178,7 @@ class GAM:
                 if term.by not in data.columns:
                     raise ValueError(f"Variable {term.by} not found in data.")
 
-            disallowed = ["Intercept", "intercept", "s(", "te(", "ti(", "t2(", ":", "*"]
+            disallowed = ["Intercept", "s(", "te(", "ti(", "t2(", ":", "*"]
 
             for var in data.columns:
                 if any(dis in var for dis in disallowed):
@@ -197,7 +201,7 @@ class GAM:
             response formulae first, then family parameter formulae.
         """
         formulae = []
-        for target, terms in self.all_formulae.items():
+        for target, terms in self.all_predictors.items():
             if target in self.family_predictors:
                 target = ""  # no left hand side
 
@@ -250,7 +254,7 @@ class FittedGAM:
         )
         predictions = rlistvec_to_dict(predictions)
 
-        all_targets = self.gam.all_formulae.keys()
+        all_targets = self.gam.all_predictors.keys()
 
         # TODO we assume 1 column for each linear predictor
         n = data.shape[0]
@@ -302,7 +306,7 @@ class FittedGAM:
         )
         # Partition results based on formulas
         results = {}
-        for i, (target, terms) in enumerate(self.gam.all_formulae.items()):
+        for i, (target, terms) in enumerate(self.gam.all_predictors.items()):
             result = {"fit": {}, "se": {}}
             for term in terms:
                 match term:
@@ -351,17 +355,7 @@ class FittedGAM:
         Example:
             ```python
             # Get partial effect of smooth term on response
-            effect = model.partial_effect('y', Smooth('x1'), data)
-
-            # Plot the partial effect
-            import matplotlib.pyplot as plt
-            plt.plot(data['x1'], effect['fit'])
-            plt.fill_between(data['x1'],
-                           effect['fit'] - 2*effect['se'],
-                           effect['fit'] + 2*effect['se'],
-                           alpha=0.3)
-            plt.xlabel('x1')
-            plt.ylabel('Partial effect')
+            effect = model.partial_effect('y', S('x1'), data)
             ```
 
         Note:
@@ -369,7 +363,7 @@ class FittedGAM:
             with all other terms held at their reference values (typically zero
             for centered smooth terms).
         """
-        formula_idx = list(self.gam.all_formulae.keys()).index(target)
+        formula_idx = list(self.gam.all_predictors.keys()).index(target)
         effect, se = term._partial_effect(
             data=data,
             rgam=self.rgam,
@@ -413,7 +407,7 @@ class FittedGAM:
             family = f"{family}()"
 
         rfam = ro.r(family)
-        inv_link_fn = rfam.rx2("linkinv")
+        inv_link_fn = rfam.rx2("linkinv")  # TODO this breaks with GAULSS
         d_mu_d_eta_fn = rfam.rx2("mu.eta")
         rpy_link_fit = to_rpy(link_fit)
         response_residual = data[target] - to_py(inv_link_fn(rpy_link_fit))

@@ -16,9 +16,7 @@ from pymgcv.basis_functions import (
 )
 from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
 from pymgcv.gam import GAM
-from pymgcv.terms import Linear as L
-from pymgcv.terms import Smooth as S
-from pymgcv.terms import TensorSmooth as T
+from pymgcv.terms import Interaction, L, S, T
 
 
 @dataclass
@@ -45,7 +43,7 @@ def linear_gam() -> GAMTestCase:
         mgcv_call="gam(y~x, data=data)",
         gam_model=GAM({"y": L("x")}),
         data=data,
-        expected_predict_terms_structure={"y": ["Linear(x)", "intercept"]},
+        expected_predict_terms_structure={"y": ["L(x)", "Intercept"]},
     )
 
 
@@ -61,18 +59,19 @@ def categorical_linear_gam() -> GAMTestCase:
         mgcv_call="gam(y~group, data=data)",
         gam_model=GAM({"y": L("group")}),
         data=data,
-        expected_predict_terms_structure={"y": ["Linear(group)", "intercept"]},
+        expected_predict_terms_structure={"y": ["L(group)", "Intercept"]},
     )
 
 
 def smooth_1d_gam() -> GAMTestCase:
     rng = np.random.default_rng(seed=42)
-    data = pd.DataFrame({"x": rng.uniform(0, 1, 200), "y": rng.normal(0, 0.2, 200)})
+    x = rng.uniform(0, 1, 200)
+    data = pd.DataFrame({"x": x, "y": x**2 + rng.normal(0, 0.2, 200)})
     return GAMTestCase(
         mgcv_call="gam(y~s(x), data=data)",
         gam_model=GAM({"y": S("x")}),
         data=data,
-        expected_predict_terms_structure={"y": ["Smooth(x)", "intercept"]},
+        expected_predict_terms_structure={"y": ["S(x)", "Intercept"]},
     )
 
 
@@ -86,7 +85,7 @@ def smooth_2d_gam() -> GAMTestCase:
         mgcv_call="gam(y~s(x0, x1), data=data)",
         gam_model=GAM({"y": S("x0", "x1")}),
         data=data,
-        expected_predict_terms_structure={"y": ["Smooth(x0,x1)", "intercept"]},
+        expected_predict_terms_structure={"y": ["S(x0,x1)", "Intercept"]},
     )
 
 
@@ -100,7 +99,7 @@ def tensor_2d_gam() -> GAMTestCase:
         mgcv_call="gam(y~te(x0, x1), data=data)",
         gam_model=GAM({"y": T("x0", "x1")}),
         data=data,
-        expected_predict_terms_structure={"y": ["TensorSmooth(x0,x1)", "intercept"]},
+        expected_predict_terms_structure={"y": ["T(x0,x1)", "Intercept"]},
     )
 
 
@@ -116,7 +115,7 @@ def random_effect_gam() -> GAMTestCase:
         gam_model=GAM({"y": S("x") + S("group", bs=RandomEffect())}),
         data=data,
         expected_predict_terms_structure={
-            "y": ["Smooth(x)", "Smooth(group)", "intercept"],
+            "y": ["S(x)", "S(group)", "Intercept"],
         },
     )
 
@@ -137,7 +136,7 @@ def categorical_interaction_gam() -> GAMTestCase:
         gam_model=GAM({"y": terms.Interaction("group1", "group2")}),
         data=data,
         expected_predict_terms_structure={
-            "y": ["Interaction(group1,group2)", "intercept"],
+            "y": ["Interaction(group1,group2)", "Intercept"],
         },
     )
 
@@ -156,8 +155,8 @@ def multivariate_normal_gam():
         gam_model=GAM({"y0": S("x", k=5), "y1": L("x")}, family="mvn(d=2)"),
         data=data,
         expected_predict_terms_structure={
-            "y0": ["Smooth(x)", "intercept"],
-            "y1": ["Linear(x)", "intercept"],
+            "y0": ["S(x)", "Intercept"],
+            "y1": ["L(x)", "Intercept"],
         },
     )
 
@@ -180,8 +179,8 @@ def gaulss_gam():
         ),
         data=data,
         expected_predict_terms_structure={
-            "y": ["Smooth(x0)", "intercept"],
-            "log_scale": ["Smooth(x1)", "intercept"],
+            "y": ["S(x0)", "Intercept"],
+            "log_scale": ["S(x1)", "Intercept"],
         },
     )
 
@@ -199,7 +198,7 @@ def offset_gam() -> GAMTestCase:
         mgcv_call="gam(y~s(x) + offset(z), data=data)",
         gam_model=GAM({"y": S("x") + terms.Offset("z")}),
         data=data,
-        expected_predict_terms_structure={"y": ["Smooth(x)", "Offset(z)", "intercept"]},
+        expected_predict_terms_structure={"y": ["S(x)", "Offset(z)", "Intercept"]},
     )
 
 
@@ -216,7 +215,7 @@ def smooth_1d_by_categorical_gam() -> GAMTestCase:
         mgcv_call="gam(y~s(x, by=group), data=data)",
         gam_model=GAM({"y": S("x", by="group")}),
         data=data,
-        expected_predict_terms_structure={"y": ["Smooth(x,by=group)", "intercept"]},
+        expected_predict_terms_structure={"y": ["S(x,by=group)", "Intercept"]},
     )
 
 
@@ -233,7 +232,7 @@ def smooth_1d_by_numeric_gam() -> GAMTestCase:
         mgcv_call="gam(y~s(x, by=by_var), data=data)",
         gam_model=GAM({"y": S("x", by="by_var")}),
         data=data,
-        expected_predict_terms_structure={"y": ["Smooth(x,by=by_var)", "intercept"]},
+        expected_predict_terms_structure={"y": ["S(x,by=by_var)", "Intercept"]},
     )
 
 
@@ -252,7 +251,7 @@ def tensor_2d_by_categorical_gam() -> GAMTestCase:
         gam_model=GAM({"y": T("x0", "x1", by="group")}),
         data=data,
         expected_predict_terms_structure={
-            "y": ["TensorSmooth(x0,x1,by=group)", "intercept"],
+            "y": ["T(x0,x1,by=group)", "Intercept"],
         },
     )
 
@@ -272,7 +271,7 @@ def tensor_2d_by_numeric_gam() -> GAMTestCase:
         gam_model=GAM({"y": T("x0", "x1", by="by_var")}),
         data=data,
         expected_predict_terms_structure={
-            "y": ["TensorSmooth(x0,x1,by=by_var)", "intercept"],
+            "y": ["T(x0,x1,by=by_var)", "Intercept"],
         },
     )
 
@@ -291,7 +290,7 @@ def smooth_1d_random_wiggly_curve_gam() -> GAMTestCase:
         mgcv_call="gam(y~s(x,group,bs='fs',xt=list(bs='cr')),data=data)",
         gam_model=GAM({"y": S("x", "group", bs=bs)}),
         data=data,
-        expected_predict_terms_structure={"y": ["Smooth(x,group)", "intercept"]},
+        expected_predict_terms_structure={"y": ["S(x,group)", "Intercept"]},
     )
 
 
@@ -311,7 +310,7 @@ def tensor_2d_random_wiggly_curve_gam() -> GAMTestCase:
         gam_model=GAM({"y": T("x0", "x1", "group", bs=bs)}),
         data=data,
         expected_predict_terms_structure={
-            "y": ["TensorSmooth(x0,x1,group)", "intercept"],
+            "y": ["T(x0,x1,group)", "Intercept"],
         },
     )
 
@@ -328,7 +327,7 @@ def poisson_gam() -> GAMTestCase:
         mgcv_call="gam(counts~s(x), data=data, family=poisson)",
         gam_model=GAM({"counts": S("x")}, family="poisson"),
         data=data,
-        expected_predict_terms_structure={"counts": ["Smooth(x)", "intercept"]},
+        expected_predict_terms_structure={"counts": ["S(x)", "Intercept"]},
     )
 
 
@@ -342,9 +341,90 @@ def markov_random_field_gam() -> GAMTestCase:
         mgcv_call="gam(crime ~ s(district,bs='mrf',xt=list(polys=polys)),data=columb,method='REML')",
         gam_model=GAM({"y": S("district", bs=MarkovRandomField(polys=polys_list))}),
         data=data,
-        expected_predict_terms_structure={"crime": ["Smooth(district)", "intercept"]},
+        expected_predict_terms_structure={"crime": ["S(district)", "Intercept"]},
         add_to_r_env={"polys": polys},
     )
+
+
+def linear_and_interaction_gam() -> GAMTestCase:
+    # note mgcv will not include parameters for all interaction terms
+    rng = np.random.default_rng(seed=42)
+    n = 400
+    group1 = pd.Series(rng.choice(["a", "b"], n), dtype="category")
+    group2 = pd.Series(rng.choice(["a", "b"], n), dtype="category")
+    y = rng.normal(size=n, scale=0.2) + group1.cat.codes * group2.cat.codes
+    data = pd.DataFrame(
+        {
+            "group1": group1,
+            "group2": group2,
+            "y": y,
+        },
+    )
+    return GAMTestCase(
+        mgcv_call="gam(y ~ group1 + group1:group2, data=data)",
+        gam_model=GAM(
+            {
+                "y": L("group1") + Interaction("group1", "group2"),
+            },
+        ),
+        data=data,
+        expected_predict_terms_structure={
+            "y": [
+                "L(group1)",
+                "Interaction(group1,group2)",
+                "Intercept",
+            ],
+        },
+    )
+
+
+# def many_term_types_gam() -> GAMTestCase:
+# rng = np.random.default_rng(seed=42)
+# n = 400
+# group1 = pd.Series(rng.choice(["a", "b"], n), dtype="category")
+# group2 = pd.Series(rng.choice(["a", "b"], n), dtype="category")
+# x0 = rng.standard_normal(n)
+# x1 = rng.standard_normal(n)
+# y = rng.normal(size=n, scale=0.2) + group1.cat.codes * group2.cat.codes * np.sin(
+#     (x0 + x1) * 2,
+# )
+# data = pd.DataFrame(
+#     {
+#         "x0": x0,
+#         "x1": x1,
+#         "x2": rng.standard_normal(n),
+#         "group1": group1,
+#         "group2": group2,
+#         "y": y,
+#     },
+# )
+# return GAMTestCase(
+#     mgcv_call="gam(y~ti(x0,x1,by=group1) + s(x0, by=group1) + s(x1, by=group1) + group1 + group1:x0 + group1:group2, data=data)",
+#     gam_model=GAM(
+#         {
+#             "y": (
+#                 T("x0", "x1", by="group1", interaction_only=True)
+#                 + S("x0", by="group1")
+#                 + S("x1", by="group1")
+#                 + L("group1")
+#                 + Interaction("group1", "x0")
+#                 + Interaction("group1", "group2")
+#             ),
+#         },
+#     ),
+#     data=data,
+#     expected_predict_terms_structure={
+#         "y": [
+#             "T(x0,x1,by=group1)",
+#             "S(x0,by=group1)",
+#             "S(x1,by=group1)",
+#             "L(group1)",
+#             "Interaction(group1,x0)",
+#             "Interaction(group1,group2)",
+#             "Intercept",
+#         ],
+#     },
+# )
 
 
 def get_test_cases() -> dict[str, GAMTestCase]:
@@ -365,6 +445,8 @@ def get_test_cases() -> dict[str, GAMTestCase]:
         tensor_2d_by_categorical_gam,
         tensor_2d_by_numeric_gam,
         poisson_gam,
+        # many_term_types_gam,
+        linear_and_interaction_gam,
         # markov_random_field_gam  # TODO: Uncomment when ready
     ]
     return {f.__name__: f() for f in test_cases}
