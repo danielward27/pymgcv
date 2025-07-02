@@ -39,13 +39,13 @@ dev = [
 # ------------------- pixi config --------------------#
 
 [tool.pixi.dependencies]
-r-base = "*"
-r-mgcv = "*"
-setuptools = "*"
-cffi = ">=1.17.1,<2"     # https://github.com/rpy2/rpy2/issues/739
+r-base = ">=4.4.3,<4.5"
+r-mgcv = ">=1.9_3,<2"
+cffi = ">=1.17.1,<2"        # https://github.com/rpy2/rpy2/issues/739
 numpy = ">=2.2.5,<3"
 pandas = ">=2.2.3,<3"
 matplotlib = ">=3.10,<4"
+setuptools = ">=80.9.0,<81"
 
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }

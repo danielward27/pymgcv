@@ -5890,7 +5890,7 @@ packages:
 - pypi: ./
   name: pymgcv
   version: 0.0.0
-  sha256: 7bf95483ad5dc8780624f23466baff3847e4caaed1b5eef27eeff8c58c8dfc5b
+  sha256: 5cacd925aa2e721645170c8121b34069820adda91aa9fefb93ab66238fc87018
   requires_dist:
   - rpy2>=3.6.1
   - pytest ; extra == 'dev'
