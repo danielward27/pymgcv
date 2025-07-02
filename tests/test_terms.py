@@ -3,10 +3,8 @@ from dataclasses import dataclass
 import pytest
 
 from pymgcv.basis_functions import CubicSpline, ThinPlateSpline
-from pymgcv.terms import Interaction, Offset, TermLike
-from pymgcv.terms import Linear as L
-from pymgcv.terms import Smooth as S
-from pymgcv.terms import TensorSmooth as T
+from pymgcv.terms import Interaction, Offset, S, T, TermLike
+from pymgcv.terms import L as L
 
 
 @dataclass

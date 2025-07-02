@@ -1,13 +1,9 @@
 """pymgcv: Generalized Additive Models in Python."""
 
 from .gam import GAM
-from .terms import Interaction, Linear, Offset, Smooth, TensorSmooth
 
 __all__ = [
     "GAM",
-    "Linear",
-    "Smooth",
-    "TensorSmooth",
     "Interaction",
     "Offset",
 ]

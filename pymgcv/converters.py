@@ -122,13 +122,10 @@ def data_to_rdf(
 ) -> ro.vectors.DataFrame:
     """Convert pandas DataFrame to R data.frame for use with mgcv.
 
-    Performs specialized conversion of pandas DataFrames to R data.frames
-    with handling for functional data and other mgcv-specific requirements.
     Certain columns can be combined into arrays for functional smooth terms.
 
     Args:
-        data: Pandas DataFrame to convert. Must contain only data types
-            that can be meaningfully converted to R.
+        data: Pandas DataFrame to convert.
         as_array_prefixes: Prefixes of column names to group into arrays.
             Columns matching these prefixes will be combined into R arrays,
             which mgcv can interpret as functional data for specialized

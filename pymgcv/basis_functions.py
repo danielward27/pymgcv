@@ -111,7 +111,7 @@ class ThinPlateSpline(BasisLike):
 
 @dataclass
 class RandomWigglyCurve(BasisLike):
-    """Smooth for each level of a categorical variable.
+    """S for each level of a categorical variable.
 
     When using this basis, the first variable of the smooth should
     be a numeric variable, and the second should be a categorical variable.
@@ -159,7 +159,7 @@ class CubicSpline(BasisLike):
     performs slightly worse than thin plate splines and are limited to
     univariate smooths. Note the limitation of being restricted to
     one-dimensional smooths does not imply they cannot be used for
-    multivariate [`TensorSmooth`][pymgcv.terms.TensorSmooth] smooths,
+    multivariate [`T`][pymgcv.terms.T] smooths,
     which are constructed from marginal bases.
 
     Args:
@@ -263,7 +263,7 @@ class BSpline(BasisLike):
     """B-spline basis with derivative-based penalties.
 
     These are univariate (but note univariate smooths can be used for multivariate
-    smooths constructed with [`TensorSmooth`][pymgcv.terms.TensorSmooth]).
+    smooths constructed with [`T`][pymgcv.terms.T]).
     ``BSpline(degree=3, penalty_orders=[2])`` constructs a conventional cubic spline.
 
     Args:
@@ -294,7 +294,7 @@ class PSpline(BasisLike):
 
     Uses B-spline bases penalized by discrete penalties applied directly to the basis
     coefficients. Note for most use cases splines with derivative-based penalties (e.g.
-    [`ThinPlateSpline`][pymgcv.ThinPlateSpline] or [`CubicSpline`][pymgcv.CubicSplineg])
+    [`ThinPlateSpline`][pymgcv.ThinPlateSpline] or [`CubicSpline`][pymgcv.CubicSpline])
     tend to yield better MSE performance. ``BSpline(degree=3, penalty_order=2)`` is
     cubic-spline-like.
 
@@ -326,7 +326,7 @@ class MarkovRandomField(BasisLike):
     """Markov Random Field basis for discrete spatial data with neighborhood structure.
 
     The smoothing penalty encourages similar value in neighboring locations. When using
-    this basis, the variable passed to [`Smooth`][pymgcv.smooth.Smooth] should be a
+    this basis, the variable passed to [`S`][pymgcv.smooth.S] should be a
     categorical variable representing the area labels.
 
     Args:

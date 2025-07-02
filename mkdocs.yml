@@ -53,7 +53,7 @@ nav:
   - Introduction: index.ipynb
   - Examples:
       - GAMLSS: examples/gamlss.ipynb
-      - Smooth-by-categorical: examples/smooth_by_categorical.ipynb
+      - S-by-categorical: examples/smooth_by_categorical.ipynb
   - API Reference:
       - api/gam.md
       - api/terms.md
