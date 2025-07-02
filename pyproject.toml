@@ -35,8 +35,6 @@ dev = [
     "mdit-py-plugins",
     "markdown-it-py",
 ]
-[tool.pytest.ini_options]
-pythonpath = ["."]
 
 # ------------------- pixi config --------------------#
 
