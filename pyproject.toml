@@ -33,16 +33,15 @@ dev = [
     "ipykernel",
     "pytest-markdown-docs",
     "mdit-py-plugins",
-    "markdown-it-py "
+    "markdown-it-py",
 ]
 
 
 # ------------------- pixi config --------------------#
-
 [tool.pixi.dependencies]
 r-base = ">=4.4.3,<4.5"
 r-mgcv = ">=1.9_3,<2"
-cffi = ">=1.17.1,<2"          # https://github.com/rpy2/rpy2/issues/739
+cffi = ">=1.17.1,<2"        # https://github.com/rpy2/rpy2/issues/739
 setuptools = ">=80.1.0,<81"
 numpy = ">=2.2.5,<3"
 pandas = ">=2.2.3,<3"
