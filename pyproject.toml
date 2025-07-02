@@ -2,15 +2,15 @@
 name = "pymgcv"
 authors = [{ name = "danielward27", email = "danielward27@outlook.com" }]
 description = "pymgcv: Generalized additive models using mgcv, in Python."
-requires-python = ">= 3.12"
+requires-python = ">= 3.11, <= 3.12"
 version = "0.0.0"
 
-# python=3.13 gives error: https://github.com/rpy2/rpy2/issues/1175
+# CI fails on 3.13 currently.
 
 keywords = ["generalized additive models", "GAMs"]
 license = { file = "LICENSE" }
 readme = "README.md"
-dependencies = ["rpy2"]
+dependencies = ["rpy2>=3.6.1"]
 
 [build-system]
 build-backend = "hatchling.build"
@@ -33,22 +33,21 @@ dev = [
     "ipykernel",
     "pytest-markdown-docs",
     "mdit-py-plugins",
-    "markdown-it-py "
+    "markdown-it-py",
 ]
-
+[tool.pytest.ini_options]
+pythonpath = ["."]
 
 # ------------------- pixi config --------------------#
 
 [tool.pixi.dependencies]
-r-base = ">=4.4.3,<4.5"
-r-mgcv = ">=1.9_3,<2"
-cffi = ">=1.17.1,<2"          # https://github.com/rpy2/rpy2/issues/739
-setuptools = ">=80.1.0,<81"
+r-base = "*"
+r-mgcv = "*"
+setuptools = "*"
+cffi = ">=1.17.1,<2"     # https://github.com/rpy2/rpy2/issues/739
 numpy = ">=2.2.5,<3"
 pandas = ">=2.2.3,<3"
 matplotlib = ">=3.10,<4"
-pillow = ">=11.1.0,<12"
-python = ">=3.12,<=3.13"
 
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }
@@ -73,6 +72,3 @@ select = ["E", "F", "B", "D", "COM", "I", "UP", "TRY004", "RET", "PT", "FBT"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-[dependency-groups]
-dev = ["ty>=0.0.1a4"]
