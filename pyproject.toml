@@ -3,7 +3,7 @@ name = "pymgcv"
 requires-python = ">= 3.11, <= 3.12"
 version = "0.0.0"
 
-dependencies = ["rpy2"]
+dependencies = ["rpy2>=3.6.1"]
 
 
 [project.optional-dependencies]
