@@ -5175,7 +5175,7 @@ packages:
 - pypi: ./
   name: pymgcv
   version: 0.0.0
-  sha256: 77ce0f64cf029430f1fef7c96db78f74d88dc2e273e8e034b70aa8b948437436
+  sha256: e2f9fd6c5649b46a368e05d0669334cd0284b4d546dc0f1f94fed9a9fd03fe30
   requires_dist:
   - rpy2>=3.6.1
   - numpy>=2.2.5

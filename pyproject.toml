@@ -47,8 +47,8 @@ dev = [
 r-base = ">=4.4.3,<4.5"
 r-mgcv = ">=1.9_3,<2"
 
-[tool.pixi.pypi-options]
-no-build-isolation = ["rpy2"]
+# [tool.pixi.pypi-options]
+# no-build-isolation = ["rpy2"]
 
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }
