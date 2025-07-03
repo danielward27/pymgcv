@@ -3,6 +3,7 @@ environments:
   default:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
+    - url: https://prefix.dev/pixi-build-backends/
     indexes:
     - https://pypi.org/simple
     packages:
@@ -374,6 +375,7 @@ environments:
   dev:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
+    - url: https://prefix.dev/pixi-build-backends/
     indexes:
     - https://pypi.org/simple
     packages:
@@ -5173,7 +5175,7 @@ packages:
 - pypi: ./
   name: pymgcv
   version: 0.0.0
-  sha256: 8cfadc659f0f5ab536742f80b817aebe586529e8e3bd7aa84d88f61fd92de015
+  sha256: 5007c99b941d6329fd94d2a59010063999389d2b46e64086b04e9200e1c0896a
   requires_dist:
   - rpy2>=3.6.1
   - numpy>=2.2.5
