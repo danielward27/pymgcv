@@ -3,6 +3,7 @@ environments:
   default:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
+    - url: https://prefix.dev/pixi-build-backends/
     indexes:
     - https://pypi.org/simple
     packages:
@@ -110,7 +111,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/b2/d5/da47df7004cb17e4955df6a43d14b3b4ae77737dff8bf7f8f333196717bf/cffi-1.17.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/a8/32/b8a1c8965e4f72482ff2d1ac2cd670ce0b542f203c8e1d34e7c3e6925da7/contourpy-1.3.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/e7/05/c19819d5e3d95294a6f5947fb9b9629efb316b96de511b418c53d245aae6/cycler-0.12.1-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/fe/6b/4607add1755a1e6581ae1fc0c9a640648e0d9cdd6591cc2d581c2e07b8c3/fonttools-4.58.4-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/c1/d7/3c87cf147185d91c2e946460a5cf68c236427b4a23ab96793ccb7d8017c9/fonttools-4.58.5-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/bc/b3/9458adb9472e61a998c8c4d95cfdfec91c73c53a375b30b1428310f923e4/kiwisolver-1.4.8-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/f3/f0/89e7aadfb3749d0f52234a0c8c7867877876e0a20b60e2188e9850794c17/MarkupSafe-3.0.2-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
@@ -234,7 +235,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/5a/84/e94227139ee5fb4d600a7a4927f322e1d4aea6fdc50bd3fca8493caba23f/cffi-1.17.1-cp312-cp312-macosx_10_9_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/34/f7/44785876384eff370c251d58fd65f6ad7f39adce4a093c934d4a67a7c6b6/contourpy-1.3.2-cp312-cp312-macosx_10_13_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/e7/05/c19819d5e3d95294a6f5947fb9b9629efb316b96de511b418c53d245aae6/cycler-0.12.1-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/2a/1f/2b261689c901a1c3bc57a6690b0b9fc21a9a93a8b0c83aae911d3149f34e/fonttools-4.58.4-cp312-cp312-macosx_10_13_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/f1/1e/edbc14b79290980c3944a1f43098624bc8965f534964aa03d52041f24cb4/fonttools-4.58.5-cp312-cp312-macosx_10_13_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c5/0b/8db6d2e2452d60d5ebc4ce4b204feeb16176a851fd42462f66ade6808084/kiwisolver-1.4.8-cp312-cp312-macosx_10_13_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/22/09/d1f21434c97fc42f09d290cbb6350d44eb12f09cc62c9476effdb33a18aa/MarkupSafe-3.0.2-cp312-cp312-macosx_10_13_universal2.whl
@@ -358,7 +359,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/da/ee/fb72c2b48656111c4ef27f0f91da355e130a923473bf5ee75c5643d00cca/cffi-1.17.1-cp312-cp312-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/93/3b/0004767622a9826ea3d95f0e9d98cd8729015768075d61f9fea8eeca42a8/contourpy-1.3.2-cp312-cp312-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/e7/05/c19819d5e3d95294a6f5947fb9b9629efb316b96de511b418c53d245aae6/cycler-0.12.1-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/04/3c/1d1792bfe91ef46f22a3d23b4deb514c325e73c17d4f196b385b5e2faf1c/fonttools-4.58.4-cp312-cp312-macosx_10_13_universal2.whl
+      - pypi: https://files.pythonhosted.org/packages/d6/68/66b498ee66f3e7e92fd68476c2509508082b7f57d68c0cdb4b8573f44331/fonttools-4.58.5-cp312-cp312-macosx_10_13_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/60/26/d6a0db6785dd35d3ba5bf2b2df0aedc5af089962c6eb2cbf67a15b81369e/kiwisolver-1.4.8-cp312-cp312-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/6b/b0/18f76bba336fa5aecf79d45dcd6c806c280ec44538b3c13671d49099fdd0/MarkupSafe-3.0.2-cp312-cp312-macosx_11_0_arm64.whl
@@ -381,6 +382,7 @@ environments:
   dev:
     channels:
     - url: https://conda.anaconda.org/conda-forge/
+    - url: https://prefix.dev/pixi-build-backends/
     indexes:
     - https://pypi.org/simple
     packages:
@@ -500,7 +502,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/10/53/0a0cb5d79dd9f7039169f8bf94a144ad3efa52cc519940b3b7dde23bcb89/debugpy-1.8.14-cp312-cp312-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/4e/8c/f3147f5c4b73e7550fe5f9352eaa956ae838d5c51eb58e7a25b9f3e2643b/decorator-5.2.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/7b/8f/c4d9bafc34ad7ad5d8dc16dd1347ee0e507a52c3adb6bfa8887e1c6a26ba/executing-2.2.0-py2.py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/fe/6b/4607add1755a1e6581ae1fc0c9a640648e0d9cdd6591cc2d581c2e07b8c3/fonttools-4.58.4-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/c1/d7/3c87cf147185d91c2e946460a5cf68c236427b4a23ab96793ccb7d8017c9/fonttools-4.58.5-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/f7/ec/67fbef5d497f86283db54c22eec6f6140243aae73265799baaaa19cd17fb/ghp_import-2.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/58/c6/5c20af38c2a57c15d87f7f38bee77d63c1d2a3689f74fefaf35915dd12b2/griffe-1.7.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/67/f9/51a3fd7460b95583ff470c7b4fd706bd21f3fda97d521f3770126dc6d1fc/griffe_inherited_docstrings-1.1.1-py3-none-any.whl
@@ -689,7 +691,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/97/1a/481f33c37ee3ac8040d3d51fc4c4e4e7e61cb08b8bc8971d6032acc2279f/debugpy-1.8.14-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/4e/8c/f3147f5c4b73e7550fe5f9352eaa956ae838d5c51eb58e7a25b9f3e2643b/decorator-5.2.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/7b/8f/c4d9bafc34ad7ad5d8dc16dd1347ee0e507a52c3adb6bfa8887e1c6a26ba/executing-2.2.0-py2.py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/2a/1f/2b261689c901a1c3bc57a6690b0b9fc21a9a93a8b0c83aae911d3149f34e/fonttools-4.58.4-cp312-cp312-macosx_10_13_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/f1/1e/edbc14b79290980c3944a1f43098624bc8965f534964aa03d52041f24cb4/fonttools-4.58.5-cp312-cp312-macosx_10_13_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/f7/ec/67fbef5d497f86283db54c22eec6f6140243aae73265799baaaa19cd17fb/ghp_import-2.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/58/c6/5c20af38c2a57c15d87f7f38bee77d63c1d2a3689f74fefaf35915dd12b2/griffe-1.7.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/67/f9/51a3fd7460b95583ff470c7b4fd706bd21f3fda97d521f3770126dc6d1fc/griffe_inherited_docstrings-1.1.1-py3-none-any.whl
@@ -878,7 +880,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/97/1a/481f33c37ee3ac8040d3d51fc4c4e4e7e61cb08b8bc8971d6032acc2279f/debugpy-1.8.14-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/4e/8c/f3147f5c4b73e7550fe5f9352eaa956ae838d5c51eb58e7a25b9f3e2643b/decorator-5.2.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/7b/8f/c4d9bafc34ad7ad5d8dc16dd1347ee0e507a52c3adb6bfa8887e1c6a26ba/executing-2.2.0-py2.py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/04/3c/1d1792bfe91ef46f22a3d23b4deb514c325e73c17d4f196b385b5e2faf1c/fonttools-4.58.4-cp312-cp312-macosx_10_13_universal2.whl
+      - pypi: https://files.pythonhosted.org/packages/d6/68/66b498ee66f3e7e92fd68476c2509508082b7f57d68c0cdb4b8573f44331/fonttools-4.58.5-cp312-cp312-macosx_10_13_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/f7/ec/67fbef5d497f86283db54c22eec6f6140243aae73265799baaaa19cd17fb/ghp_import-2.1.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/58/c6/5c20af38c2a57c15d87f7f38bee77d63c1d2a3689f74fefaf35915dd12b2/griffe-1.7.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/67/f9/51a3fd7460b95583ff470c7b4fd706bd21f3fda97d521f3770126dc6d1fc/griffe_inherited_docstrings-1.1.1-py3-none-any.whl
@@ -1796,10 +1798,10 @@ packages:
   purls: []
   size: 4102
   timestamp: 1566932280397
-- pypi: https://files.pythonhosted.org/packages/04/3c/1d1792bfe91ef46f22a3d23b4deb514c325e73c17d4f196b385b5e2faf1c/fonttools-4.58.4-cp312-cp312-macosx_10_13_universal2.whl
+- pypi: https://files.pythonhosted.org/packages/c1/d7/3c87cf147185d91c2e946460a5cf68c236427b4a23ab96793ccb7d8017c9/fonttools-4.58.5-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl
   name: fonttools
-  version: 4.58.4
-  sha256: 462211c0f37a278494e74267a994f6be9a2023d0557aaa9ecbcbfce0f403b5a6
+  version: 4.58.5
+  sha256: 2af65836cf84cd7cb882d0b353bdc73643a497ce23b7414c26499bb8128ca1af
   requires_dist:
   - fs>=2.2.0,<3 ; extra == 'ufo'
   - lxml>=4.0 ; extra == 'lxml'
@@ -1832,10 +1834,10 @@ packages:
   - skia-pathops>=0.5.0 ; extra == 'all'
   - uharfbuzz>=0.23.0 ; extra == 'all'
   requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/2a/1f/2b261689c901a1c3bc57a6690b0b9fc21a9a93a8b0c83aae911d3149f34e/fonttools-4.58.4-cp312-cp312-macosx_10_13_x86_64.whl
+- pypi: https://files.pythonhosted.org/packages/d6/68/66b498ee66f3e7e92fd68476c2509508082b7f57d68c0cdb4b8573f44331/fonttools-4.58.5-cp312-cp312-macosx_10_13_universal2.whl
   name: fonttools
-  version: 4.58.4
-  sha256: 0c7a12fb6f769165547f00fcaa8d0df9517603ae7e04b625e5acb8639809b82d
+  version: 4.58.5
+  sha256: c3af3fefaafb570a03051a0d6899b8374dcf8e6a4560e42575843aef33bdbad6
   requires_dist:
   - fs>=2.2.0,<3 ; extra == 'ufo'
   - lxml>=4.0 ; extra == 'lxml'
@@ -1868,10 +1870,10 @@ packages:
   - skia-pathops>=0.5.0 ; extra == 'all'
   - uharfbuzz>=0.23.0 ; extra == 'all'
   requires_python: '>=3.9'
-- pypi: https://files.pythonhosted.org/packages/fe/6b/4607add1755a1e6581ae1fc0c9a640648e0d9cdd6591cc2d581c2e07b8c3/fonttools-4.58.4-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl
+- pypi: https://files.pythonhosted.org/packages/f1/1e/edbc14b79290980c3944a1f43098624bc8965f534964aa03d52041f24cb4/fonttools-4.58.5-cp312-cp312-macosx_10_13_x86_64.whl
   name: fonttools
-  version: 4.58.4
-  sha256: 2d42c63020a922154add0a326388a60a55504629edc3274bc273cd3806b4659f
+  version: 4.58.5
+  sha256: 688137789dbd44e8757ad77b49a771539d8069195ffa9a8bcf18176e90bbd86d
   requires_dist:
   - fs>=2.2.0,<3 ; extra == 'ufo'
   - lxml>=4.0 ; extra == 'lxml'
@@ -5198,7 +5200,7 @@ packages:
 - pypi: ./
   name: pymgcv
   version: 0.0.0
-  sha256: e318658a02037bd0e4d7c94d7c0ed611342def2dfb2cfa84bdca123cb2ffe374
+  sha256: dd819e3199e986df5c38ad56e7d81a0759b39c1fe2d3351a13c0362497cbc053
   requires_dist:
   - rpy2>=3.6.1
   - numpy>=2.2.5
