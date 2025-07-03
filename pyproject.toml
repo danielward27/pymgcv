@@ -38,6 +38,7 @@ dev = [
     "pytest-markdown-docs",
     "mdit-py-plugins",
     "markdown-it-py",
+    "build",
 ]
 
 # ------------------- pixi config --------------------#
