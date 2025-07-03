@@ -2,10 +2,9 @@
 name = "pymgcv"
 authors = [{ name = "danielward27", email = "danielward27@outlook.com" }]
 description = "pymgcv: Generalized additive models using mgcv, in Python."
-requires-python = ">= 3.11"
+requires-python = ">= 3.11, < 3.13"
 version = "0.0.0"
-
-# CI fails on 3.13 currently.
+# CI fails on 3.13 currently with linker error
 
 keywords = ["generalized additive models", "GAMs"]
 license = { file = "LICENSE" }
@@ -47,8 +46,8 @@ dev = [
 r-base = ">=4.4.3,<4.5"
 r-mgcv = ">=1.9_3,<2"
 
-# [tool.pixi.pypi-options]
-# no-build-isolation = ["rpy2"]
+[tool.pixi.pypi-options]
+no-build-isolation = ["rpy2"]
 
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }
