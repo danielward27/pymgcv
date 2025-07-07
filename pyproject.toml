@@ -14,6 +14,8 @@ dev = ["pytest"]
 
 # --------------pixi config ----------------#
 # Minimal pixi environment for development and CI
+[tool.pixi.dependencies]
+r-base = ">=4.4.3,<4.5"
 
 [tool.pixi.pypi-options]
 no-build-isolation = ["rpy2"]
