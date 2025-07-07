@@ -61,7 +61,6 @@ def plot_gam(
                     residuals=residuals,
                 )
             except NotImplementedError:
-                print(f"No method for plotting {term}.")
                 continue
             n_axs.append(n_ax)
             plotters.append(plotter)
@@ -470,7 +469,7 @@ def plot_categorical(
         name=term.varnames[0],
     )
 
-    if residuals:
+    if residuals and target in data.columns:
         partial_residuals = fit.partial_residuals(target, term, data)
 
         jitter = np.random.uniform(-0.25, 0.25, size=len(data))
