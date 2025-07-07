@@ -19,21 +19,7 @@ requires = ["hatchling"]
 addopts = "--markdown-docs"
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-    "ruff",
-    "ipykernel",
-    "mkdocs",
-    "mkdocs-material",
-    "mkdocs-ipynb",
-    "mkdocstrings[python]",
-    "pymdown-extensions",
-    "griffe-inherited-docstrings",
-    "pytest-markdown-docs",
-    "mdit-py-plugins",
-    "markdown-it-py",
-    "build",
-]
+dev = ["pytest"]
 
 # ----------------- ruff config -------------------#
 [tool.ruff]
