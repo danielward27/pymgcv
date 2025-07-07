@@ -23,7 +23,6 @@ pythonpath = ["."]
 [tool.pixi.dependencies]
 r-base = ">=4.5.1,<4.6"
 setuptools = "*"
-cffi = ">=1.17.1,<2" # https://github.com/rpy2/rpy2/issues/739
 
 
 [tool.pixi.pypi-dependencies]
