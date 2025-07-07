@@ -1,7 +1,7 @@
 [project]
 name = "pymgcv"
 # requires-python = ">= 3.11"
-requires-python = ">= 3.11, <3.13"
+requires-python = ">= 3.11"
 version = "0.0.0"
 
 dependencies = ["rpy2>=3.6.1"]
@@ -17,6 +17,7 @@ dev = ["pytest"]
 # Minimal pixi environment for development and CI
 [tool.pixi.dependencies]
 r-base = ">=4.4.3,<4.5"
+cffi = ">=1.17.1,<2"    # https://github.com/rpy2/rpy2/issues/739
 
 [tool.pixi.pypi-options]
 no-build-isolation = ["rpy2"]
