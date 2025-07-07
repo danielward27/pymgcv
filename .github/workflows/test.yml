@@ -3,10 +3,7 @@ name: test
 on:
   push:
     branches:
-      - main
-  pull_request:
-    branches:
-      - main
+      - linker_mwe
 
 jobs:
   Test:
