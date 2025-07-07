@@ -3,7 +3,9 @@ name = "pymgcv"
 # requires-python = ">= 3.11, <= 3.12"  # This works
 requires-python = ">= 3.11"  # This gives the linker error
 version = "0.0.0"
-dependencies = ["rpy2"]
+dependencies = [
+    "rpy2==3.6.0a2"
+]
 
 
 [project.optional-dependencies]

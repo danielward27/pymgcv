@@ -104,7 +104,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0c/91/96cf928db8236f1bfab6ce15ad070dfdd02ed88261c2afafd4b43575e9e9/MarkupSafe-3.0.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/13/a3/a812df4e2dd5696d1f351d58b8fe16a405b234ad2886a0dab9183fb78109/pycparser-2.22-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/e1/be/77c01409c3d4c275c283a69e64bca3ce8e2a7abcb6fa0edd41f991048034/rpy2-3.6.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/16/70/06e86fb7f36dd84c4cd4d54c9b64c456562490e9d7982a2dcfa93bc36cef/rpy2-3.6.0a2.tar.gz
       - pypi: https://files.pythonhosted.org/packages/b1/63/912a5e2939faed541adb6575b91b536d521ef8c4b20860e61f7150393bfd/rpy2_rinterface-3.6.1.tar.gz
       - pypi: https://files.pythonhosted.org/packages/ac/3b/9bc0f0281b29f943f9d9fa7f2db07fb6cf4a6e35e39a8b8f0a612cfc3f5c/rpy2_robjects-3.6.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c2/14/e2a54fabd4f08cd7af1c07030603c3356b74da07f7cc056e600436edfa17/tzlocal-5.3.1-py3-none-any.whl
@@ -218,7 +218,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/13/a3/a812df4e2dd5696d1f351d58b8fe16a405b234ad2886a0dab9183fb78109/pycparser-2.22-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c7/21/705964c7812476f378728bdf590ca4b771ec72385c533964653c68e86bdc/pygments-2.19.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/29/16/c8a903f4c4dffe7a12843191437d7cd8e32751d5de349d45d3fe69544e87/pytest-8.4.1-py3-none-any.whl
-      - pypi: https://files.pythonhosted.org/packages/e1/be/77c01409c3d4c275c283a69e64bca3ce8e2a7abcb6fa0edd41f991048034/rpy2-3.6.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/16/70/06e86fb7f36dd84c4cd4d54c9b64c456562490e9d7982a2dcfa93bc36cef/rpy2-3.6.0a2.tar.gz
       - pypi: https://files.pythonhosted.org/packages/b1/63/912a5e2939faed541adb6575b91b536d521ef8c4b20860e61f7150393bfd/rpy2_rinterface-3.6.1.tar.gz
       - pypi: https://files.pythonhosted.org/packages/ac/3b/9bc0f0281b29f943f9d9fa7f2db07fb6cf4a6e35e39a8b8f0a612cfc3f5c/rpy2_robjects-3.6.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c2/14/e2a54fabd4f08cd7af1c07030603c3356b74da07f7cc056e600436edfa17/tzlocal-5.3.1-py3-none-any.whl
@@ -1203,9 +1203,9 @@ packages:
 - pypi: ./
   name: pymgcv
   version: 0.0.0
-  sha256: a9d90ac6f32168c0b3d1343aa7f2b493a42b2df6f5d89f52a10c3d5f2b576521
+  sha256: ee46f21d38f75e24cdabe7e1456a5a55f41bf5c2cae7eca7e7ec8badbb3475c3
   requires_dist:
-  - rpy2
+  - rpy2==3.6.0a2
   - pytest ; extra == 'dev'
   requires_python: '>=3.11'
   editable: true
@@ -1328,13 +1328,13 @@ packages:
   purls: []
   size: 282480
   timestamp: 1740379431762
-- pypi: https://files.pythonhosted.org/packages/e1/be/77c01409c3d4c275c283a69e64bca3ce8e2a7abcb6fa0edd41f991048034/rpy2-3.6.1-py3-none-any.whl
+- pypi: https://files.pythonhosted.org/packages/16/70/06e86fb7f36dd84c4cd4d54c9b64c456562490e9d7982a2dcfa93bc36cef/rpy2-3.6.0a2.tar.gz
   name: rpy2
-  version: 3.6.1
-  sha256: f8f2a4979330c0daf6227f0c4de434234f13976f20dfa9e6f40020b98f4567a3
+  version: 3.6.0a2
+  sha256: fc35b7deeff52c4b584aff46e3f42bec7201976058bf96cc1f0648c661e4958a
   requires_dist:
-  - rpy2-rinterface>=3.6.1
-  - rpy2-robjects>=3.6.1
+  - rpy2-rinterface>=3.6.0a1
+  - rpy2-robjects>=3.6.0a1
   - packaging ; sys_platform == 'win32'
   - backports-zoneinfo ; python_full_version < '3.9'
   - pygraphviz ; extra == 'doc'
