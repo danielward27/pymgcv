@@ -3,7 +3,6 @@ name = "pymgcv"
 # requires-python = ">= 3.11, <= 3.12"  # This works
 requires-python = ">= 3.11"  # This gives the linker error
 version = "0.0.0"
-
 dependencies = ["rpy2"]
 
 
@@ -22,7 +21,6 @@ pythonpath = ["."]
 
 [tool.pixi.dependencies]
 r-base = ">=4.5.1,<4.6"
-compilers = ">=1.10.0,<2"
 
 [tool.pixi.pypi-dependencies]
 pymgcv = { path = ".", editable = true }
