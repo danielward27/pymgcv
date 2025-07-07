@@ -4,18 +4,16 @@ name = "pymgcv"
 requires-python = ">= 3.11"  # This gives the linker error
 version = "0.0.0"
 dependencies = [
+    "setuptools",  # rpy2 seems to need this to build
     "rpy2==3.6.0a2",
-    "setuptools"  # rpy2 seems to need this to build
 ]
-
 
 [project.optional-dependencies]
 dev = ["pytest"]
 
 [build-system]
 build-backend = "hatchling.build"
-requires = ["hatchling"]
-
+requires = ["hatchling"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
