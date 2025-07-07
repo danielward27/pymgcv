@@ -107,6 +107,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/16/70/06e86fb7f36dd84c4cd4d54c9b64c456562490e9d7982a2dcfa93bc36cef/rpy2-3.6.0a2.tar.gz
       - pypi: https://files.pythonhosted.org/packages/b1/63/912a5e2939faed541adb6575b91b536d521ef8c4b20860e61f7150393bfd/rpy2_rinterface-3.6.1.tar.gz
       - pypi: https://files.pythonhosted.org/packages/ac/3b/9bc0f0281b29f943f9d9fa7f2db07fb6cf4a6e35e39a8b8f0a612cfc3f5c/rpy2_robjects-3.6.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c2/14/e2a54fabd4f08cd7af1c07030603c3356b74da07f7cc056e600436edfa17/tzlocal-5.3.1-py3-none-any.whl
       - pypi: ./
   dev:
@@ -1204,11 +1205,11 @@ packages:
 - pypi: ./
   name: pymgcv
   version: 0.0.0
-  sha256: 1da92191f85e7e5b4ce7a3d29f2e079df142827b3dd2965be70e7c43c109329d
+  sha256: fb142a72c6957fcde6133fdba78aad5cfbb2bfbcfc6a1db289a373d7b9fd7878
   requires_dist:
   - rpy2==3.6.0a2
+  - setuptools
   - pytest ; extra == 'dev'
-  - setuptools ; extra == 'dev'
   requires_python: '>=3.11'
   editable: true
 - pypi: https://files.pythonhosted.org/packages/29/16/c8a903f4c4dffe7a12843191437d7cd8e32751d5de349d45d3fe69544e87/pytest-8.4.1-py3-none-any.whl
