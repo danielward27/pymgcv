@@ -18,6 +18,7 @@ dev = ["pytest"]
 [tool.pixi.dependencies]
 r-base = ">=4.4.3,<4.5"
 cffi = ">=1.17.1,<2"    # https://github.com/rpy2/rpy2/issues/739
+setuptools = ">=80.9.0,<81"
 
 [tool.pixi.pypi-options]
 no-build-isolation = ["rpy2"]
