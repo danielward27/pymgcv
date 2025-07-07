@@ -54,6 +54,7 @@ convention = "google"
 [tool.pixi.dependencies]
 r-base = ">=4.4.3,<4.5"
 r-mgcv = ">=1.9_3,<2"
+xz = ">=5.8.1,<6"
 
 [tool.pixi.pypi-options]
 no-build-isolation = ["rpy2"]
