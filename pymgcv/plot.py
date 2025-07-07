@@ -24,8 +24,8 @@ from pymgcv.terms import (
 
 
 def plot_gam(
-    *,
     fit: FittedGAM,
+    *,
     ncols=2,
     residuals: bool = False,
     to_plot: type | types.UnionType | dict[str, list[TermLike]] = TermLike,
