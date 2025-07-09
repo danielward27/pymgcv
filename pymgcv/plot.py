@@ -21,7 +21,8 @@ from pymgcv.terms import (
     TermLike,
     _RandomWigglyToByInterface,
 )
-
+from matplotlib.figure import Figure
+from typing import Callable
 
 def plot_gam(
     gam: GAM,
@@ -29,7 +30,7 @@ def plot_gam(
     ncols: int = 2,
     residuals: bool = False,
     to_plot: type | types.UnionType | dict[str, list[TermLike]] = TermLike,
-):
+) -> tuple[Figure, plt.Axes | np.ndarray]:
     """Plot a gam model.
 
     Args:
@@ -96,12 +97,12 @@ def get_term_plotter(
     *,
     residuals: bool = False,
     **kwargs,
-):
+) -> tuple[int, Callable]:
     """Utility for plotting a term in a model.
 
     Because some terms need multiple axes for plotting, this returns the number of axes
     required, and a function that applies the plotting to an iterable of axes, taking
-    only the axes as an argument. This allows us to setup the axes before plotting,
+    only the axes as an argument. This allows us to setup the axes before plotting
     when plotting multiple terms.
     """
     if gam.fit_state is None:

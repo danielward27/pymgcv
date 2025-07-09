@@ -62,6 +62,9 @@ class GAM:
             prediction and should match the order expected by the mgcv family.
         family: String specifying the mgcv family for the error distribution.
             This is passed directly to R's mgcv and can include family arguments.
+        add_intercepts: If True, adds an intercept term to each formula.
+            If false, we assume that any [`Intercept`][pymgcv.terms.Intercept]
+            terms desired are manually added to the formulae.
     """
 
     predictors: dict[str, list[TermLike]]
