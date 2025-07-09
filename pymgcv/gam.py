@@ -7,7 +7,7 @@ fitted model objects, and the main fitting function.
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Self
 
 import numpy as np
 import pandas as pd
@@ -35,6 +35,17 @@ FitMethodOptions = Literal[
 
 
 @dataclass
+class FitState:
+    """The mgcv gam, and the data used for fitting.
+
+    This gets set as an attribute fit_state on the GAM object after fitting.
+    """
+
+    rgam: ro.ListVector
+    data: pd.DataFrame
+
+
+@dataclass
 class GAM:
     r"""Defines the model to use and provides a fit method.
 
@@ -56,6 +67,7 @@ class GAM:
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
     family: str
+    fit_state: FitState | None
 
     def __init__(
         self,
@@ -74,6 +86,7 @@ class GAM:
         self.predictors = _ensure_list_of_terms(predictors)
         self.family_predictors = _ensure_list_of_terms(family_predictors)
         self.family = family
+        self.fit_state = None
 
         if add_intercepts:
             for v in self.all_predictors.values():
@@ -107,11 +120,8 @@ class GAM:
         self,
         data: pd.DataFrame,
         method: FitMethodOptions = "GCV.Cp",
-    ):
+    ) -> Self:
         """Fit a Generalized Additive GAM.
-
-        Note, this returns a FittedGAM object (does not mutate the model!), so
-        assign the result to a variable.
 
         Args:
             specification: GAM object defining the model structure,
@@ -123,24 +133,19 @@ class GAM:
                 options, including:
                 - "GCV.Cp": Generalized Cross Validation (default, recommended)
                 - "REML": Restricted Maximum Likelihood (good for mixed models)
-
-        Returns:
-            FittedGAM object containing the fitted model and methods for prediction,
-                analysis.
         """
         # TODO missing options.
         self._check_valid_data(data)
-
-        return FittedGAM(
-            mgcv.gam(
+        self.fit_state = FitState(
+            rgam=mgcv.gam(
                 self._to_r_formulae(),
                 data=data_to_rdf(data),
                 family=ro.rl(self.family),
                 method=method,
             ),
             data=data.copy(),
-            gam=self,
         )
+        return self
 
     @property
     def all_predictors(self) -> dict[str, list[TermLike]]:
@@ -213,26 +218,9 @@ class GAM:
 
         return formulae if len(formulae) > 1 else formulae[0]
 
-
-@dataclass
-class FittedGAM:
-    """The fitted GAM model with methods for predicting.
-
-    Generally returned by fitting methods (rather than being created directly).
-
-    Args:
-        rgam: The underlying R mgcv model object from fitting
-        data: Original DataFrame used for model fitting
-        gam: The GAM.
-    """
-
-    rgam: ro.vectors.ListVector
-    data: pd.DataFrame
-    gam: GAM
-
     def predict(
         self,
-        data: pd.DataFrame,
+        data: pd.DataFrame | None = None,
     ) -> dict[str, pd.DataFrame]:
         """Compute model predictions with uncertainty estimates.
 
@@ -246,17 +234,22 @@ class FittedGAM:
                 variables referenced in the original model specification.
 
         """
-        self.gam._check_valid_data(data)
+        if data is not None:
+            self._check_valid_data(data)
+        else:
+            data = self.fit_state.data
+
+        if self.fit_state is None:
+            raise RuntimeError("Cannot call predict before fitting.")
+
         predictions = rstats.predict(
-            self.rgam,
+            self.fit_state.rgam,
             newdata=data_to_rdf(data),
             se=True,
         )
         predictions = rlistvec_to_dict(predictions)
+        all_targets = self.all_predictors.keys()
 
-        all_targets = self.gam.all_predictors.keys()
-
-        # TODO we assume 1 column for each linear predictor
         n = data.shape[0]
         return {
             target: pd.DataFrame(
@@ -270,7 +263,7 @@ class FittedGAM:
 
     def partial_effects(
         self,
-        data: pd.DataFrame,
+        data: pd.DataFrame | None = None,
     ) -> dict[str, pd.DataFrame]:
         """Compute partial effects for all model terms.
 
@@ -289,8 +282,16 @@ class FittedGAM:
 
             The sum of all fit columns equals the total prediction:
         """
+        if data is not None:
+            self._check_valid_data(data)
+        else:
+            data = self.fit_state.data
+
+        if self.fit_state is None:
+            raise RuntimeError("Cannot call partial_effects before fitting.")
+
         predictions = rstats.predict(
-            self.rgam,
+            self.fit_state.rgam,
             newdata=data_to_rdf(data),
             se=True,
             type="terms",
@@ -306,7 +307,7 @@ class FittedGAM:
         )
         # Partition results based on formulas
         results = {}
-        for i, (target, terms) in enumerate(self.gam.all_predictors.items()):
+        for i, (target, terms) in enumerate(self.all_predictors.items()):
             result = {"fit": {}, "se": {}}
             for term in terms:
                 match term:
@@ -363,10 +364,16 @@ class FittedGAM:
             with all other terms held at their reference values (typically zero
             for centered smooth terms).
         """
-        formula_idx = list(self.gam.all_predictors.keys()).index(target)
+        data = data if data is not None else self.fit_state.data
+        if self.fit_state is None:
+            raise RuntimeError(
+                "Cannot compute partial effect before fitting the model.",
+            )
+
+        formula_idx = list(self.all_predictors.keys()).index(target)
         effect, se = term._partial_effect(
             data=data,
-            rgam=self.rgam,
+            rgam=self.fit_state.rgam,
             formula_idx=formula_idx,
         )
         assert len(data) == len(effect)
@@ -398,11 +405,12 @@ class FittedGAM:
         Returns:
             Series containing the partial residuals for the specified term
         """
+        data = data if data is not None else self.fit_state.data
         partial_effects = self.partial_effects(data)[target]["fit"]  # Link scale
         link_fit = partial_effects.sum(axis=1).to_numpy()
         term_effect = partial_effects.pop(term.label()).to_numpy()
 
-        family = self.gam.family
+        family = self.family
         if "(" not in family:
             family = f"{family}()"
 
@@ -429,7 +437,9 @@ class FittedGAM:
         tests, smooth term information, model fit statistics, and convergence
         diagnostics. The output matches the format of R's mgcv summary.
         """
-        strvec = rutils.capture_output(rbase.summary(self.rgam))
+        if self.fit_state is None:
+            raise RuntimeError("Cannot print summary of an unfitted model.")
+        strvec = rutils.capture_output(rbase.summary(self.fit_state.rgam))
         return "\n".join(tuple(strvec))
 
     def coefficients(self) -> pd.Series:  # TODO consider returning as dict?
@@ -437,7 +447,9 @@ class FittedGAM:
 
         Returns a series where the index if the mgcv-style name of the parameter.
         """
-        coef = self.rgam.rx2["coefficients"]
+        if self.fit_state is None:
+            raise RuntimeError("Cannot extract coefficients from an unfitted model.")
+        coef = self.fit_state.rgam.rx2["coefficients"]
         names = coef.names
         return pd.Series(to_py(coef), index=names)
 
@@ -469,12 +481,16 @@ class FittedGAM:
             The covariance matrix as a numpy array.
 
         """
+        if self.fit_state is None:
+            raise RuntimeError("Cannot extract covariance from an unfitted model.")
+
         if unconditional and freq:
             raise ValueError("Unconditional and freq cannot both be True")
-        coef_names = self.rgam.rx2["coefficients"].names
+
+        coef_names = self.fit_state.rgam.rx2["coefficients"].names
         cov = to_py(
             rstats.vcov(
-                self.rgam,
+                self.fit_state.rgam,
                 sandwich=sandwich,
                 freq=freq,
                 unconditional=unconditional,

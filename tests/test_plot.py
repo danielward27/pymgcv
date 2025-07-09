@@ -37,8 +37,8 @@ test_cases_1d_continuous = get_test_cases_1d_continuous()
 )
 def test_plot_continuous_1d(test_case: tc.GAMTestCase, kwargs: dict):
     gam = test_case.gam_model.fit(test_case.data)
-    term = gam.gam.all_predictors[kwargs["target"]][0]  # Assume first term of interest
-    plot_continuous_1d(**kwargs, fit=gam, term=term, data=test_case.data)
+    term = gam.all_predictors[kwargs["target"]][0]  # Assume first term of interest
+    plot_continuous_1d(**kwargs, gam=gam, term=term, data=test_case.data)
     plt.close("all")
 
 
@@ -63,16 +63,16 @@ test_cases_2d_continuous = get_test_cases_2d_continuous()
 )
 def test_plot_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
     gam = test_case.gam_model.fit(test_case.data)
-    term = gam.gam.all_predictors[kwargs["target"]][0]  # Assume first term of interest
-    plot_continuous_2d(**kwargs, fit=gam, term=term, data=test_case.data)
+    term = gam.all_predictors[kwargs["target"]][0]  # Assume first term of interest
+    plot_continuous_2d(**kwargs, gam=gam, term=term, data=test_case.data)
     plt.close("all")
 
 
 def test_plot_categorical():
     test_case = tc.categorical_linear_gam()
     gam = test_case.gam_model.fit(test_case.data)
-    term = gam.gam.predictors["y"][0]
-    plot_categorical(target="y", fit=gam, term=term, data=test_case.data)
+    term = gam.predictors["y"][0]
+    plot_categorical(target="y", gam=gam, term=term, data=test_case.data)
     plt.close("all")
 
 
@@ -93,7 +93,7 @@ all_gam_test_cases.pop("categorical_interaction_gam")
     ids=all_gam_test_cases.keys(),
 )
 def test_plot_gam(test_case: tc.GAMTestCase):
-    fit = test_case.gam_model.fit(test_case.data)
-    print(fit.summary())
-    plot_gam(fit=fit, ncols=1)
+    gam = test_case.gam_model.fit(test_case.data)
+    print(gam.summary())
+    plot_gam(gam=gam, ncols=1)
     plt.close("all")

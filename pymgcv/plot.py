@@ -13,7 +13,7 @@ from pandas import CategoricalDtype
 from pandas.api.types import is_numeric_dtype
 
 from pymgcv.basis_functions import RandomWigglyCurve
-from pymgcv.gam import FittedGAM
+from pymgcv.gam import GAM
 from pymgcv.terms import (
     L,
     S,
@@ -24,7 +24,7 @@ from pymgcv.terms import (
 
 
 def plot_gam(
-    fit: FittedGAM,
+    gam: GAM,
     *,
     ncols=2,
     residuals: bool = False,
@@ -33,7 +33,7 @@ def plot_gam(
     """Plot a gam model.
 
     Args:
-        fit: The fitted gam object to plot.
+        gam: The fitted gam object to plot.
         ncols: The number of columns before wrapping axes.
         residuals: Whether to plot the residuals (where possible). Defaults to False.
         to_plot: Which terms to plot. If a type, only plots terms
@@ -41,13 +41,15 @@ def plot_gam(
             If a dictionary, it should map the target names to
             an iterable of terms to plot (similar to how models are specified).
     """
+    if gam.fit_state is None:
+        raise ValueError("Cannot plot before fitting the model.")
     if isinstance(to_plot, type | types.UnionType):
         to_plot = {
             k: [v for v in terms if isinstance(v, to_plot)]
-            for k, terms in fit.gam.all_predictors.items()
+            for k, terms in gam.all_predictors.items()
         }
 
-    data = fit.data
+    data = gam.fit_state.data
     n_axs = []
     plotters = []
     for target, terms in to_plot.items():
@@ -56,7 +58,7 @@ def plot_gam(
                 n_ax, plotter = get_term_plotter(
                     target,
                     term=term,
-                    fit=fit,
+                    gam=gam,
                     data=data,
                     residuals=residuals,
                 )
@@ -89,7 +91,7 @@ def plot_gam(
 def get_term_plotter(
     target: str,
     term: TermLike,
-    fit: FittedGAM,
+    gam: GAM,
     data: pd.DataFrame | None = None,
     *,
     residuals: bool = False,
@@ -102,7 +104,10 @@ def get_term_plotter(
     only the axes as an argument. This allows us to setup the axes before plotting,
     when plotting multiple terms.
     """
-    data = data if data is not None else fit.data
+    if gam.fit_state is None:
+        raise ValueError("Cannot plot before fitting the model.")
+    data = data if data is not None else gam.fit_state.data
+    data = data.copy()
 
     if _is_random_wiggly(term):
         term = _RandomWigglyToByInterface(term)
@@ -123,7 +128,7 @@ def get_term_plotter(
                 axes[0] = plot_categorical(
                     target=target,
                     term=term,
-                    fit=fit,
+                    gam=gam,
                     data=data,
                     ax=axes[0],
                     residuals=residuals,
@@ -142,7 +147,7 @@ def get_term_plotter(
                     axes[0] = plot_continuous_1d(
                         target=target,
                         term=term,
-                        fit=fit,
+                        gam=gam,
                         data=data,
                         level=level,
                         ax=axes[0],
@@ -163,7 +168,7 @@ def get_term_plotter(
                     axes[i] = plot_continuous_2d(
                         target=target,
                         term=term,
-                        fit=fit,
+                        gam=gam,
                         data=data,
                         level=level,
                         ax=axes[i],
@@ -183,7 +188,7 @@ def plot_continuous_1d(
     *,
     target: str,
     term: TermLike,
-    fit: FittedGAM,
+    gam: GAM,
     data: pd.DataFrame | None = None,
     eval_density: int = 100,
     level: str | None = None,
@@ -208,7 +213,7 @@ def plot_continuous_1d(
     Args:
         target: Name of the response variable from the model specification.
         term: The model term to plot. Must be a univariate term (single variable).
-        fit: FittedGAM model containing the term to plot.
+        fit: GAM model containing the term to plot.
         data: DataFrame used for plotting partial residuals and determining
             axis limits. Defaults to the data used for training.
         eval_density: Number of evaluation points along the variable range
@@ -230,7 +235,9 @@ def plot_continuous_1d(
     Returns:
         The matplotlib Axes object with the plot.
     """
-    data = data if data is not None else fit.data
+    if gam.fit_state is None:
+        raise ValueError("Cannot plot before fitting the model.")
+    data = data if data is not None else gam.fit_state.data
     data = data.copy()
     term = _RandomWigglyToByInterface(term) if _is_random_wiggly(term) else term
     is_categorical_by = term.by and isinstance(data[term.by].dtype, CategoricalDtype)
@@ -278,11 +285,11 @@ def plot_continuous_1d(
         if "c" not in kwargs and "color" not in kwargs:
             kwargs["color"] = current_color
 
-    pred = fit.partial_effect(target, term, spaced_data)
+    pred = gam.partial_effect(target, term, spaced_data)
 
     # Add partial residuals
     if residuals and target in data.columns:
-        partial_residuals = fit.partial_residuals(target, term, data)
+        partial_residuals = gam.partial_residuals(target, term, data)
         ax.scatter(data[term.varnames[0]], partial_residuals, **scatter_kwargs)
 
     # Plot interval
@@ -303,8 +310,8 @@ def plot_continuous_2d(
     *,
     target: str,
     term: TermLike,
-    fit: FittedGAM,
-    data: pd.DataFrame,
+    gam: GAM,
+    data: pd.DataFrame | None = None,
     eval_density: int = 50,
     level: str | None = None,
     contour_kwargs: dict | None = None,
@@ -344,6 +351,9 @@ def plot_continuous_2d(
     Raises:
         ValueError: If the term doesn't have exactly two variables.
     """
+    if gam.fit_state is None:
+        raise ValueError("Cannot plot before fitting the model.")
+    data = data if data is not None else gam.fit_state.data
     data = data.copy()
     term = _RandomWigglyToByInterface(term) if _is_random_wiggly(term) else term
     is_categorical_by = term.by and isinstance(data[term.by].dtype, CategoricalDtype)
@@ -391,7 +401,7 @@ def plot_continuous_2d(
     scatter_kwargs.setdefault("color", "black")
     scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
 
-    pred = fit.partial_effect(
+    pred = gam.partial_effect(
         target,
         term,
         data=spaced_data,
@@ -425,7 +435,7 @@ def plot_categorical(
     *,
     target: str,
     term: L,
-    fit: FittedGAM,
+    gam: GAM,
     data: pd.DataFrame | None = None,
     residuals: bool = False,
     n_standard_errors: int | float = 2,
@@ -453,7 +463,9 @@ def plot_categorical(
         ax: Matplotlib Axes object to plot on. If None, uses current axes.
 
     """
-    data = fit.data if data is None else data
+    if gam.fit_state is None:
+        raise RuntimeError("The model must be fitted before plotting.")
+    data = gam.fit_state.data if data is None else data
     errorbar_kwargs = {} if errorbar_kwargs is None else errorbar_kwargs
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
     scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
@@ -470,7 +482,7 @@ def plot_categorical(
     )
 
     if residuals and target in data.columns:
-        partial_residuals = fit.partial_residuals(target, term, data)
+        partial_residuals = gam.partial_residuals(target, term, data)
 
         jitter = np.random.uniform(-0.25, 0.25, size=len(data))
         scatter_kwargs.setdefault("alpha", 0.2)
@@ -483,7 +495,7 @@ def plot_categorical(
 
     ax.set_xticks(ticks=levels.cat.codes, labels=levels)
 
-    pred = fit.partial_effect(
+    pred = gam.partial_effect(
         target=target,
         term=term,
         data=pd.DataFrame(levels),
