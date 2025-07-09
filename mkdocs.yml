@@ -50,15 +50,17 @@ markdown_extensions:
   - pymdownx.inlinehilite
 
 nav:
-  - Introduction: index.ipynb
+  - Introduction: index.ipynb # Seems to work
   - Examples:
       - GAMLSS: examples/gamlss.ipynb
-      - S-by-categorical: examples/smooth_by_categorical.ipynb
+      - Smooth-by-categorical: examples/smooth_by_categorical.ipynb
   - API Reference:
       - api/gam.md
       - api/terms.md
       - api/basis_functions.md
       - api/plot.md
+  - Development:
+      - contributing.md
 
 plugins:
   - search:

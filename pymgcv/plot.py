@@ -21,15 +21,16 @@ from pymgcv.terms import (
     TermLike,
     _RandomWigglyToByInterface,
 )
-
+from matplotlib.figure import Figure
+from typing import Callable
 
 def plot_gam(
     gam: GAM,
     *,
-    ncols=2,
+    ncols: int = 2,
     residuals: bool = False,
     to_plot: type | types.UnionType | dict[str, list[TermLike]] = TermLike,
-):
+) -> tuple[Figure, plt.Axes | np.ndarray]:
     """Plot a gam model.
 
     Args:
@@ -96,12 +97,12 @@ def get_term_plotter(
     *,
     residuals: bool = False,
     **kwargs,
-):
+) -> tuple[int, Callable]:
     """Utility for plotting a term in a model.
 
     Because some terms need multiple axes for plotting, this returns the number of axes
     required, and a function that applies the plotting to an iterable of axes, taking
-    only the axes as an argument. This allows us to setup the axes before plotting,
+    only the axes as an argument. This allows us to setup the axes before plotting
     when plotting multiple terms.
     """
     if gam.fit_state is None:
@@ -213,14 +214,14 @@ def plot_continuous_1d(
     Args:
         target: Name of the response variable from the model specification.
         term: The model term to plot. Must be a univariate term (single variable).
-        fit: GAM model containing the term to plot.
+        gam: GAM model containing the term to plot.
         data: DataFrame used for plotting partial residuals and determining
             axis limits. Defaults to the data used for training.
         eval_density: Number of evaluation points along the variable range
             for plotting the smooth curve. Higher values give smoother curves
             but increase computation time. Default is 100.
         level: Must be provided for smooths with a categorical "by" variable or a
-            [`RandomWigglyCurve`][pymgcv.terms.RandomWigglyCurve] basis.
+            [`RandomWigglyCurve`][pymgcv.basis_functions.RandomWigglyCurve] basis.
             Specifies the level to plot.
         n_standard_errors: Number of standard errors for confidence intervals.
         residuals: Whether to plot partial residuals.
@@ -328,14 +329,14 @@ def plot_continuous_2d(
         target: Name of the response variable from the model specification.
         term: The bivariate term to plot. Must have exactly two variables.
             Can be S('x1', 'x2') or T('x1', 'x2').
-        fit: Fitted GAM model containing the term to plot.
+        gam: GAM model containing the term to plot.
         data: DataFrame containing the variables for determining plot range
             and showing data points. Should typically be the training data.
         eval_density: Number of evaluation points along each axis, creating
             an eval_density × eval_density grid. Higher values give smoother
             surfaces but increase computation time. Default is 50.
         level: Must be provided for smooths with a categorical "by" variable or a
-            [`RandomWigglyCurve`][pymgcv.terms.RandomWigglyCurve] basis.
+            [`RandomWigglyCurve`][pymgcv.basis_functions.RandomWigglyCurve] basis.
             Specifies the level to plot.
         contour_kwargs: Keyword arguments passed to `matplotlib.pyplot.contour`
             for the contour lines.
@@ -455,7 +456,7 @@ def plot_categorical(
         target: Name of the response variable from the model specification.
         term: The categorical term to plot. Must be a L term with a single
             categorical variable.
-        fit: Fitted GAM model containing the term to plot.
+        gam: GAM model containing the term to plot.
         data: DataFrame containing the categorical variable and response.
         n_standard_errors: Number of standard errors for confidence intervals.
         errorbar_kwargs: Keyword arguments passed to `matplotlib.pyplot.errorbar`.

@@ -69,7 +69,7 @@ class RandomEffect(BasisLike):
     """Random effect basis for correlated grouped data.
 
     This can be used with any mixture of numeric or categorical variables. Acts
-    similarly to an [`Interaction`][pymgcv.basis_functions.Interaction] but penalizes
+    similarly to an [`Interaction`][pymgcv.terms.Interaction] but penalizes
     the corresponding coefficients with a multiple of the identity matrix (i.e. a ridge
     penalty), corresponding to an assumption of i.i.d. normality of the parameters.
 
@@ -294,19 +294,20 @@ class PSpline(BasisLike):
 
     Uses B-spline bases penalized by discrete penalties applied directly to the basis
     coefficients. Note for most use cases splines with derivative-based penalties (e.g.
-    [`ThinPlateSpline`][pymgcv.ThinPlateSpline] or [`CubicSpline`][pymgcv.CubicSpline])
-    tend to yield better MSE performance. ``BSpline(degree=3, penalty_order=2)`` is
+    [`ThinPlateSpline`][pymgcv.basis_functions.ThinPlateSpline] or
+    [`CubicSpline`][pymgcv.basis_functions.CubicSpline]) tend to yield better
+    MSE performance. ``BSpline(degree=3, penalty_order=2)`` is
     cubic-spline-like.
 
     Args:
         degree: Degree of the B-spline basis (e.g. 3 for cubic).
-        penalty_orders: The difference order to penalize. 0-th order is ridge penalty.
+        penalty_order: The difference order to penalize. 0-th order is ridge penalty.
             Default to `degree-1`.
     """
 
     cyclic: bool = False
     degree: int
-    penalty_orders: int
+    penalty_order: int
 
     def __init__(self, *, degree: int = 3, penalty_order: int | None = None):
         self.degree = degree
@@ -326,7 +327,7 @@ class MarkovRandomField(BasisLike):
     """Markov Random Field basis for discrete spatial data with neighborhood structure.
 
     The smoothing penalty encourages similar value in neighboring locations. When using
-    this basis, the variable passed to [`S`][pymgcv.smooth.S] should be a
+    this basis, the variable passed to [`S`][pymgcv.terms.S] should be a
     categorical variable representing the area labels.
 
     Args:

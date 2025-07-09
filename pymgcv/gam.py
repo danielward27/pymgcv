@@ -62,6 +62,9 @@ class GAM:
             prediction and should match the order expected by the mgcv family.
         family: String specifying the mgcv family for the error distribution.
             This is passed directly to R's mgcv and can include family arguments.
+        add_intercepts: If True, adds an intercept term to each formula.
+            If false, we assume that any [`Intercept`][pymgcv.terms.Intercept]
+            terms desired are manually added to the formulae.
     """
 
     predictors: dict[str, list[TermLike]]
@@ -124,15 +127,10 @@ class GAM:
         """Fit a Generalized Additive GAM.
 
         Args:
-            specification: GAM object defining the model structure,
-                including terms for response variables and family parameters, plus
-                the error distribution family
             data: DataFrame containing all variables referenced in the specification.
                 Variable names must match those used in the model terms.
             method: Method for smoothing parameter estimation, matching the mgcv,
-                options, including:
-                - "GCV.Cp": Generalized Cross Validation (default, recommended)
-                - "REML": Restricted Maximum Likelihood (good for mixed models)
+                options.
         """
         # TODO missing options.
         self._check_valid_data(data)
@@ -156,7 +154,7 @@ class GAM:
         self,
         data: pd.DataFrame,
     ) -> None:
-        """Validate that data contains all variables required by the model specification.
+        """Validate that data contains all variables required by the model.
 
         Performs comprehensive validation including:
         - Checking that all term variables exist in the data
@@ -456,9 +454,9 @@ class GAM:
     def covariance(
         self,
         *,
-        sandwich=False,
-        freq=False,
-        unconditional=False,
+        sandwich: bool=False,
+        freq: bool=False,
+        unconditional:bool=False,
     ) -> pd.DataFrame:
         """Extract the covariance matrix from the fitted GAM.
 
