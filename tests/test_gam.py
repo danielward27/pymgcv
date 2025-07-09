@@ -26,8 +26,8 @@ def test_pymgcv_mgcv_equivilance(test_case: GAMTestCase):
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_predict_terms_structure(test_case: GAMTestCase):
-    fit = test_case.gam_model.fit(test_case.data)
-    all_terms = fit.partial_effects(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data)
+    all_terms = gam.partial_effects(test_case.data)
     expected = test_case.expected_predict_terms_structure
 
     assert sorted(all_terms.keys()) == sorted(expected.keys())
@@ -40,9 +40,9 @@ def test_predict_terms_structure(test_case: GAMTestCase):
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_partial_effects_colsum_matches_predict(test_case: GAMTestCase):
-    pymgcv_gam = test_case.gam_model.fit(test_case.data)
-    predictions = pymgcv_gam.predict(test_case.data)
-    term_predictions = pymgcv_gam.partial_effects(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data)
+    predictions = gam.predict(test_case.data)
+    term_predictions = gam.partial_effects(test_case.data)
 
     for target, pred in predictions.items():
         term_fit = term_predictions[target]["fit"]
@@ -51,15 +51,15 @@ def test_partial_effects_colsum_matches_predict(test_case: GAMTestCase):
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_partial_effect_against_partial_effects(test_case: GAMTestCase):
-    fit = test_case.gam_model.fit(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data)
 
-    partial_effects = fit.partial_effects(test_case.data)
+    partial_effects = gam.partial_effects(test_case.data)
 
-    all_predictors = fit.gam.all_predictors
+    all_predictors = gam.all_predictors
     for target, terms in all_predictors.items():
         for term in terms:
             try:
-                effect = fit.partial_effect(target, term, test_case.data)
+                effect = gam.partial_effect(target, term, test_case.data)
             except NotImplementedError as e:
                 if str(e) != "":
                     raise e

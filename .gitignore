@@ -1,4 +1,6 @@
-pixi.lock  # For now - may want this to be included in the future
+
+# For now we ignore the lock - may want this to be included in the future
+pixi.lock
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
