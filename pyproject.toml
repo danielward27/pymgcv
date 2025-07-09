@@ -36,7 +36,8 @@ dev = [
     "pytest-markdown-docs",
     "mdit-py-plugins",
     "markdown-it-py",
-    "build",
+    "jupytext",                    # Allows converting python examples to notebooks
+    "nbconvert",                   # Allows converting notebooks to python scripts
 ]
 
 # ----------------- ruff config -------------------#
@@ -68,3 +69,8 @@ platforms = ["linux-64", "osx-64", "osx-arm64"]
 
 [tool.pixi.environments]
 dev = ["dev"]
+
+[tool.pixi.tasks.notebooks]
+# Ensures all notebooks up to date: pixi run notebooks
+cmd = ["$PIXI_PROJECT_ROOT/docs/scripts/notebooks.sh"]
+env = { "PYTHONWARNINGS" = "ignore" }

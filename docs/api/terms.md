@@ -9,3 +9,4 @@ Terms are the building blocks of GAM models. Each term represents a different wa
 ::: pymgcv.terms.Interaction
 ::: pymgcv.terms.Offset
 ::: pymgcv.terms.Intercept
+::: pymgcv.terms.TermLike

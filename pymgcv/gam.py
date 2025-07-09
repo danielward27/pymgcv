@@ -124,15 +124,10 @@ class GAM:
         """Fit a Generalized Additive GAM.
 
         Args:
-            specification: GAM object defining the model structure,
-                including terms for response variables and family parameters, plus
-                the error distribution family
             data: DataFrame containing all variables referenced in the specification.
                 Variable names must match those used in the model terms.
             method: Method for smoothing parameter estimation, matching the mgcv,
-                options, including:
-                - "GCV.Cp": Generalized Cross Validation (default, recommended)
-                - "REML": Restricted Maximum Likelihood (good for mixed models)
+                options.
         """
         # TODO missing options.
         self._check_valid_data(data)
@@ -156,7 +151,7 @@ class GAM:
         self,
         data: pd.DataFrame,
     ) -> None:
-        """Validate that data contains all variables required by the model specification.
+        """Validate that data contains all variables required by the model.
 
         Performs comprehensive validation including:
         - Checking that all term variables exist in the data
@@ -456,9 +451,9 @@ class GAM:
     def covariance(
         self,
         *,
-        sandwich=False,
-        freq=False,
-        unconditional=False,
+        sandwich: bool=False,
+        freq: bool=False,
+        unconditional:bool=False,
     ) -> pd.DataFrame:
         """Extract the covariance matrix from the fitted GAM.
 
