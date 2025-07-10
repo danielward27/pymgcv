@@ -48,7 +48,7 @@ div.doc-contents {
 .md-footer__inner {
     display: none;
 }
-
+/*
 .md-typeset h1 {
     font-size: 1.6rem;
 }
@@ -59,7 +59,7 @@ div.doc-contents {
 
 .md-typeset h3 {
     font-size: 1.3rem;
-}
+} */
 
 [data-md-color-scheme="default"] {
     --md-typeset-a-color: rgb(0, 189, 164) !important;
@@ -83,7 +83,7 @@ div.doc-contents {
     --md-code-bg-color: rgb(38, 38, 50);
 }
 
-h4.doc-heading {
+h2.doc-heading {
     /* NOT var(--md-code-bg-color) as that's not visually distinct from other code blocks.*/
     background-color: var(--doc-heading-color);
     border: solid var(--doc-heading-border-color);

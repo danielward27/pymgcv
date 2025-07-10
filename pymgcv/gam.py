@@ -51,18 +51,19 @@ BAMFitMethods = Literal[
 class FitState:
     """The mgcv gam, and the data used for fitting.
 
-    This gets set as an attribute fit_state on the GAM object after fitting.
+    This gets set as an attribute fit_state on the AbstractGAM object after fitting.
     """
 
     rgam: ro.ListVector
     data: pd.DataFrame
 
 
-# @dataclass
+@dataclass
 class AbstractGAM(ABC):
     """Abstract base class for GAM models.
 
-    This class provides a common interface for fitting and predicting GAM models.
+    This class cannot be initialized but provides a common interface for fitting and
+    predicting GAM models.
     """
 
     predictors: dict[str, list[TermLike]]
@@ -303,6 +304,8 @@ class AbstractGAM(ABC):
 
 @dataclass(init=False)  # use AbstractGAM init
 class GAM(AbstractGAM):
+    """GAM Model."""
+
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
     family: str
