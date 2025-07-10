@@ -75,7 +75,7 @@ plugins:
           options:
             docstring_style: google
             show_root_heading: true
-            merge_init_into_class: true
+            # merge_init_into_class: true
             docstring_section_style: list
             extensions:
               - griffe_inherited_docstrings
@@ -86,7 +86,7 @@ plugins:
             show_symbol_type_heading: true
             show_symbol_type_toc: true
             separate_signature: true
-            filters: ["!^_"] # Document init in class!
+            filters: ["!^_[^_]"]
 
 extra_css:
   - stylesheets/extra.css

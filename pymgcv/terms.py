@@ -1,7 +1,7 @@
 """The available terms for constructing GAM models."""
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
@@ -9,7 +9,7 @@ import pandas as pd
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
-from pymgcv.basis_functions import BasisLike, CubicSpline, ThinPlateSpline
+from pymgcv.basis_functions import BasisLike
 from pymgcv.converters import data_to_rdf, to_py
 from pymgcv.formula_utils import _to_r_constructor_string, _Var
 
@@ -245,6 +245,8 @@ class Interaction(_AddMixin, TermLike):
 class S(_AddMixin, TermLike):
     """S term using spline basis functions.
 
+    For all the arguments, passing None will use the mgcv defaults.
+
     Note:
         For multiple variables, this creates an isotropic smooth, meaning all variables
         are treated on the same scale. If variables have very different scales or units,
@@ -256,9 +258,9 @@ class S(_AddMixin, TermLike):
             isotropic multi-dimensional smooth.
         k: The dimension of the basis used to represent the smooth term. The
             default depends on the basis and number of variables that the smooth is a
-            function of (has placeholder of -1).
+            function of.
         bs: Basis function. For available options see
-            [Basis Functions](./basis_functions.md). Default to
+            [Basis Functions](./basis_functions.md). If left to none, uses
             [`ThinPlateSpline`][pymgcv.basis_functions.ThinPlateSpline].
         by: variable name used to scale the smooth. If it's a numeric vector, it
             scales the smooth, and the "by" variable should not be included as a
@@ -270,64 +272,49 @@ class S(_AddMixin, TermLike):
             categorical by variable, providing an id will ensure a shared smoothing
             parameter for each level.
         fx: Indicates whether the term is a fixed d.f. regression spline (True) or a
-            penalized regression spline (False).
+            penalized regression spline (False). Defaults to False.
     """
 
     varnames: tuple[str, ...]
     by: str | None
-    k: int
-    bs: BasisLike
-    id: str | None
+    k: int | None
+    bs: BasisLike | None
+    id: int | None
     fx: bool
 
     def __init__(
         self,
         *varnames: str,
         by: str | None = None,
-        k: int = -1,
+        k: int | None = None,
         bs: BasisLike | None = None,
-        id: str | None = None,
+        id: int | None = None,
         fx: bool = False,
     ):
         if len(varnames) == 0:
             raise ValueError("S terms require at least one variable")
         self.varnames = varnames
         self.k = k
-        self.bs = bs if bs is not None else ThinPlateSpline()
+        self.bs = bs
         self.by = by
         self.id = id
         self.fx = fx
 
     def __str__(self) -> str:
         """Convert smooth term to mgcv formula syntax."""
-        from_basis = self.bs._pass_to_s()
-        m = from_basis.get("m", ro.NA_Logical)
-        xt = from_basis.get("xt", ro.NULL)
-
-        kwargs = {
-            "by": _Var(self.by) if self.by is not None else ro.NA_Logical,
-            "k": self.k,
-            "bs": str(self.bs),
-            "m": m,
-            "xt": xt,
-            "id": self.id if self.id is not None else ro.NULL,
-            "fx": self.fx,
-        }
+        kwargs = asdict(self)
+        kwargs["fx"] = self.fx if self.fx else None
+        varnames = kwargs.pop("varnames")
+        if self.bs is not None:
+            kwargs = kwargs | self.bs._pass_to_s()
+        kwargs["by"] = _Var(self.by) if self.by is not None else None
+        kwargs["bs"] = str(self.bs) if self.bs is not None else None
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
         kwarg_strings = [
             f"{k}={_to_r_constructor_string(v)}" for k, v in kwargs.items()
         ]
-        defaults = [
-            "k=-1L",
-            "fx=FALSE",
-            'bs="tp"',  # Note quote order matters!
-            "m=NA",
-            "by=NA",
-            "xt=NULL",
-            "id=NULL",
-        ]
-        kwarg_strings = [s for s in kwarg_strings if s not in defaults]
         kwarg_string = "" if len(kwarg_strings) == 0 else f",{','.join(kwarg_strings)}"
-        return f"s({','.join(self.varnames)}{kwarg_string})"
+        return f"s({','.join(varnames)}{kwarg_string})"
 
     def label(self) -> str:
         by = f",by={self.by}" if self.by else ""
@@ -371,9 +358,9 @@ class T(_AddMixin, TermLike):
     varnames: tuple[str, ...]
     by: str | None
     k: int | tuple[int, ...] | None
-    bs: BasisLike | tuple[BasisLike, ...]
+    bs: BasisLike | tuple[BasisLike, ...] | None
     d: tuple[int, ...] | None
-    id: str | None
+    id: int | None
     fx: bool
     np: bool
     interaction_only: bool
@@ -385,7 +372,7 @@ class T(_AddMixin, TermLike):
         k: int | Iterable[int] | None = None,
         bs: BasisLike | Iterable[BasisLike] | None = None,
         d: Iterable[int] | None = None,
-        id: str | None = None,
+        id: int | None = None,
         fx: bool = False,
         np: bool = True,
         interaction_only: bool = False,
@@ -400,7 +387,7 @@ class T(_AddMixin, TermLike):
             k: The basis dimension for each marginal smooth. If an integer, all
                 marginal smooths will have the same basis dimension.
             bs: basis type to use, or an iterable of basis types for each marginal
-                smooth.
+                smooth. Defaults to [`CubicSpline`][pymgcv.basis_functions.CubicSpline]
             d: Sequence specifying the dimension of each variable's smooth. For example,
                 (2, 1) would specify to use one two dimensional marginal smooth and one
                 1 dimensional marginal smooth, where three variables are provided. This
@@ -412,17 +399,19 @@ class T(_AddMixin, TermLike):
             fx: indicates whether the term is a fixed d.f. regression spline (True) or
                 a penalized regression spline (False). Defaults to False.
             np: If False, use a single penalty for the tensor product.
-                If True (default), use separate penalties for each marginal.
+                If True (default), use separate penalties for each marginal. Defaults
+                to True.
             interaction_only: If True, creates ti() instead of te() - interaction only,
                 excluding main effects of individual variables.
         """
         if len(varnames) < 2:
             raise ValueError("Tensor smooths require at least 2 variables")
 
-        bs = CubicSpline() if bs is None else bs
         self.varnames = varnames
         self.k = k if isinstance(k, int) else (None if k is None else tuple(k))
-        self.bs = bs if isinstance(bs, BasisLike) else tuple(bs)
+        self.bs = (
+            None if bs is None else (bs if isinstance(bs, BasisLike) else tuple(bs))
+        )
         self.d = tuple(d) if d is not None else d
         self.by = by
         self.id = id
@@ -436,52 +425,41 @@ class T(_AddMixin, TermLike):
         Returns:
             String in mgcv te() or ti() syntax, e.g., "te(x1,x2,k=c(10,15))"
         """
-        if isinstance(self.bs, BasisLike):
-            from_bases = self.bs._pass_to_s()
-            m = from_bases.get("m", ro.NA_Logical)
-            xt = from_bases.get("xt", ro.NULL)
-        else:
-            from_bases = [bs._pass_to_s() for bs in self.bs]
-            m = [bs.get("m", ro.NA_Logical) for bs in from_bases]
 
-            if all(x == ro.NA_Logical for x in m):
-                m = ro.NA_Logical
+        def _handle_bs(bs):  # Returns bs, m, xt compatible with R
+            match bs:
+                case BasisLike():
+                    from_bases = bs._pass_to_s()
+                    return str(bs), from_bases.get("m"), from_bases.get("xt")
+                case tuple():
+                    from_bases = [b._pass_to_s() for b in bs]
+                    bs_vec = ro.StrVector([str(b) for b in bs])
+                    m = [bs.get("m", ro.NA_Logical) for bs in from_bases]
+                    if all(el == ro.NA_Logical for el in m):
+                        m = None
+                    xt = [bs.get("xt", ro.NULL) for bs in from_bases]
+                    if all(el == ro.NULL for el in xt):
+                        xt = None
+                    return bs_vec, m, xt
+                case _:
+                    return None, None, None
 
-            xt = [bs.get("xt", ro.NULL) for bs in from_bases]
-            if all(x == ro.NULL for x in xt):
-                xt = ro.NULL
-
-        if isinstance(self.bs, BasisLike):
-            bs = str(self.bs)
-        else:
-            bs = ro.StrVector([str(bs) for bs in self.bs])
-
+        bs, m, xt = _handle_bs(self.bs)
         kwargs = {
-            "by": _Var(self.by) if self.by is not None else ro.NA_Logical,
-            "k": self.k if self.k is not None else ro.NA_Logical,
+            "by": _Var(self.by) if self.by is not None else None,
+            "k": self.k,
             "bs": bs,
             "m": m,
-            "d": ro.NA_Logical if self.d is None else ro.IntVector(self.d),
-            "id": self.id if self.id is not None else ro.NULL,
-            "fx": self.fx,
-            "np": self.np,
+            "d": ro.IntVector(self.d) if self.d is not None else None,
+            "id": self.id if self.id is not None else None,
+            "fx": self.fx if self.fx is True else None,
+            "np": self.np if self.np is False else None,
             "xt": xt,
         }
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
         kwarg_strings = [
             f"{k}={_to_r_constructor_string(v)}" for k, v in kwargs.items()
         ]
-        defaults = [
-            "by=NA",
-            "k=NA",
-            'bs="cr"',
-            "m=NA",
-            "d=NA",
-            "fx=FALSE",
-            "np=TRUE",
-            "xt=NULL",
-            "id=NULL",
-        ]
-        kwarg_strings = [s for s in kwarg_strings if s not in defaults]
         kwarg_string = "" if len(kwarg_strings) == 0 else f",{','.join(kwarg_strings)}"
         prefix = "ti" if self.interaction_only else "te"
         return f"{prefix}({','.join(self.varnames)}{kwarg_string})"

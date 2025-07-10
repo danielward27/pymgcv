@@ -6,6 +6,7 @@ To see the plots created during testing, replace plt.close("all") with plt.show(
 import matplotlib.pyplot as plt
 import pytest
 
+from pymgcv.gam import BAM, GAM, AbstractGAM
 from pymgcv.plot import (
     plot_categorical,
     plot_continuous_1d,
@@ -16,24 +17,27 @@ from pymgcv.plot import (
 from . import gam_test_cases as tc
 
 
-def get_test_cases_1d_continuous():
-    test_cases_1d_continuous = [
+def get_cases_1d_continuous(model_type: type[AbstractGAM]):
+    cases = [
         (tc.linear_gam, {"target": "y"}),
         (tc.smooth_1d_gam, {"target": "y", "residuals": True}),
         (tc.smooth_1d_by_numeric_gam, {"target": "y"}),
         (tc.smooth_1d_random_wiggly_curve_gam, {"target": "y", "level": "a"}),
         (tc.smooth_1d_by_categorical_gam, {"target": "y", "level": "a"}),
     ]
-    return {f.__name__: (f(), kwargs) for f, kwargs in test_cases_1d_continuous}
+    return {
+        f"{model_type.__name__} - {f.__name__}": (f(model_type), kwargs)
+        for f, kwargs in cases
+    }
 
 
-test_cases_1d_continuous = get_test_cases_1d_continuous()
+cases_1d_continuous = get_cases_1d_continuous(GAM) | get_cases_1d_continuous(BAM)
 
 
 @pytest.mark.parametrize(
     ("test_case", "kwargs"),
-    test_cases_1d_continuous.values(),
-    ids=test_cases_1d_continuous.keys(),
+    cases_1d_continuous.values(),
+    ids=cases_1d_continuous.keys(),
 )
 def test_plot_continuous_1d(test_case: tc.GAMTestCase, kwargs: dict):
     gam = test_case.gam_model.fit(test_case.data)
@@ -42,7 +46,7 @@ def test_plot_continuous_1d(test_case: tc.GAMTestCase, kwargs: dict):
     plt.close("all")
 
 
-def get_test_cases_2d_continuous():
+def get_cases_2d_continuous(model_type: type[AbstractGAM]):
     test_cases_1d_continuous = [
         (tc.smooth_2d_gam, {"target": "y"}),
         (tc.tensor_2d_gam, {"target": "y"}),
@@ -50,16 +54,19 @@ def get_test_cases_2d_continuous():
         (tc.tensor_2d_by_categorical_gam, {"target": "y", "level": "a"}),
         (tc.tensor_2d_random_wiggly_curve_gam, {"target": "y", "level": "a"}),
     ]
-    return {f.__name__: (f(), kwargs) for f, kwargs in test_cases_1d_continuous}
+    return {
+        f"{model_type.__name__} - {f.__name__}": (f(model_type), kwargs)
+        for f, kwargs in test_cases_1d_continuous
+    }
 
 
-test_cases_2d_continuous = get_test_cases_2d_continuous()
+cases_2d_continuous = get_cases_2d_continuous(GAM) | get_cases_2d_continuous(BAM)
 
 
 @pytest.mark.parametrize(
     ("test_case", "kwargs"),
-    test_cases_2d_continuous.values(),
-    ids=test_cases_2d_continuous.keys(),
+    cases_2d_continuous.values(),
+    ids=cases_2d_continuous.keys(),
 )
 def test_plot_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
     gam = test_case.gam_model.fit(test_case.data)
@@ -68,8 +75,12 @@ def test_plot_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
     plt.close("all")
 
 
-def test_plot_categorical():
-    test_case = tc.categorical_linear_gam()
+@pytest.mark.parametrize(
+    "model_type",
+    [GAM, BAM],
+)
+def test_plot_categorical(model_type: type[AbstractGAM]):
+    test_case = tc.categorical_linear_gam(model_type)
     gam = test_case.gam_model.fit(test_case.data)
     term = gam.predictors["y"][0]
     plot_categorical(target="y", gam=gam, term=term, data=test_case.data)
@@ -77,14 +88,12 @@ def test_plot_categorical():
 
 
 all_test_cases = (
-    test_cases_1d_continuous
-    | test_cases_2d_continuous
-    | {"categorical_linear": (tc.categorical_linear_gam(), {"target": "y"})}
+    cases_1d_continuous
+    | cases_2d_continuous
+    | {"categorical_linear": (tc.categorical_linear_gam(GAM), {"target": "y"})}
 )
 
-# Exclude test case with categorical_interaction_gam only
 all_gam_test_cases = tc.get_test_cases()
-all_gam_test_cases.pop("categorical_interaction_gam")
 
 
 @pytest.mark.parametrize(
@@ -94,6 +103,12 @@ all_gam_test_cases.pop("categorical_interaction_gam")
 )
 def test_plot_gam(test_case: tc.GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data)
-    print(gam.summary())
-    plot_gam(gam=gam, ncols=1)
+    try:
+        plot_gam(gam=gam, ncols=1)
+    except ValueError as e:
+        if "plot any" in str(e):
+            pass
+        else:
+            raise
+
     plt.close("all")

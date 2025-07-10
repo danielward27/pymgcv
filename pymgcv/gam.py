@@ -5,12 +5,14 @@ using R's mgcv library through rpy2. It includes classes for model specification
 fitted model objects, and the main fitting function.
 """
 
+from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Literal, Self
 
 import numpy as np
 import pandas as pd
+import rpy2.rinterface as ri
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
@@ -22,15 +24,26 @@ rbase = importr("base")
 rutils = importr("utils")
 rstats = importr("stats")
 
-FitMethodOptions = Literal[
+GAMFitMethods = Literal[
     "GCV.Cp",
     "GACV.Cp",
-    "NCV",
     "QNCV",
     "REML",
     "P-REML",
     "ML",
     "P-ML",
+    "NCV",
+]
+
+BAMFitMethods = Literal[
+    "fREML",
+    "GCV.Cp",
+    "GACV.Cp",
+    "REML",
+    "P-REML",
+    "ML",
+    "P-ML",
+    "NCV",
 ]
 
 
@@ -45,31 +58,17 @@ class FitState:
     data: pd.DataFrame
 
 
-@dataclass
-class GAM:
-    r"""Defines the model to use and provides a fit method.
+# @dataclass
+class AbstractGAM(ABC):
+    """Abstract base class for GAM models.
 
-    This class encapsulates the GAM model specification, including the
-    family, and the terms for modeling response variable(s) and family parameters.
-
-    Args:
-        predictors: Dictionary mapping response variable names to lists of
-            [`TermLike`][pymgcv.terms.TermLike] objects used to predict
-            $g([\mathbb{E}[Y])$ For single response models, use a single key-value pair.
-            For multivariate models, include multiple response variables.
-        family_predictors: Dictionary mapping family parameter names to lists of
-            terms for modeling those parameters. Keys are used as labels during
-            prediction and should match the order expected by the mgcv family.
-        family: String specifying the mgcv family for the error distribution.
-            This is passed directly to R's mgcv and can include family arguments.
-        add_intercepts: If True, adds an intercept term to each formula.
-            If false, we assume that any [`Intercept`][pymgcv.terms.Intercept]
-            terms desired are manually added to the formulae.
+    This class provides a common interface for fitting and predicting GAM models.
     """
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
     family: str
+    add_intercepts: bool
     fit_state: FitState | None
 
     def __init__(
@@ -80,6 +79,22 @@ class GAM:
         family: str = "gaussian",
         add_intercepts: bool = True,
     ):
+        r"""Initialize a GAM/BAM model.
+
+        Args:
+            predictors: Dictionary mapping response variable names to lists of
+                [`TermLike`][pymgcv.terms.TermLike] objects used to predict
+                $g([\mathbb{E}[Y])$ For single response models, use a single key-value pair.
+                For multivariate models, include multiple response variables.
+            family_predictors: Dictionary mapping family parameter names to lists of
+                terms for modeling those parameters. Keys are used as labels during
+                prediction and should match the order expected by the mgcv family.
+            family: String specifying the mgcv family for the error distribution.
+                This is passed directly to R's mgcv and can include family arguments.
+            add_intercepts: If True, adds an intercept term to each formula.
+                If false, we assume that any [`Intercept`][pymgcv.terms.Intercept]
+                terms desired are manually added to the formulae.
+        """
         predictors, family_predictors = deepcopy((predictors, family_predictors))
         family_predictors = {} if family_predictors is None else family_predictors
 
@@ -94,8 +109,10 @@ class GAM:
         if add_intercepts:
             for v in self.all_predictors.values():
                 v.append(Intercept())
+        self._check_init()
 
-    def __post_init__(self):
+    def _check_init(self):
+        # Perform some basic checks
         for terms in self.all_predictors.values():
             identifiers = set()
             labels = set()
@@ -119,31 +136,30 @@ class GAM:
                     f"Cannot have key {k} in both predictors and family_predictors.",
                 )
 
+    @abstractmethod
     def fit(
         self,
         data: pd.DataFrame,
-        method: FitMethodOptions = "GCV.Cp",
+        *args,
+        **kwargs,
     ) -> Self:
-        """Fit a Generalized Additive GAM.
+        """Fit the GAM model to the given data."""
+        pass
+
+    @abstractmethod
+    def predict(
+        self,
+        data: pd.DataFrame | None = None,
+    ) -> dict[str, pd.DataFrame]:
+        """Predict the response variable(s) for the given data.
 
         Args:
-            data: DataFrame containing all variables referenced in the specification.
-                Variable names must match those used in the model terms.
-            method: Method for smoothing parameter estimation, matching the mgcv,
-                options.
+            data: The data to predict the response variable(s) for.
+
+        Returns:
+            The predicted response variable(s).
         """
-        # TODO missing options.
-        self._check_valid_data(data)
-        self.fit_state = FitState(
-            rgam=mgcv.gam(
-                self._to_r_formulae(),
-                data=data_to_rdf(data),
-                family=ro.rl(self.family),
-                method=method,
-            ),
-            data=data.copy(),
-        )
-        return self
+        pass
 
     @property
     def all_predictors(self) -> dict[str, list[TermLike]]:
@@ -216,9 +232,151 @@ class GAM:
 
         return formulae if len(formulae) > 1 else formulae[0]
 
+    def summary(self) -> str:
+        """Generate a comprehensive summary of the fitted GAM model.
+
+        Produces a detailed summary including parameter estimates, significance
+        tests, smooth term information, model fit statistics, and convergence
+        diagnostics. The output matches the format of R's mgcv summary.
+        """
+        if self.fit_state is None:
+            raise RuntimeError("Cannot print summary of an unfitted model.")
+        strvec = rutils.capture_output(rbase.summary(self.fit_state.rgam))
+        return "\n".join(tuple(strvec))
+
+    def coefficients(self) -> pd.Series:  # TODO consider returning as dict?
+        """Extract model coefficients from the fitted GAM.
+
+        Returns a series where the index if the mgcv-style name of the parameter.
+        """
+        if self.fit_state is None:
+            raise RuntimeError("Cannot extract coefficients from an unfitted model.")
+        coef = self.fit_state.rgam.rx2["coefficients"]
+        names = coef.names
+        return pd.Series(to_py(coef), index=names)
+
+    def covariance(
+        self,
+        *,
+        sandwich: bool = False,
+        freq: bool = False,
+        unconditional: bool = False,
+    ) -> pd.DataFrame:
+        """Extract the covariance matrix from the fitted GAM.
+
+        Extracts the Bayesian posterior covariance matrix of the parameters or
+        frequentist covariance matrix of the parameter estimators from the fitted GAM.
+        Returns a pandas dataframe, where the column names and index are the mgcv-style
+        parameter names.
+
+        Args:
+            sandwich: If True, compute sandwich estimate of covariance matrix.
+                Currently expensive for discrete bam fits.
+            freq: If True, return the frequentist covariance matrix of the parameter
+                estimators. If False, return the Bayesian posterior covariance matrix
+                of the parameters. The latter option includes the expected squared bias
+                according to the Bayesian smoothing prior.
+            unconditional: If True (and freq=False), return the Bayesian smoothing
+                parameter uncertainty corrected covariance matrix, if available.
+
+        Returns:
+            The covariance matrix as a numpy array.
+
+        """
+        if self.fit_state is None:
+            raise RuntimeError("Cannot extract covariance from an unfitted model.")
+
+        if unconditional and freq:
+            raise ValueError("Unconditional and freq cannot both be True")
+
+        coef_names = self.fit_state.rgam.rx2["coefficients"].names
+        cov = to_py(
+            rstats.vcov(
+                self.fit_state.rgam,
+                sandwich=sandwich,
+                freq=freq,
+                unconditional=unconditional,
+            ),
+        )
+        return pd.DataFrame(cov, index=coef_names, columns=coef_names)
+
+
+@dataclass(init=False)  # use AbstractGAM init
+class GAM(AbstractGAM):
+    predictors: dict[str, list[TermLike]]
+    family_predictors: dict[str, list[TermLike]]
+    family: str
+    fit_state: FitState | None
+
+    def fit(
+        self,
+        data: pd.DataFrame,
+        *,
+        method: GAMFitMethods = "GCV.Cp",
+        weights: str | np.ndarray | pd.Series | None = None,
+        optimizer: str | tuple[str, str] = ("outer", "newton"),
+        scale: Literal["unknown"] | float | int | None = None,
+        select: bool = False,
+        gamma: float | int = 1,
+    ) -> Self:
+        """Fit the GAM.
+
+        Args:
+            data: DataFrame containing all variables referenced in the specification.
+                Variable names must match those used in the model terms.
+            method: Method for smoothing parameter estimation, matching the mgcv,
+                options.
+            weights: Observation weights. Either a string, matching a column name,
+                or a array/series with length equal to the number of observations.
+            optimizer: An string or length 2 tuple, specifying the numerical
+                optimization method to use to optimize the smoothing parameter
+                estimation criterion (given by method). "outer" for the direct nested
+                optimization approach. "outer" can use several alternative optimizers,
+                specified in the second element: "newton" (default), "bfgs", "optim" or
+                "nlm". "efs" for the extended Fellner Schall method of Wood and Fasiolo
+                (2017).
+            scale: If a number is provided, it is treated as a known scale parameter.
+                If left to None, the scale parameter is 1 for Poisson and binomial and
+                unknown otherwise. Note that (RE)ML methods can only work with scale
+                parameter 1 for the Poisson and binomial cases.
+            select: If set to True then gam can add an extra penalty to each term so
+                that it can be penalized to zero. This means that the smoothing
+                parameter estimation during fitting can completely remove terms
+                from the model. If the corresponding smoothing parameter is estimated as
+                zero then the extra penalty has no effect. Use gamma to increase level
+                of penalization.
+            gamma: Increase this beyond 1 to produce smoother models. gamma multiplies
+                the effective degrees of freedom in the GCV or UBRE/AIC. gamma can be
+                viewed as an effective sample size in the GCV score, and this also
+                enables it to be used with REML/ML. Ignored with P-RE/ML or the efs
+                optimizer.
+        """
+        # TODO some missing options: control, sp, knots, min.sp etc
+        data = data.copy()
+        weights = data[weights] if isinstance(weights, str) else weights  # type: ignore
+
+        self._check_valid_data(data)
+        self.fit_state = FitState(
+            rgam=mgcv.gam(
+                self._to_r_formulae(),
+                data=data_to_rdf(data),
+                family=ro.rl(self.family),
+                method=method,
+                weights=ro.NULL if weights is None else np.asarray(weights),
+                optimizer=to_rpy(np.array(optimizer)),
+                scale=0 if scale is None else (-1 if scale == "unknown" else scale),
+                select=select,
+                gamma=gamma,
+            ),
+            data=data,
+        )
+        return self
+
     def predict(
         self,
         data: pd.DataFrame | None = None,
+        *,
+        block_size: int | None = None,
     ) -> dict[str, pd.DataFrame]:
         """Compute model predictions with uncertainty estimates.
 
@@ -230,20 +388,20 @@ class GAM:
         Args:
             data: DataFrame containing predictor variables. Must include all
                 variables referenced in the original model specification.
-
+            block_size: Number of rows to process at a time.  If None then block size
+                is 1000 if data supplied, and the number of rows in the model frame
+                otherwise.
         """
         if data is not None:
             self._check_valid_data(data)
-        else:
-            data = self.fit_state.data
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call predict before fitting.")
-
         predictions = rstats.predict(
             self.fit_state.rgam,
-            newdata=data_to_rdf(data),
+            ri.MissingArg if data is None else data_to_rdf(data),
             se=True,
+            block_size=ro.NULL if block_size is None else block_size,
         )
         predictions = rlistvec_to_dict(predictions)
         all_targets = self.all_predictors.keys()
@@ -262,6 +420,7 @@ class GAM:
     def partial_effects(
         self,
         data: pd.DataFrame | None = None,
+        block_size: int | None = None,
     ) -> dict[str, pd.DataFrame]:
         """Compute partial effects for all model terms.
 
@@ -270,7 +429,10 @@ class GAM:
         to predictions and for creating partial effect plots.
 
         Args:
-            data: DataFrame containing predictor variables for evaluation
+            data: DataFrame containing predictor variables for evaluation.
+            block_size: Number of rows to process at a time.  If None then block size
+                is 1000 if data supplied, and the number of rows in the model frame
+                otherwise.
 
         Returns:
             Dictionary mapping target variable names to DataFrames with partial effects.
@@ -294,6 +456,7 @@ class GAM:
             se=True,
             type="terms",
             newdata_gauranteed=True,
+            block_size=ro.NULL if block_size is None else block_size,
         )
         fit = pd.DataFrame(
             to_py(predictions.rx2["fit"]),
@@ -390,11 +553,6 @@ class GAM:
         chosen smooth function adequately captures the relationship, or if a
         different functional form might be more appropriate.
 
-        The partial residuals are calculated as:
-        partial_residuals = observed - (total_fitted - term_effect)
-                          = observed - total_fitted + term_effect
-                          = residuals + term_effect
-
         Args:
             target: Name of the response variable
             term: The model term to compute partial residuals for
@@ -428,70 +586,289 @@ class GAM:
         link_residual = response_residual / d_mu_d_eta
         return link_residual + term_effect
 
-    def summary(self) -> str:
-        """Generate a comprehensive summary of the fitted GAM model.
 
-        Produces a detailed summary including parameter estimates, significance
-        tests, smooth term information, model fit statistics, and convergence
-        diagnostics. The output matches the format of R's mgcv summary.
-        """
-        if self.fit_state is None:
-            raise RuntimeError("Cannot print summary of an unfitted model.")
-        strvec = rutils.capture_output(rbase.summary(self.fit_state.rgam))
-        return "\n".join(tuple(strvec))
+@dataclass(init=False)  # use AbstractGAM init
+class BAM(AbstractGAM):
+    """A big-data GAM (BAM) model."""
 
-    def coefficients(self) -> pd.Series:  # TODO consider returning as dict?
-        """Extract model coefficients from the fitted GAM.
+    predictors: dict[str, list[TermLike]]
+    family_predictors: dict[str, list[TermLike]]
+    family: str
+    fit_state: FitState | None
 
-        Returns a series where the index if the mgcv-style name of the parameter.
-        """
-        if self.fit_state is None:
-            raise RuntimeError("Cannot extract coefficients from an unfitted model.")
-        coef = self.fit_state.rgam.rx2["coefficients"]
-        names = coef.names
-        return pd.Series(to_py(coef), index=names)
-
-    def covariance(
+    def fit(
         self,
+        data: pd.DataFrame,
         *,
-        sandwich: bool=False,
-        freq: bool=False,
-        unconditional:bool=False,
-    ) -> pd.DataFrame:
-        """Extract the covariance matrix from the fitted GAM.
-
-        Extracts the Bayesian posterior covariance matrix of the parameters or
-        frequentist covariance matrix of the parameter estimators from the fitted GAM.
-        Returns a pandas dataframe, where the column names and index are the mgcv-style
-        parameter names.
+        method: BAMFitMethods = "fREML",
+        weights: str | np.ndarray | pd.Series | None = None,
+        scale: Literal["unknown"] | float | int | None = None,
+        select: bool = False,
+        gamma: float | int = 1,
+        chunk_size: int = 10000,
+        discrete: bool = False,
+        samfrac: float | int = 1,
+        gc_level: int = 0,
+    ) -> Self:
+        """Fit the GAM.
 
         Args:
-            sandwich: If True, compute sandwich estimate of covariance matrix.
-                Currently expensive for discrete bam fits.
-            freq: If True, return the frequentist covariance matrix of the parameter
-                estimators. If False, return the Bayesian posterior covariance matrix
-                of the parameters. The latter option includes the expected squared bias
-                according to the Bayesian smoothing prior.
-            unconditional: If True (and freq=False), return the Bayesian smoothing
-                parameter uncertainty corrected covariance matrix, if available.
+            data: DataFrame containing all variables referenced in the specification.
+                Variable names must match those used in the model terms.
+            method: Method for smoothing parameter estimation, matching the mgcv,
+                options.
+            weights: Observation weights. Either a string, matching a column name,
+                or a array/series with length equal to the number of observations.
+            scale: If a number is provided, it is treated as a known scale parameter.
+                If left to None, the scale parameter is 1 for Poisson and binomial and
+                unknown otherwise. Note that (RE)ML methods can only work with scale
+                parameter 1 for the Poisson and binomial cases.
+            select: If set to True then gam can add an extra penalty to each term so
+                that it can be penalized to zero. This means that the smoothing
+                parameter estimation during fitting can completely remove terms
+                from the model. If the corresponding smoothing parameter is estimated as
+                zero then the extra penalty has no effect. Use gamma to increase level
+                of penalization.
+            gamma: Increase this beyond 1 to produce smoother models. gamma multiplies
+                the effective degrees of freedom in the GCV or UBRE/AIC. gamma can be
+                viewed as an effective sample size in the GCV score, and this also
+                enables it to be used with REML/ML. Ignored with P-RE/ML or the efs
+                optimizer.
+            chunk_size: The model matrix is created in chunks of this size, rather than
+                ever being formed whole. Reset to 4*p if chunk.size < 4*p where p is the
+                number of coefficients.
+            discrete: if True and using method="fREML", discretizes covariates for
+                storage and efficiency reasons.
+            samfrac: If ``0<samfrac<1``, performs a fast preliminary fitting step using
+                a subsample of the data to improve convergence speed.
+        """
+        # TODO some missing options: control, sp, knots, min.sp, nthreads
+        data = data.copy()
+        weights = data[weights] if isinstance(weights, str) else weights  # type: ignore
+
+        self._check_valid_data(data)
+        self.fit_state = FitState(
+            rgam=mgcv.bam(
+                self._to_r_formulae(),
+                data=data_to_rdf(data),
+                family=ro.rl(self.family),
+                method=method,
+                weights=ro.NULL if weights is None else np.asarray(weights),
+                scale=0 if scale is None else (-1 if scale == "unknown" else scale),
+                select=select,
+                gamma=gamma,
+                chunk_size=chunk_size,
+                discrete=discrete,
+                samfrac=samfrac,
+                gc_level=gc_level,
+            ),
+            data=data,
+        )
+        return self
+
+    def predict(
+        self,
+        data: pd.DataFrame | None = None,
+        *,
+        block_size: int | None = None,
+    ) -> dict[str, pd.DataFrame]:
+        """Compute model predictions with uncertainty estimates.
+
+        Makes predictions for new data using the fitted GAM model. Predictions
+        are returned on the link scale (linear predictor scale), not the response
+        scale. For response scale predictions, apply the appropriate inverse link
+        function to the results.
+
+        Args:
+            data: DataFrame containing predictor variables. Must include all
+                variables referenced in the original model specification.
+            block_size: Number of rows to process at a time.  If None then block size
+                is 1000 if data supplied, and the number of rows in the model frame
+                otherwise.
+        """
+        if data is not None:
+            self._check_valid_data(data)
+
+        if self.fit_state is None:
+            raise RuntimeError("Cannot call predict before fitting.")
+        predictions = rstats.predict(
+            self.fit_state.rgam,
+            ri.MissingArg if data is None else data_to_rdf(data),
+            se=True,
+            block_size=ro.NULL if block_size is None else block_size,
+        )
+        predictions = rlistvec_to_dict(predictions)
+        all_targets = self.all_predictors.keys()
+
+        n = data.shape[0]
+        return {
+            target: pd.DataFrame(
+                {
+                    "fit": predictions["fit"].reshape(n, -1)[:, i],
+                    "se": predictions["se_fit"].reshape(n, -1)[:, i],
+                },
+            )
+            for i, target in enumerate(all_targets)
+        }
+
+    def partial_effects(
+        self,
+        data: pd.DataFrame | None = None,
+        block_size: int | None = None,
+    ) -> dict[str, pd.DataFrame]:
+        """Compute partial effects for all model terms.
+
+        Calculates the contribution of each model term to the overall prediction.
+        This decomposition is useful for understanding which terms contribute most
+        to predictions and for creating partial effect plots.
+
+        Args:
+            data: DataFrame containing predictor variables for evaluation.
+            block_size: Number of rows to process at a time.  If None then block size
+                is 1000 if data supplied, and the number of rows in the model frame
+                otherwise.
 
         Returns:
-            The covariance matrix as a numpy array.
+            Dictionary mapping target variable names to DataFrames with partial effects.
+            Each DataFrame has hierarchical columns:
+            - Top level: 'fit' (partial effects) and 'se' (standard errors)
+            - Second level: term names (e.g., 's(x1)', 'x2', 'intercept')
 
+            The sum of all fit columns equals the total prediction:
         """
+        if data is not None:
+            self._check_valid_data(data)
+        else:
+            data = self.fit_state.data
+
         if self.fit_state is None:
-            raise RuntimeError("Cannot extract covariance from an unfitted model.")
+            raise RuntimeError("Cannot call partial_effects before fitting.")
 
-        if unconditional and freq:
-            raise ValueError("Unconditional and freq cannot both be True")
-
-        coef_names = self.fit_state.rgam.rx2["coefficients"].names
-        cov = to_py(
-            rstats.vcov(
-                self.fit_state.rgam,
-                sandwich=sandwich,
-                freq=freq,
-                unconditional=unconditional,
-            ),
+        predictions = rstats.predict(
+            self.fit_state.rgam,
+            newdata=data_to_rdf(data),
+            se=True,
+            type="terms",
+            newdata_gauranteed=True,
+            block_size=ro.NULL if block_size is None else block_size,
         )
-        return pd.DataFrame(cov, index=coef_names, columns=coef_names)
+        fit = pd.DataFrame(
+            to_py(predictions.rx2["fit"]),
+            columns=to_py(rbase.colnames(predictions.rx2["fit"])),
+        )
+        se = pd.DataFrame(
+            to_py(predictions.rx2["se.fit"]),
+            columns=to_py(rbase.colnames(predictions.rx2["se.fit"])),
+        )
+        # Partition results based on formulas
+        results = {}
+        for i, (target, terms) in enumerate(self.all_predictors.items()):
+            result = {"fit": {}, "se": {}}
+            for term in terms:
+                match term:
+                    case Offset() | Intercept():
+                        partial_effect = self.partial_effect(target, term, data)
+                        result["fit"][term.label()] = partial_effect["fit"]
+                        result["se"][term.label()] = partial_effect["se"]
+
+                    case _ if term.by is not None and data[term.by].dtype == "category":
+                        levels = data[term.by].cat.categories.to_list()
+                        cols = [f"{term.mgcv_identifier(i)}{lev}" for lev in levels]
+                        result["fit"][term.label()] = fit[cols].sum(axis=1)
+                        result["se"][term.label()] = se[cols].sum(axis=1)
+
+                    case _:
+                        result["fit"][term.label()] = fit[term.mgcv_identifier(i)]
+                        result["se"][term.label()] = se[term.mgcv_identifier(i)]
+
+            results[target] = result
+            result = pd.concat({k: pd.DataFrame(v) for k, v in result.items()}, axis=1)
+            results[target] = result
+        return results
+
+    def partial_effect(
+        self,
+        target: str,
+        term: TermLike,
+        data: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Compute the partial effect for a single model term.
+
+        This method efficiently computes the contribution of one specific term
+        to the model predictions.
+
+        Args:
+            target: Name of the target variable (response variable or family
+                parameter name from the model specification)
+            term: The specific term to evaluate (must match a term used in the
+                original model specification)
+            data: DataFrame containing the predictor variables needed for the term
+
+        Returns:
+            DataFrame with columns "fit" and "se":
+
+        Note:
+            The partial effect represents the contribution of this term alone,
+            with all other terms held at their reference values (typically zero
+            for centered smooth terms).
+        """
+        data = data if data is not None else self.fit_state.data
+        if self.fit_state is None:
+            raise RuntimeError(
+                "Cannot compute partial effect before fitting the model.",
+            )
+
+        formula_idx = list(self.all_predictors.keys()).index(target)
+        effect, se = term._partial_effect(
+            data=data,
+            rgam=self.fit_state.rgam,
+            formula_idx=formula_idx,
+        )
+        assert len(data) == len(effect)
+        return pd.DataFrame({"fit": effect, "se": se})
+
+    def partial_residuals(
+        self,
+        target: str,
+        term: TermLike,
+        data: pd.DataFrame,
+    ) -> pd.Series:
+        """Compute partial residuals for model diagnostic plots.
+
+        Partial residuals combine the fitted values from a specific term with
+        the overall model residuals. They're useful for assessing whether the
+        chosen smooth function adequately captures the relationship, or if a
+        different functional form might be more appropriate.
+
+        Args:
+            target: Name of the response variable
+            term: The model term to compute partial residuals for
+            data: DataFrame containing the data (must include the response variable)
+
+        Returns:
+            Series containing the partial residuals for the specified term
+        """
+        data = data if data is not None else self.fit_state.data
+        partial_effects = self.partial_effects(data)[target]["fit"]  # Link scale
+        link_fit = partial_effects.sum(axis=1).to_numpy()
+        term_effect = partial_effects.pop(term.label()).to_numpy()
+
+        family = self.family
+        if "(" not in family:
+            family = f"{family}()"
+
+        rfam = ro.r(family)
+        inv_link_fn = rfam.rx2("linkinv")  # TODO this breaks with GAULSS
+        d_mu_d_eta_fn = rfam.rx2("mu.eta")
+        rpy_link_fit = to_rpy(link_fit)
+        response_residual = data[target] - to_py(inv_link_fn(rpy_link_fit))
+
+        # We want to transform residuals to link scale.
+        # link(response) - link(response_fit) not sensible (e.g. poisson with log link risks log(0))
+        # Instead use first order taylor expansion of link function around the fit
+        d_mu_d_eta = to_py(d_mu_d_eta_fn(rpy_link_fit))
+        d_mu_d_eta = np.maximum(d_mu_d_eta, 1e-6)  # Numerical stability
+
+        # If ĝ is the f.d. approxmator to link, below is ĝ(response) - ĝ(response_fit)
+        link_residual = response_residual / d_mu_d_eta
+        return link_residual + term_effect
