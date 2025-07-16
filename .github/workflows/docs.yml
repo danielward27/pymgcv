@@ -15,9 +15,9 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
       - uses: prefix-dev/setup-pixi@v0.8.5
-      - name: Run examples and deploy docs
         with:
           environments: dev
+      - name: Run examples and deploy docs
         run: |
           pixi run convert-docs
           pixi run mkdocs gh-deploy --force
