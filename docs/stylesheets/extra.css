@@ -82,15 +82,13 @@ div.doc-contents {
     --doc-heading-color-alt: rgb(33, 33, 44);
     --md-code-bg-color: rgb(38, 38, 50);
 }
-
+/*
 h2.doc-heading {
-    /* NOT var(--md-code-bg-color) as that's not visually distinct from other code blocks.*/
-    background-color: var(--doc-heading-color);
     border: solid var(--doc-heading-border-color);
     border-width: 1.5pt;
     border-radius: 2pt;
     padding: 0pt 5pt 2pt 5pt;
-}
+} */
 h5.doc-heading,
 h6.heading {
     background-color: var(--doc-heading-color-alt);

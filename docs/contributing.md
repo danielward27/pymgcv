@@ -24,7 +24,15 @@ mkdocs serve
 
 ### Adding code examples in docstrings
 In order for the doctest to run properly, and documentation to be generated properly:
-- Use the admonition `!!! example`, containing a python fenced code block (i.e. using triple backticks and the python language specifier)
-- Do not use a prompt `>>> `
+
+- Use the admonition `!!! example`, containing a python fenced code block, i.e.:
+```
+!!! example
+
+    ```python
+    # Insert runnable example here
+    ```
+```
+- Do not use a prompt `>>> ` as this interferes with copying code blocks and looks cluttered!
 - We generally do not test the output, just that each example runs (although you could use an assert if desired)
 - Use a comment at the bottom if you want to show an output example

@@ -1,4 +1,4 @@
-"""Plotting utilities for visualizing GAM models and their components."""
+"""Plotting utilities for visualizing GAM models."""
 
 import types
 from collections.abc import Callable

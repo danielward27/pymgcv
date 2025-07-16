@@ -6,9 +6,10 @@ fitted model objects, and the main fitting function.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 import numpy as np
 import pandas as pd
@@ -52,6 +53,10 @@ class FitState:
     """The mgcv gam, and the data used for fitting.
 
     This gets set as an attribute fit_state on the AbstractGAM object after fitting.
+
+    Attributes:
+        rgam: The fitted mgcv gam object.
+        data: The data used for fitting.
     """
 
     rgam: ro.ListVector
@@ -74,8 +79,8 @@ class AbstractGAM(ABC):
 
     def __init__(
         self,
-        predictors: dict[str, list[TermLike] | TermLike],
-        family_predictors: dict[str, list[TermLike] | TermLike] | None = None,
+        predictors: dict[str, Iterable[TermLike] | TermLike],
+        family_predictors: dict[str, Iterable[TermLike] | TermLike] | None = None,
         *,
         family: str = "gaussian",
         add_intercepts: bool = True,
@@ -83,12 +88,12 @@ class AbstractGAM(ABC):
         r"""Initialize a GAM/BAM model.
 
         Args:
-            predictors: Dictionary mapping response variable names to lists of
+            predictors: Dictionary mapping response variable names to an iterable of
                 [`TermLike`][pymgcv.terms.TermLike] objects used to predict
-                $g([\mathbb{E}[Y])$ For single response models, use a single key-value pair.
-                For multivariate models, include multiple response variables.
-            family_predictors: Dictionary mapping family parameter names to lists of
-                terms for modeling those parameters. Keys are used as labels during
+                $g([\mathbb{E}[Y])$. For single response models, use a single key-value
+                pair. For multivariate models, include multiple response variables.
+            family_predictors: Dictionary mapping family parameter names to an iterable
+                of terms for modeling those parameters. Keys are used as labels during
                 prediction and should match the order expected by the mgcv family.
             family: String specifying the mgcv family for the error distribution.
                 This is passed directly to R's mgcv and can include family arguments.
@@ -100,7 +105,9 @@ class AbstractGAM(ABC):
         family_predictors = {} if family_predictors is None else family_predictors
 
         def _ensure_list_of_terms(d):
-            return {k: [v] if isinstance(v, TermLike) else v for k, v in d.items()}
+            return {
+                k: [v] if isinstance(v, TermLike) else list(v) for k, v in d.items()
+            }
 
         self.predictors = _ensure_list_of_terms(predictors)
         self.family_predictors = _ensure_list_of_terms(family_predictors)
@@ -118,11 +125,11 @@ class AbstractGAM(ABC):
             identifiers = set()
             labels = set()
             for term in terms:
-                mgcv_id = term.mgcv_identifier()
+                mgcv_id = term._mgcv_identifier()
                 label = term.label()
                 if mgcv_id in identifiers or label in labels:
                     raise ValueError(
-                        f"Duplicate term with label '{label}' and mgcv_identifier "
+                        f"Duplicate term with label '{label}' and _mgcv_identifier "
                         f"'{mgcv_id}' found in formula. pymgcv does not support "
                         "duplicate terms. If this is intentional, consider duplicating "
                         "the corresponding variable in your data under a new name and "
@@ -151,15 +158,20 @@ class AbstractGAM(ABC):
     def predict(
         self,
         data: pd.DataFrame | None = None,
+        *args,
+        **kwargs,
     ) -> dict[str, pd.DataFrame]:
-        """Predict the response variable(s) for the given data.
+        """Predict the response variable(s) for the given data."""
+        pass
 
-        Args:
-            data: The data to predict the response variable(s) for.
-
-        Returns:
-            The predicted response variable(s).
-        """
+    @abstractmethod
+    def partial_effects(
+        self,
+        data: pd.DataFrame | None = None,
+        *args,
+        **kwargs,
+    ) -> dict[str, pd.DataFrame]:
+        """Compute the partial effects for the terms in the model."""
         pass
 
     @property
@@ -234,12 +246,7 @@ class AbstractGAM(ABC):
         return formulae if len(formulae) > 1 else formulae[0]
 
     def summary(self) -> str:
-        """Generate a comprehensive summary of the fitted GAM model.
-
-        Produces a detailed summary including parameter estimates, significance
-        tests, smooth term information, model fit statistics, and convergence
-        diagnostics. The output matches the format of R's mgcv summary.
-        """
+        """Generate an mgcv-style summary of the fitted GAM model."""
         if self.fit_state is None:
             raise RuntimeError("Cannot print summary of an unfitted model.")
         strvec = rutils.capture_output(rbase.summary(self.fit_state.rgam))
@@ -301,10 +308,142 @@ class AbstractGAM(ABC):
         )
         return pd.DataFrame(cov, index=coef_names, columns=coef_names)
 
+    def partial_effect(
+        self,
+        target: str,
+        term: TermLike,
+        data: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Compute the partial effect for a single model term.
+
+        This method efficiently computes the contribution of one specific term
+        to the model predictions.
+
+        Args:
+            target: Name of the target variable (response variable or family
+                parameter name from the model specification)
+            term: The specific term to evaluate (must match a term used in the
+                original model specification)
+            data: DataFrame containing the predictor variables needed for the term
+
+        Returns:
+            DataFrame with columns "fit" and "se":
+
+        Note:
+            The partial effect represents the contribution of this term alone,
+            with all other terms held at their reference values (typically zero
+            for centered smooth terms).
+        """
+        data = data if data is not None else self.fit_state.data
+        if self.fit_state is None:
+            raise RuntimeError(
+                "Cannot compute partial effect before fitting the model.",
+            )
+
+        formula_idx = list(self.all_predictors.keys()).index(target)
+        effect, se = term._partial_effect(
+            data=data,
+            rgam=self.fit_state.rgam,
+            formula_idx=formula_idx,
+        )
+        assert len(data) == len(effect)
+        return pd.DataFrame({"fit": effect, "se": se})
+
+    def _format_predict_terms(self, predictions, data):
+        fit = pd.DataFrame(
+            to_py(predictions.rx2["fit"]),
+            columns=to_py(rbase.colnames(predictions.rx2["fit"])),
+        )
+        se = pd.DataFrame(
+            to_py(predictions.rx2["se.fit"]),
+            columns=to_py(rbase.colnames(predictions.rx2["se.fit"])),
+        )
+        # Partition results based on formulas
+        results = {}
+        for i, (target, terms) in enumerate(self.all_predictors.items()):
+            result = {"fit": {}, "se": {}}
+            for term in terms:
+                if term.by is not None and data[term.by].dtype == "category":
+                    levels = data[term.by].cat.categories.to_list()
+                    cols = [f"{term._mgcv_identifier(i)}{lev}" for lev in levels]
+                    result["fit"][term.label()] = fit[cols].sum(axis=1)
+                    result["se"][term.label()] = se[cols].sum(axis=1)
+
+                elif term._mgcv_identifier(i) in fit.columns:
+                    result["fit"][term.label()] = fit[term._mgcv_identifier(i)]
+                    result["se"][term.label()] = se[term._mgcv_identifier(i)]
+
+                else:  # Offset + Intercept
+                    partial_effect = self.partial_effect(target, term, data)
+                    result["fit"][term.label()] = partial_effect["fit"]
+                    result["se"][term.label()] = partial_effect["se"]
+
+            results[target] = result
+            result = pd.concat({k: pd.DataFrame(v) for k, v in result.items()}, axis=1)
+            results[target] = result
+        return results
+
+    def partial_residuals(
+        self,
+        target: str,
+        term: TermLike,
+        data: pd.DataFrame,
+        **kwargs: Any,
+    ) -> pd.Series:
+        """Compute partial residuals for model diagnostic plots.
+
+        Partial residuals combine the fitted values from a specific term with
+        the overall model residuals. They're useful for assessing whether the
+        chosen smooth function adequately captures the relationship, or if a
+        different functional form might be more appropriate.
+
+        Args:
+            target: Name of the response variable.
+            term: The model term to compute partial residuals for.
+            data: DataFrame containing the data (must include the response variable).
+            **kwargs: Additional keyword arguments to pass to `partial_effects`.
+
+        Returns:
+            Series containing the partial residuals for the specified term
+        """
+        data = data if data is not None else self.fit_state.data
+        partial_effects = self.partial_effects(data, **kwargs)[target][
+            "fit"
+        ]  # Link scale
+        link_fit = partial_effects.sum(axis=1).to_numpy()
+        term_effect = partial_effects.pop(term.label()).to_numpy()
+
+        family = self.family
+        if "(" not in family:
+            family = f"{family}()"
+
+        rfam = ro.r(family)
+
+        inv_link_fn = rfam.rx2("linkinv")  # TODO this breaks with GAULSS
+        d_mu_d_eta_fn = rfam.rx2("mu.eta")
+
+        if rbase.is_null(inv_link_fn)[0] or rbase.is_null(d_mu_d_eta_fn)[0]:
+            raise NotImplementedError(
+                f"Computing partial residuals for {family} not yet supported.",
+            )
+        rpy_link_fit = to_rpy(link_fit)
+        response_residual = data[target] - to_py(inv_link_fn(rpy_link_fit))
+
+        # We want to transform residuals to link scale.
+        # link(response) - link(response_fit) not sensible (e.g. poisson with log link risks log(0))
+        # Instead use first order taylor expansion of link function around the fit
+        d_mu_d_eta = to_py(d_mu_d_eta_fn(rpy_link_fit))
+        d_mu_d_eta = np.maximum(d_mu_d_eta, 1e-6)  # Numerical stability
+
+        # If ĝ is the first order approxmation to link, below is:
+        # ĝ(response) - ĝ(response_fit)
+        link_residual = response_residual / d_mu_d_eta
+        return link_residual + term_effect
+
 
 @dataclass(init=False)  # use AbstractGAM init
 class GAM(AbstractGAM):
-    """GAM Model."""
+    """Standard GAM Model."""
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
@@ -423,171 +562,44 @@ class GAM(AbstractGAM):
     def partial_effects(
         self,
         data: pd.DataFrame | None = None,
+        *,
         block_size: int | None = None,
     ) -> dict[str, pd.DataFrame]:
         """Compute partial effects for all model terms.
 
-        Calculates the contribution of each model term to the overall prediction.
-        This decomposition is useful for understanding which terms contribute most
-        to predictions and for creating partial effect plots.
+        Calculates the contribution of each model term to the overall prediction on the
+        link scale. The sum of all fit columns equals the total prediction (link scale).
 
         Args:
-            data: DataFrame containing predictor variables for evaluation.
+            data: DataFrame containing predictor variables for evaluation. Defaults to
+                using the data for fitting.
             block_size: Number of rows to process at a time.  If None then block size
                 is 1000 if data supplied, and the number of rows in the model frame
                 otherwise.
 
         Returns:
-            Dictionary mapping target variable names to DataFrames with partial effects.
+            Dictionary mapping target target names to DataFrames with partial effects.
             Each DataFrame has hierarchical columns:
-            - Top level: 'fit' (partial effects) and 'se' (standard errors)
-            - Second level: term names (e.g., 's(x1)', 'x2', 'intercept')
 
-            The sum of all fit columns equals the total prediction:
+            - Top level: 'fit' (partial effects) and 'se' (standard errors)
+            - Second level: term names (e.g., 'L(x1)', 'S(x2)', 'Intercept')
+
         """
         if data is not None:
             self._check_valid_data(data)
-        else:
-            data = self.fit_state.data
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call partial_effects before fitting.")
 
         predictions = rstats.predict(
             self.fit_state.rgam,
-            newdata=data_to_rdf(data),
+            ri.MissingArg if data is None else data_to_rdf(data),
             se=True,
             type="terms",
             newdata_gauranteed=True,
-            block_size=ro.NULL if block_size is None else block_size,
+            block_size=ri.MissingArg if block_size is None else block_size,
         )
-        fit = pd.DataFrame(
-            to_py(predictions.rx2["fit"]),
-            columns=to_py(rbase.colnames(predictions.rx2["fit"])),
-        )
-        se = pd.DataFrame(
-            to_py(predictions.rx2["se.fit"]),
-            columns=to_py(rbase.colnames(predictions.rx2["se.fit"])),
-        )
-        # Partition results based on formulas
-        results = {}
-        for i, (target, terms) in enumerate(self.all_predictors.items()):
-            result = {"fit": {}, "se": {}}
-            for term in terms:
-                match term:
-                    case Offset() | Intercept():
-                        partial_effect = self.partial_effect(target, term, data)
-                        result["fit"][term.label()] = partial_effect["fit"]
-                        result["se"][term.label()] = partial_effect["se"]
-
-                    case _ if term.by is not None and data[term.by].dtype == "category":
-                        levels = data[term.by].cat.categories.to_list()
-                        cols = [f"{term.mgcv_identifier(i)}{lev}" for lev in levels]
-                        result["fit"][term.label()] = fit[cols].sum(axis=1)
-                        result["se"][term.label()] = se[cols].sum(axis=1)
-
-                    case _:
-                        result["fit"][term.label()] = fit[term.mgcv_identifier(i)]
-                        result["se"][term.label()] = se[term.mgcv_identifier(i)]
-
-            results[target] = result
-            result = pd.concat({k: pd.DataFrame(v) for k, v in result.items()}, axis=1)
-            results[target] = result
-        return results
-
-    def partial_effect(
-        self,
-        target: str,
-        term: TermLike,
-        data: pd.DataFrame,
-    ) -> pd.DataFrame:
-        """Compute the partial effect for a single model term.
-
-        This method efficiently computes the contribution of one specific term
-        to the model predictions. It's more efficient than computing all partial
-        effects when you only need one term.
-
-        Args:
-            target: Name of the target variable (response variable or family
-                parameter name from the model specification)
-            term: The specific term to evaluate (must match a term used in the
-                original model specification)
-            data: DataFrame containing the predictor variables needed for the term
-
-        Returns:
-            DataFrame with columns "fit" and "se":
-
-        Example:
-            ```python
-            # Get partial effect of smooth term on response
-            effect = model.partial_effect('y', S('x1'), data)
-            ```
-
-        Note:
-            The partial effect represents the contribution of this term alone,
-            with all other terms held at their reference values (typically zero
-            for centered smooth terms).
-        """
-        data = data if data is not None else self.fit_state.data
-        if self.fit_state is None:
-            raise RuntimeError(
-                "Cannot compute partial effect before fitting the model.",
-            )
-
-        formula_idx = list(self.all_predictors.keys()).index(target)
-        effect, se = term._partial_effect(
-            data=data,
-            rgam=self.fit_state.rgam,
-            formula_idx=formula_idx,
-        )
-        assert len(data) == len(effect)
-        return pd.DataFrame({"fit": effect, "se": se})
-
-    def partial_residuals(
-        self,
-        target: str,
-        term: TermLike,
-        data: pd.DataFrame,
-    ) -> pd.Series:
-        """Compute partial residuals for model diagnostic plots.
-
-        Partial residuals combine the fitted values from a specific term with
-        the overall model residuals. They're useful for assessing whether the
-        chosen smooth function adequately captures the relationship, or if a
-        different functional form might be more appropriate.
-
-        Args:
-            target: Name of the response variable
-            term: The model term to compute partial residuals for
-            data: DataFrame containing the data (must include the response variable)
-
-        Returns:
-            Series containing the partial residuals for the specified term
-        """
-        data = data if data is not None else self.fit_state.data
-        partial_effects = self.partial_effects(data)[target]["fit"]  # Link scale
-        link_fit = partial_effects.sum(axis=1).to_numpy()
-        term_effect = partial_effects.pop(term.label()).to_numpy()
-
-        family = self.family
-        if "(" not in family:
-            family = f"{family}()"
-
-        rfam = ro.r(family)
-        inv_link_fn = rfam.rx2("linkinv")  # TODO this breaks with GAULSS
-        d_mu_d_eta_fn = rfam.rx2("mu.eta")
-        rpy_link_fit = to_rpy(link_fit)
-        response_residual = data[target] - to_py(inv_link_fn(rpy_link_fit))
-
-        # We want to transform residuals to link scale.
-        # link(response) - link(response_fit) not sensible (e.g. poisson with log link risks log(0))
-        # Instead use first order taylor expansion of link function around the fit
-        d_mu_d_eta = to_py(d_mu_d_eta_fn(rpy_link_fit))
-        d_mu_d_eta = np.maximum(d_mu_d_eta, 1e-6)  # Numerical stability
-
-        # If ĝ is the f.d. approxmator to link, below is ĝ(response) - ĝ(response_fit)
-        link_residual = response_residual / d_mu_d_eta
-        return link_residual + term_effect
+        return self._format_predict_terms(predictions, data)
 
 
 @dataclass(init=False)  # use AbstractGAM init
@@ -611,7 +623,7 @@ class BAM(AbstractGAM):
         chunk_size: int = 10000,
         discrete: bool = False,
         samfrac: float | int = 1,
-        gc_level: int = 0,
+        gc_level: Literal[0, 1, 2] = 0,
     ) -> Self:
         """Fit the GAM.
 
@@ -644,6 +656,9 @@ class BAM(AbstractGAM):
                 storage and efficiency reasons.
             samfrac: If ``0<samfrac<1``, performs a fast preliminary fitting step using
                 a subsample of the data to improve convergence speed.
+            gc_level: 0 uses R's garbage collector, 1 and 2 use progressively
+                more frequent garbage collection, which takes time but reduces
+                memory requirements.
         """
         # TODO some missing options: control, sp, knots, min.sp, nthreads
         data = data.copy()
@@ -673,7 +688,10 @@ class BAM(AbstractGAM):
         self,
         data: pd.DataFrame | None = None,
         *,
-        block_size: int | None = None,
+        block_size: int = 50000,
+        discrete: bool = True,
+        n_threads: int = 1,
+        gc_level: Literal[0, 1, 2] = 0,
     ) -> dict[str, pd.DataFrame]:
         """Compute model predictions with uncertainty estimates.
 
@@ -688,17 +706,28 @@ class BAM(AbstractGAM):
             block_size: Number of rows to process at a time.  If None then block size
                 is 1000 if data supplied, and the number of rows in the model frame
                 otherwise.
+            n_threads: Number of threads to use for computation.
+            discrete: If True and the model was fitted with discrete=True, then
+                uses discrete prediction methods in which covariates are
+                discretized for efficiency for storage and efficiency reasons.
+            gc_level: 0 uses R's garbage collector, 1 and 2 use progressively
+                more frequent garbage collection, which takes time but reduces
+                memory requirements.
         """
         if data is not None:
             self._check_valid_data(data)
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call predict before fitting.")
+
         predictions = rstats.predict(
             self.fit_state.rgam,
             ri.MissingArg if data is None else data_to_rdf(data),
             se=True,
             block_size=ro.NULL if block_size is None else block_size,
+            discrete=discrete,
+            n_threads=n_threads,
+            gc_level=gc_level,
         )
         predictions = rlistvec_to_dict(predictions)
         all_targets = self.all_predictors.keys()
@@ -717,7 +746,11 @@ class BAM(AbstractGAM):
     def partial_effects(
         self,
         data: pd.DataFrame | None = None,
-        block_size: int | None = None,
+        *,
+        block_size: int = 50000,
+        n_threads: int = 1,
+        discrete: bool = True,
+        gc_level: Literal[0, 1, 2] = 0,
     ) -> dict[str, pd.DataFrame]:
         """Compute partial effects for all model terms.
 
@@ -727,9 +760,15 @@ class BAM(AbstractGAM):
 
         Args:
             data: DataFrame containing predictor variables for evaluation.
-            block_size: Number of rows to process at a time.  If None then block size
-                is 1000 if data supplied, and the number of rows in the model frame
-                otherwise.
+            block_size: Number of rows to process at a time. Higher is faster
+                but more memory intensive.
+            n_threads: Number of threads to use for computation.
+            discrete: If True and the model was fitted with discrete=True, then
+                uses discrete prediction methods in which covariates are
+                discretized for efficiency for storage and efficiency reasons.
+            gc_level: 0 uses R's garbage collector, 1 and 2 use progressively
+                more frequent garbage collection, which takes time but reduces
+                memory requirements.
 
         Returns:
             Dictionary mapping target variable names to DataFrames with partial effects.
@@ -741,19 +780,20 @@ class BAM(AbstractGAM):
         """
         if data is not None:
             self._check_valid_data(data)
-        else:
-            data = self.fit_state.data
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call partial_effects before fitting.")
 
         predictions = rstats.predict(
             self.fit_state.rgam,
-            newdata=data_to_rdf(data),
+            ri.MissingArg if data is None else data_to_rdf(data),
             se=True,
             type="terms",
             newdata_gauranteed=True,
-            block_size=ro.NULL if block_size is None else block_size,
+            block_size=ri.MissingArg if block_size is None else block_size,
+            n_threads=n_threads,
+            discrete=discrete,
+            gc_level=gc_level,
         )
         fit = pd.DataFrame(
             to_py(predictions.rx2["fit"]),
@@ -776,102 +816,15 @@ class BAM(AbstractGAM):
 
                     case _ if term.by is not None and data[term.by].dtype == "category":
                         levels = data[term.by].cat.categories.to_list()
-                        cols = [f"{term.mgcv_identifier(i)}{lev}" for lev in levels]
+                        cols = [f"{term._mgcv_identifier(i)}{lev}" for lev in levels]
                         result["fit"][term.label()] = fit[cols].sum(axis=1)
                         result["se"][term.label()] = se[cols].sum(axis=1)
 
                     case _:
-                        result["fit"][term.label()] = fit[term.mgcv_identifier(i)]
-                        result["se"][term.label()] = se[term.mgcv_identifier(i)]
+                        result["fit"][term.label()] = fit[term._mgcv_identifier(i)]
+                        result["se"][term.label()] = se[term._mgcv_identifier(i)]
 
             results[target] = result
             result = pd.concat({k: pd.DataFrame(v) for k, v in result.items()}, axis=1)
             results[target] = result
         return results
-
-    def partial_effect(
-        self,
-        target: str,
-        term: TermLike,
-        data: pd.DataFrame,
-    ) -> pd.DataFrame:
-        """Compute the partial effect for a single model term.
-
-        This method efficiently computes the contribution of one specific term
-        to the model predictions.
-
-        Args:
-            target: Name of the target variable (response variable or family
-                parameter name from the model specification)
-            term: The specific term to evaluate (must match a term used in the
-                original model specification)
-            data: DataFrame containing the predictor variables needed for the term
-
-        Returns:
-            DataFrame with columns "fit" and "se":
-
-        Note:
-            The partial effect represents the contribution of this term alone,
-            with all other terms held at their reference values (typically zero
-            for centered smooth terms).
-        """
-        data = data if data is not None else self.fit_state.data
-        if self.fit_state is None:
-            raise RuntimeError(
-                "Cannot compute partial effect before fitting the model.",
-            )
-
-        formula_idx = list(self.all_predictors.keys()).index(target)
-        effect, se = term._partial_effect(
-            data=data,
-            rgam=self.fit_state.rgam,
-            formula_idx=formula_idx,
-        )
-        assert len(data) == len(effect)
-        return pd.DataFrame({"fit": effect, "se": se})
-
-    def partial_residuals(
-        self,
-        target: str,
-        term: TermLike,
-        data: pd.DataFrame,
-    ) -> pd.Series:
-        """Compute partial residuals for model diagnostic plots.
-
-        Partial residuals combine the fitted values from a specific term with
-        the overall model residuals. They're useful for assessing whether the
-        chosen smooth function adequately captures the relationship, or if a
-        different functional form might be more appropriate.
-
-        Args:
-            target: Name of the response variable
-            term: The model term to compute partial residuals for
-            data: DataFrame containing the data (must include the response variable)
-
-        Returns:
-            Series containing the partial residuals for the specified term
-        """
-        data = data if data is not None else self.fit_state.data
-        partial_effects = self.partial_effects(data)[target]["fit"]  # Link scale
-        link_fit = partial_effects.sum(axis=1).to_numpy()
-        term_effect = partial_effects.pop(term.label()).to_numpy()
-
-        family = self.family
-        if "(" not in family:
-            family = f"{family}()"
-
-        rfam = ro.r(family)
-        inv_link_fn = rfam.rx2("linkinv")  # TODO this breaks with GAULSS
-        d_mu_d_eta_fn = rfam.rx2("mu.eta")
-        rpy_link_fit = to_rpy(link_fit)
-        response_residual = data[target] - to_py(inv_link_fn(rpy_link_fit))
-
-        # We want to transform residuals to link scale.
-        # link(response) - link(response_fit) not sensible (e.g. poisson with log link risks log(0))
-        # Instead use first order taylor expansion of link function around the fit
-        d_mu_d_eta = to_py(d_mu_d_eta_fn(rpy_link_fit))
-        d_mu_d_eta = np.maximum(d_mu_d_eta, 1e-6)  # Numerical stability
-
-        # If ĝ is the f.d. approxmator to link, below is ĝ(response) - ĝ(response_fit)
-        link_residual = response_residual / d_mu_d_eta
-        return link_residual + term_effect
