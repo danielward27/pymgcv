@@ -59,8 +59,7 @@ class BasisLike(Protocol):
 
         Returns:
             A dictionary, mapping a keyword (e.g. xt or m) to a dictionary of
-            variable names and variable values. xt should map to an rpy2 ListVector
-            if present.
+            variable values.
         """
         ...
 
@@ -86,8 +85,6 @@ class RandomEffect(BasisLike):
 @dataclass(kw_only=True, frozen=True)
 class ThinPlateSpline(BasisLike):
     """Thin plate regression spline basis.
-
-    Thin plate splines are the default basis for smooth terms.
 
     Args:
         shrinkage: If True, the penalty is modified so that the term is shrunk to zero

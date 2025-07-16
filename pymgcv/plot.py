@@ -1,6 +1,7 @@
-"""Plotting utilities for visualizing GAM models and their components."""
+"""Plotting utilities for visualizing GAM models."""
 
 import types
+from collections.abc import Callable
 from math import ceil
 from typing import Any, TypeGuard
 
@@ -9,11 +10,12 @@ import numpy as np
 import pandas as pd
 from matplotlib import rcParams
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from pandas import CategoricalDtype
 from pandas.api.types import is_numeric_dtype
 
 from pymgcv.basis_functions import RandomWigglyCurve
-from pymgcv.gam import GAM
+from pymgcv.gam import GAM, AbstractGAM
 from pymgcv.terms import (
     L,
     S,
@@ -21,11 +23,10 @@ from pymgcv.terms import (
     TermLike,
     _RandomWigglyToByInterface,
 )
-from matplotlib.figure import Figure
-from typing import Callable
+
 
 def plot_gam(
-    gam: GAM,
+    gam: AbstractGAM,
     *,
     ncols: int = 2,
     residuals: bool = False,
@@ -189,7 +190,7 @@ def plot_continuous_1d(
     *,
     target: str,
     term: TermLike,
-    gam: GAM,
+    gam: AbstractGAM,
     data: pd.DataFrame | None = None,
     eval_density: int = 100,
     level: str | None = None,
@@ -311,7 +312,7 @@ def plot_continuous_2d(
     *,
     target: str,
     term: TermLike,
-    gam: GAM,
+    gam: AbstractGAM,
     data: pd.DataFrame | None = None,
     eval_density: int = 50,
     level: str | None = None,
@@ -436,7 +437,7 @@ def plot_categorical(
     *,
     target: str,
     term: L,
-    gam: GAM,
+    gam: AbstractGAM,
     data: pd.DataFrame | None = None,
     residuals: bool = False,
     n_standard_errors: int | float = 2,

@@ -42,7 +42,7 @@ test_cases = [
     ),
     TermTestCase(
         term=S("a", "b", bs=ThinPlateSpline(m=3)),
-        expected_str="s(a,b,m=3L)",
+        expected_str='s(a,b,bs="tp",m=3L)',
         expected_simple="s(a,b)",
         expected_simple_with_idx="s.1(a,b)",
     ),
@@ -53,10 +53,10 @@ test_cases = [
             k=10,
             bs=CubicSpline(cyclic=True),
             by="var",
-            id="2",
+            id=2,
             fx=True,
         ),
-        expected_str='s(a,b,by=var,k=10L,bs="cc",id="2",fx=TRUE)',
+        expected_str='s(a,b,by=var,k=10L,bs="cc",id=2L,fx=TRUE)',
         expected_simple="s(a,b):var",
         expected_simple_with_idx="s.1(a,b):var",
     ),
@@ -81,11 +81,11 @@ test_cases = [
             d=[2, 1],
             by="var",
             np=False,
-            id="my_id",
+            id=2,
             fx=True,
             interaction_only=True,
         ),
-        expected_str='ti(x1,x2,x3,by=var,bs=c("tp", "cr"),m=list(2L, NA),d=2:1,id="my_id",fx=TRUE,np=FALSE)',
+        expected_str='ti(x1,x2,x3,by=var,bs=c("tp", "cr"),m=list(2L, NA),d=2:1,id=2L,fx=TRUE,np=FALSE)',
         expected_simple="ti(x1,x2,x3):var",
         expected_simple_with_idx="ti.1(x1,x2,x3):var",
     ),
@@ -100,9 +100,9 @@ test_cases = [
 
 @pytest.mark.parametrize("test_case", test_cases)
 def test_smooth_to_str(test_case: TermTestCase):
-    assert str(test_case.term) == test_case.expected_str
-    assert test_case.term.mgcv_identifier() == test_case.expected_simple
-    assert test_case.term.mgcv_identifier(1) == test_case.expected_simple_with_idx
+    assert test_case.expected_str == str(test_case.term)
+    assert test_case.expected_simple == test_case.term._mgcv_identifier()
+    assert test_case.expected_simple_with_idx == test_case.term._mgcv_identifier(1)
 
 
 def test_term_addition():

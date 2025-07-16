@@ -46,6 +46,7 @@ include = ["*.py", "*.pyi", "**/pyproject.toml", "*.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "D", "COM", "I", "UP", "TRY004", "RET", "PT", "FBT"]
+ignore = ["D107"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
