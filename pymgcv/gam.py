@@ -1,3 +1,7 @@
+"""Core GAM fitting and model specification functionality."""
+
+from dataclasses import dataclass
+
 """Core GAM fitting and model specification functionality.
 
 This module provides the main interface for fitting Generalized Additive Models (GAMs)
@@ -8,7 +12,6 @@ fitted model objects, and the main fitting function.
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from copy import deepcopy
-from dataclasses import dataclass
 from typing import Any, Literal, Self
 
 import numpy as np
@@ -17,8 +20,8 @@ import rpy2.rinterface as ri
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
-from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py, to_rpy
-from pymgcv.terms import Intercept, Offset, TermLike
+from pymgcv.converters import data_to_rdf, to_py, to_rpy
+from pymgcv.terms import Intercept, TermLike
 
 mgcv = importr("mgcv")
 rbase = importr("base")
@@ -46,6 +49,19 @@ BAMFitMethods = Literal[
     "P-ML",
     "NCV",
 ]
+
+
+@dataclass
+class PredictionResult:
+    """Container for model predictions/partial effects with optional standard errors.
+
+    Attributes:
+        fit: The predicted values (predictions or partial effects).
+        se: The associated standard errors of the predictions.
+    """
+
+    fit: pd.Series | pd.DataFrame
+    se: pd.Series | pd.DataFrame | None = None
 
 
 @dataclass
@@ -159,9 +175,10 @@ class AbstractGAM(ABC):
         self,
         data: pd.DataFrame | None = None,
         *args,
+        compute_se: bool = False,
         **kwargs,
-    ) -> dict[str, pd.DataFrame]:
-        """Predict the response variable(s) for the given data."""
+    ) -> dict[str, PredictionResult]:
+        """Predict the response variable(s) (link scale) for the given data."""
         pass
 
     @abstractmethod
@@ -169,8 +186,9 @@ class AbstractGAM(ABC):
         self,
         data: pd.DataFrame | None = None,
         *args,
+        compute_se: bool = False,
         **kwargs,
-    ) -> dict[str, pd.DataFrame]:
+    ) -> dict[str, PredictionResult]:
         """Compute the partial effects for the terms in the model."""
         pass
 
@@ -274,8 +292,6 @@ class AbstractGAM(ABC):
 
         Extracts the Bayesian posterior covariance matrix of the parameters or
         frequentist covariance matrix of the parameter estimators from the fitted GAM.
-        Returns a pandas dataframe, where the column names and index are the mgcv-style
-        parameter names.
 
         Args:
             sandwich: If True, compute sandwich estimate of covariance matrix.
@@ -288,7 +304,8 @@ class AbstractGAM(ABC):
                 parameter uncertainty corrected covariance matrix, if available.
 
         Returns:
-            The covariance matrix as a numpy array.
+            The covariance matrix as a pandas dataframe where the column names and index
+            are the mgcv-style parameter names.
 
         """
         if self.fit_state is None:
@@ -313,7 +330,9 @@ class AbstractGAM(ABC):
         target: str,
         term: TermLike,
         data: pd.DataFrame,
-    ) -> pd.DataFrame:
+        *,
+        compute_se: bool = False,
+    ) -> PredictionResult:
         """Compute the partial effect for a single model term.
 
         This method efficiently computes the contribution of one specific term
@@ -325,14 +344,7 @@ class AbstractGAM(ABC):
             term: The specific term to evaluate (must match a term used in the
                 original model specification)
             data: DataFrame containing the predictor variables needed for the term
-
-        Returns:
-            DataFrame with columns "fit" and "se":
-
-        Note:
-            The partial effect represents the contribution of this term alone,
-            with all other terms held at their reference values (typically zero
-            for centered smooth terms).
+            se: Whether to compute and return standard errors
         """
         data = data if data is not None else self.fit_state.data
         if self.fit_state is None:
@@ -341,47 +353,17 @@ class AbstractGAM(ABC):
             )
 
         formula_idx = list(self.all_predictors.keys()).index(target)
-        effect, se = term._partial_effect(
+        # TODO optional se in _partial_effect implementations
+        effect, se_values = term._partial_effect(
             data=data,
             rgam=self.fit_state.rgam,
             formula_idx=formula_idx,
         )
         assert len(data) == len(effect)
-        return pd.DataFrame({"fit": effect, "se": se})
-
-    def _format_predict_terms(self, predictions, data):
-        fit = pd.DataFrame(
-            to_py(predictions.rx2["fit"]),
-            columns=to_py(rbase.colnames(predictions.rx2["fit"])),
+        return PredictionResult(
+            fit=pd.Series(effect),
+            se=None if not compute_se else pd.Series(se_values),
         )
-        se = pd.DataFrame(
-            to_py(predictions.rx2["se.fit"]),
-            columns=to_py(rbase.colnames(predictions.rx2["se.fit"])),
-        )
-        # Partition results based on formulas
-        results = {}
-        for i, (target, terms) in enumerate(self.all_predictors.items()):
-            result = {"fit": {}, "se": {}}
-            for term in terms:
-                if term.by is not None and data[term.by].dtype == "category":
-                    levels = data[term.by].cat.categories.to_list()
-                    cols = [f"{term._mgcv_identifier(i)}{lev}" for lev in levels]
-                    result["fit"][term.label()] = fit[cols].sum(axis=1)
-                    result["se"][term.label()] = se[cols].sum(axis=1)
-
-                elif term._mgcv_identifier(i) in fit.columns:
-                    result["fit"][term.label()] = fit[term._mgcv_identifier(i)]
-                    result["se"][term.label()] = se[term._mgcv_identifier(i)]
-
-                else:  # Offset + Intercept
-                    partial_effect = self.partial_effect(target, term, data)
-                    result["fit"][term.label()] = partial_effect["fit"]
-                    result["se"][term.label()] = partial_effect["se"]
-
-            results[target] = result
-            result = pd.concat({k: pd.DataFrame(v) for k, v in result.items()}, axis=1)
-            results[target] = result
-        return results
 
     def partial_residuals(
         self,
@@ -407,9 +389,7 @@ class AbstractGAM(ABC):
             Series containing the partial residuals for the specified term
         """
         data = data if data is not None else self.fit_state.data
-        partial_effects = self.partial_effects(data, **kwargs)[target][
-            "fit"
-        ]  # Link scale
+        partial_effects = self.partial_effects(data, **kwargs)[target].fit  # Link scale
         link_fit = partial_effects.sum(axis=1).to_numpy()
         term_effect = partial_effects.pop(term.label()).to_numpy()
 
@@ -440,8 +420,92 @@ class AbstractGAM(ABC):
         link_residual = response_residual / d_mu_d_eta
         return link_residual + term_effect
 
+    def _format_predictions(self, predictions, *, compute_se: bool):
+        """Formats output from mgcv predict."""
+        all_targets = self.all_predictors.keys()
+        result = {}
 
-@dataclass(init=False)  # use AbstractGAM init
+        if compute_se:
+            fit_all = to_py(predictions.rx2["fit"]).reshape(-1, len(all_targets))
+            se_all = to_py(predictions.rx2["se_fit"]).reshape(-1, len(all_targets))
+        else:
+            fit_all = to_py(predictions).reshape(-1, len(all_targets))
+
+        for i, target in enumerate(all_targets):
+            result[target] = PredictionResult(
+                fit=pd.Series(fit_all[:, i]),
+                se=None if not compute_se else pd.Series(se_all[:, i]),
+            )
+        return result
+
+    def _format_partial_effects(
+        self,
+        predictions,
+        data: pd.DataFrame,
+        *,
+        compute_se: bool,
+    ):
+        """Formats output from mgcv predict with type="terms" (i.e. partial effects)."""
+        if compute_se:
+            fit_raw = pd.DataFrame(
+                to_py(predictions.rx2["fit"]),
+                columns=to_py(rbase.colnames(predictions.rx2["fit"])),
+            )
+            se_raw = pd.DataFrame(
+                to_py(predictions.rx2["se.fit"]),
+                columns=to_py(rbase.colnames(predictions.rx2["se.fit"])),
+            )
+        else:
+            fit_raw = pd.DataFrame(
+                to_py(predictions),
+                columns=to_py(rbase.colnames(predictions)),
+            )
+
+        # Partition results based on formulas
+        results = {}
+        for i, (target, terms) in enumerate(self.all_predictors.items()):
+            fit = {}
+            if compute_se:
+                se = {}
+
+            for term in terms:
+                label = term.label()
+                identifier = term._mgcv_identifier(i)
+
+                if term.by is not None and data[term.by].dtype == "category":
+                    levels = data[term.by].cat.categories.to_list()
+                    cols = [f"{identifier}{lev}" for lev in levels]
+                    fit[label] = fit_raw[cols].sum(axis=1)
+
+                    if compute_se:
+                        se[label] = se_raw[cols].sum(axis=1)  # type: ignore
+
+                elif identifier in fit_raw.columns:
+                    fit[label] = fit_raw[identifier]
+
+                    if compute_se:
+                        se[label] = se_raw[identifier]  # type: ignore
+
+                else:  # Offset + Intercept
+                    partial_effect = self.partial_effect(
+                        target,
+                        term,
+                        data,
+                        compute_se=compute_se,
+                    )
+                    fit[label] = partial_effect.fit
+
+                    if compute_se:
+                        se[label] = partial_effect.se
+
+            results[target] = PredictionResult(
+                fit=pd.DataFrame(fit),
+                se=None if not compute_se else pd.DataFrame(se),  # type: ignore
+            )
+        return results
+
+
+@dataclass(init=False)
 class GAM(AbstractGAM):
     """Standard GAM Model."""
 
@@ -460,6 +524,7 @@ class GAM(AbstractGAM):
         scale: Literal["unknown"] | float | int | None = None,
         select: bool = False,
         gamma: float | int = 1,
+        n_threads: int = 1,
     ) -> Self:
         """Fit the GAM.
 
@@ -492,24 +557,27 @@ class GAM(AbstractGAM):
                 viewed as an effective sample size in the GCV score, and this also
                 enables it to be used with REML/ML. Ignored with P-RE/ML or the efs
                 optimizer.
+            n_threads: Number of threads to use for fitting the GAM.
         """
         # TODO some missing options: control, sp, knots, min.sp etc
         data = data.copy()
         weights = data[weights] if isinstance(weights, str) else weights  # type: ignore
 
         self._check_valid_data(data)
+        rgam = mgcv.gam(
+            self._to_r_formulae(),
+            data=data_to_rdf(data),
+            family=ro.rl(self.family),
+            method=method,
+            weights=ro.NULL if weights is None else np.asarray(weights),
+            optimizer=to_rpy(np.array(optimizer)),
+            scale=0 if scale is None else (-1 if scale == "unknown" else scale),
+            select=select,
+            gamma=gamma,
+            nthreads=n_threads,
+        )
         self.fit_state = FitState(
-            rgam=mgcv.gam(
-                self._to_r_formulae(),
-                data=data_to_rdf(data),
-                family=ro.rl(self.family),
-                method=method,
-                weights=ro.NULL if weights is None else np.asarray(weights),
-                optimizer=to_rpy(np.array(optimizer)),
-                scale=0 if scale is None else (-1 if scale == "unknown" else scale),
-                select=select,
-                gamma=gamma,
-            ),
+            rgam=rgam,
             data=data,
         )
         return self
@@ -518,8 +586,9 @@ class GAM(AbstractGAM):
         self,
         data: pd.DataFrame | None = None,
         *,
+        compute_se: bool = False,
         block_size: int | None = None,
-    ) -> dict[str, pd.DataFrame]:
+    ) -> dict[str, PredictionResult]:
         """Compute model predictions with uncertainty estimates.
 
         Makes predictions for new data using the fitted GAM model. Predictions
@@ -530,41 +599,39 @@ class GAM(AbstractGAM):
         Args:
             data: DataFrame containing predictor variables. Must include all
                 variables referenced in the original model specification.
+            se: Whether to compute standard errors for predictions.
             block_size: Number of rows to process at a time.  If None then block size
                 is 1000 if data supplied, and the number of rows in the model frame
                 otherwise.
+
+        Returns:
+            A dictionary mapping the target variable names to a pandas DataFrame
+            containing the predictions and standard errors if `se` is True.
         """
         if data is not None:
             self._check_valid_data(data)
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call predict before fitting.")
+
         predictions = rstats.predict(
             self.fit_state.rgam,
             ri.MissingArg if data is None else data_to_rdf(data),
-            se=True,
-            block_size=ro.NULL if block_size is None else block_size,
+            se=compute_se,
+            block_size=ri.MissingArg if block_size is None else block_size,
         )
-        predictions = rlistvec_to_dict(predictions)
-        all_targets = self.all_predictors.keys()
-
-        n = data.shape[0]
-        return {
-            target: pd.DataFrame(
-                {
-                    "fit": predictions["fit"].reshape(n, -1)[:, i],
-                    "se": predictions["se_fit"].reshape(n, -1)[:, i],
-                },
-            )
-            for i, target in enumerate(all_targets)
-        }
+        return self._format_predictions(
+            predictions,
+            compute_se=compute_se,
+        )
 
     def partial_effects(
         self,
         data: pd.DataFrame | None = None,
         *,
+        compute_se: bool = False,
         block_size: int | None = None,
-    ) -> dict[str, pd.DataFrame]:
+    ) -> dict[str, dict[str, PredictionResult]]:
         """Compute partial effects for all model terms.
 
         Calculates the contribution of each model term to the overall prediction on the
@@ -573,15 +640,17 @@ class GAM(AbstractGAM):
         Args:
             data: DataFrame containing predictor variables for evaluation. Defaults to
                 using the data for fitting.
+            se: Whether to compute and return standard errors.
             block_size: Number of rows to process at a time.  If None then block size
                 is 1000 if data supplied, and the number of rows in the model frame
                 otherwise.
 
         Returns:
-            Dictionary mapping target target names to DataFrames with partial effects.
+            Dictionary mapping target names to DataFrames with partial effects.
             Each DataFrame has hierarchical columns:
 
-            - Top level: 'fit' (partial effects) and 'se' (standard errors)
+            - Top level: 'fit' (partial effects) and optionally 'se' (standard errors)
+              if se=True
             - Second level: term names (e.g., 'L(x1)', 'S(x2)', 'Intercept')
 
         """
@@ -594,12 +663,16 @@ class GAM(AbstractGAM):
         predictions = rstats.predict(
             self.fit_state.rgam,
             ri.MissingArg if data is None else data_to_rdf(data),
-            se=True,
+            se=compute_se,
             type="terms",
             newdata_gauranteed=True,
             block_size=ri.MissingArg if block_size is None else block_size,
         )
-        return self._format_predict_terms(predictions, data)
+        return self._format_partial_effects(
+            predictions,
+            data if data is not None else self.fit_state.data,
+            compute_se=compute_se,
+        )
 
 
 @dataclass(init=False)  # use AbstractGAM init
@@ -688,11 +761,12 @@ class BAM(AbstractGAM):
         self,
         data: pd.DataFrame | None = None,
         *,
+        compute_se: bool = False,
         block_size: int = 50000,
         discrete: bool = True,
         n_threads: int = 1,
         gc_level: Literal[0, 1, 2] = 0,
-    ) -> dict[str, pd.DataFrame]:
+    ) -> dict[str, PredictionResult]:
         """Compute model predictions with uncertainty estimates.
 
         Makes predictions for new data using the fitted GAM model. Predictions
@@ -703,9 +777,8 @@ class BAM(AbstractGAM):
         Args:
             data: DataFrame containing predictor variables. Must include all
                 variables referenced in the original model specification.
-            block_size: Number of rows to process at a time.  If None then block size
-                is 1000 if data supplied, and the number of rows in the model frame
-                otherwise.
+            se: Whether to compute and return standard errors.
+            block_size: Number of rows to process at a time.
             n_threads: Number of threads to use for computation.
             discrete: If True and the model was fitted with discrete=True, then
                 uses discrete prediction methods in which covariates are
@@ -723,35 +796,28 @@ class BAM(AbstractGAM):
         predictions = rstats.predict(
             self.fit_state.rgam,
             ri.MissingArg if data is None else data_to_rdf(data),
-            se=True,
+            se=compute_se,
             block_size=ro.NULL if block_size is None else block_size,
             discrete=discrete,
             n_threads=n_threads,
             gc_level=gc_level,
         )
-        predictions = rlistvec_to_dict(predictions)
-        all_targets = self.all_predictors.keys()
 
-        n = data.shape[0]
-        return {
-            target: pd.DataFrame(
-                {
-                    "fit": predictions["fit"].reshape(n, -1)[:, i],
-                    "se": predictions["se_fit"].reshape(n, -1)[:, i],
-                },
-            )
-            for i, target in enumerate(all_targets)
-        }
+        return self._format_predictions(
+            predictions,
+            compute_se=compute_se,
+        )
 
     def partial_effects(
         self,
         data: pd.DataFrame | None = None,
         *,
+        compute_se: bool = False,
         block_size: int = 50000,
         n_threads: int = 1,
         discrete: bool = True,
         gc_level: Literal[0, 1, 2] = 0,
-    ) -> dict[str, pd.DataFrame]:
+    ) -> dict[str, PredictionResult]:
         """Compute partial effects for all model terms.
 
         Calculates the contribution of each model term to the overall prediction.
@@ -760,6 +826,7 @@ class BAM(AbstractGAM):
 
         Args:
             data: DataFrame containing predictor variables for evaluation.
+            se: Whether to compute and return standard errors.
             block_size: Number of rows to process at a time. Higher is faster
                 but more memory intensive.
             n_threads: Number of threads to use for computation.
@@ -773,7 +840,8 @@ class BAM(AbstractGAM):
         Returns:
             Dictionary mapping target variable names to DataFrames with partial effects.
             Each DataFrame has hierarchical columns:
-            - Top level: 'fit' (partial effects) and 'se' (standard errors)
+            - Top level: 'fit' (partial effects) and optionally 'se' (standard errors)
+              if se=True
             - Second level: term names (e.g., 's(x1)', 'x2', 'intercept')
 
             The sum of all fit columns equals the total prediction:
@@ -787,7 +855,7 @@ class BAM(AbstractGAM):
         predictions = rstats.predict(
             self.fit_state.rgam,
             ri.MissingArg if data is None else data_to_rdf(data),
-            se=True,
+            se=compute_se,
             type="terms",
             newdata_gauranteed=True,
             block_size=ri.MissingArg if block_size is None else block_size,
@@ -795,36 +863,8 @@ class BAM(AbstractGAM):
             discrete=discrete,
             gc_level=gc_level,
         )
-        fit = pd.DataFrame(
-            to_py(predictions.rx2["fit"]),
-            columns=to_py(rbase.colnames(predictions.rx2["fit"])),
+        return self._format_partial_effects(
+            predictions,
+            data=self.fit_state.data if data is None else data,
+            compute_se=compute_se,
         )
-        se = pd.DataFrame(
-            to_py(predictions.rx2["se.fit"]),
-            columns=to_py(rbase.colnames(predictions.rx2["se.fit"])),
-        )
-        # Partition results based on formulas
-        results = {}
-        for i, (target, terms) in enumerate(self.all_predictors.items()):
-            result = {"fit": {}, "se": {}}
-            for term in terms:
-                match term:
-                    case Offset() | Intercept():
-                        partial_effect = self.partial_effect(target, term, data)
-                        result["fit"][term.label()] = partial_effect["fit"]
-                        result["se"][term.label()] = partial_effect["se"]
-
-                    case _ if term.by is not None and data[term.by].dtype == "category":
-                        levels = data[term.by].cat.categories.to_list()
-                        cols = [f"{term._mgcv_identifier(i)}{lev}" for lev in levels]
-                        result["fit"][term.label()] = fit[cols].sum(axis=1)
-                        result["se"][term.label()] = se[cols].sum(axis=1)
-
-                    case _:
-                        result["fit"][term.label()] = fit[term._mgcv_identifier(i)]
-                        result["se"][term.label()] = se[term._mgcv_identifier(i)]
-
-            results[target] = result
-            result = pd.concat({k: pd.DataFrame(v) for k, v in result.items()}, axis=1)
-            results[target] = result
-        return results

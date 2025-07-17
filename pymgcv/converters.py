@@ -78,44 +78,6 @@ def to_py(x):
         return ro.conversion.get_conversion().rpy2py(x)
 
 
-def rlistvec_to_dict(x: ro.ListVector) -> dict:
-    """Convert R ListVector to Python dictionary with pythonic naming.
-
-    Converts an R named list (ListVector) to a Python dictionary, with each
-    element converted to appropriate Python types. Dots in R names are replaced
-    with underscores to follow Python naming conventions.
-
-    Args:
-        x: R ListVector with named elements
-
-    Returns:
-        Dictionary with string keys (dots replaced with underscores) and
-        values converted to Python equivalents
-
-    Raises:
-        ValueError: If the ListVector contains duplicate names, which would
-            create an invalid dictionary
-
-    Examples:
-        ```python
-        # R list with elements: $coef, $fitted.values, $residuals
-        r_list = robjects.r('list(coef=1:3, fitted.values=4:6, residuals=7:9)')
-        py_dict = rlistvec_to_dict(r_list)
-        # Returns: {'coef': array([1,2,3]), 'fitted_values': array([4,5,6]), ...}
-        ```
-
-    Note:
-        This function is particularly useful for converting mgcv model output,
-        which often contains lists with R-style naming conventions.
-    """
-    if len(x.names) != len(set(x.names)):
-        raise ValueError(
-            "List vector contained duplicate names, so cannot be "
-            "converted to a python dictionary.",
-        )
-    return {k.replace(".", "_"): to_py(v) for k, v in zip(x.names, x, strict=True)}
-
-
 def data_to_rdf(
     data: pd.DataFrame | pd.Series,
     as_array_prefixes: Iterable[str] = (),

@@ -287,7 +287,7 @@ def plot_continuous_1d(
         if "c" not in kwargs and "color" not in kwargs:
             kwargs["color"] = current_color
 
-    pred = gam.partial_effect(target, term, spaced_data)
+    pred = gam.partial_effect(target, term, spaced_data, compute_se=True)
 
     # Add partial residuals
     if residuals and target in data.columns:
@@ -297,12 +297,12 @@ def plot_continuous_1d(
     # Plot interval
     ax.fill_between(
         x0_linspace,
-        pred["fit"] - n_standard_errors * pred["se"],
-        pred["fit"] + n_standard_errors * pred["se"],
+        pred.fit - n_standard_errors * pred.se,
+        pred.fit + n_standard_errors * pred.se,
         **fill_between_kwargs,
     )
 
-    ax.plot(x0_linspace, pred["fit"], **plot_kwargs)
+    ax.plot(x0_linspace, pred.fit, **plot_kwargs)
     ax.set_xlabel(term.varnames[0])
     ax.set_ylabel(f"link({target})~{term.label()}")
     return ax
@@ -407,7 +407,7 @@ def plot_continuous_2d(
         target,
         term,
         data=spaced_data,
-    )["fit"]
+    ).fit
 
     mesh = ax.contourf(
         x0_mesh,
@@ -501,11 +501,12 @@ def plot_categorical(
         target=target,
         term=term,
         data=pd.DataFrame(levels),
+        compute_se=True,
     )
     ax.errorbar(
         x=levels.cat.codes,
-        y=pred["fit"],
-        yerr=n_standard_errors * pred["se"],
+        y=pred.fit,
+        yerr=n_standard_errors * pred.se,
         **errorbar_kwargs,
     )
     ax.set_xlabel(term.varnames[0])

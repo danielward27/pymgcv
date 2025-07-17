@@ -9,6 +9,7 @@ GAM model types from ``pymgcv.gam``.
           - "!^_"
           - "!fit"
           - "!predict"
+          - "!partial_effects"
           - "all_predictors"
 
 ::: pymgcv.gam.GAM
