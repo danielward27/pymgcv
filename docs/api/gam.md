@@ -26,3 +26,7 @@ GAM model types from ``pymgcv.gam``.
 ::: pymgcv.gam.FitState
     options:
         heading_level: 2
+
+::: pymgcv.gam.PredictionResult
+    options:
+        heading_level: 2

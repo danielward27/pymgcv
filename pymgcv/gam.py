@@ -1,17 +1,9 @@
 """Core GAM fitting and model specification functionality."""
 
-from dataclasses import dataclass
-
-"""Core GAM fitting and model specification functionality.
-
-This module provides the main interface for fitting Generalized Additive Models (GAMs)
-using R's mgcv library through rpy2. It includes classes for model specification,
-fitted model objects, and the main fitting function.
-"""
-
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any, Literal, Self
 
 import numpy as np
@@ -344,7 +336,7 @@ class AbstractGAM(ABC):
             term: The specific term to evaluate (must match a term used in the
                 original model specification)
             data: DataFrame containing the predictor variables needed for the term
-            se: Whether to compute and return standard errors
+            compute_se: Whether to compute and return standard errors
         """
         data = data if data is not None else self.fit_state.data
         if self.fit_state is None:
@@ -460,13 +452,13 @@ class AbstractGAM(ABC):
                 to_py(predictions),
                 columns=to_py(rbase.colnames(predictions)),
             )
+            se_raw = None
 
         # Partition results based on formulas
         results = {}
         for i, (target, terms) in enumerate(self.all_predictors.items()):
             fit = {}
-            if compute_se:
-                se = {}
+            se = {}
 
             for term in terms:
                 label = term.label()
@@ -477,14 +469,14 @@ class AbstractGAM(ABC):
                     cols = [f"{identifier}{lev}" for lev in levels]
                     fit[label] = fit_raw[cols].sum(axis=1)
 
-                    if compute_se:
-                        se[label] = se_raw[cols].sum(axis=1)  # type: ignore
+                    if se_raw is not None:
+                        se[label] = se_raw[cols].sum(axis=1)
 
                 elif identifier in fit_raw.columns:
                     fit[label] = fit_raw[identifier]
 
-                    if compute_se:
-                        se[label] = se_raw[identifier]  # type: ignore
+                    if se_raw is not None:
+                        se[label] = se_raw[identifier]
 
                 else:  # Offset + Intercept
                     partial_effect = self.partial_effect(
@@ -496,11 +488,12 @@ class AbstractGAM(ABC):
                     fit[label] = partial_effect.fit
 
                     if compute_se:
+                        assert se is not None
                         se[label] = partial_effect.se
 
             results[target] = PredictionResult(
                 fit=pd.DataFrame(fit),
-                se=None if not compute_se else pd.DataFrame(se),  # type: ignore
+                se=None if not compute_se else pd.DataFrame(se),
             )
         return results
 
@@ -599,7 +592,7 @@ class GAM(AbstractGAM):
         Args:
             data: DataFrame containing predictor variables. Must include all
                 variables referenced in the original model specification.
-            se: Whether to compute standard errors for predictions.
+            compute_se: Whether to compute standard errors for predictions.
             block_size: Number of rows to process at a time.  If None then block size
                 is 1000 if data supplied, and the number of rows in the model frame
                 otherwise.
@@ -640,19 +633,10 @@ class GAM(AbstractGAM):
         Args:
             data: DataFrame containing predictor variables for evaluation. Defaults to
                 using the data for fitting.
-            se: Whether to compute and return standard errors.
+            compute_se: Whether to compute and return standard errors.
             block_size: Number of rows to process at a time.  If None then block size
                 is 1000 if data supplied, and the number of rows in the model frame
                 otherwise.
-
-        Returns:
-            Dictionary mapping target names to DataFrames with partial effects.
-            Each DataFrame has hierarchical columns:
-
-            - Top level: 'fit' (partial effects) and optionally 'se' (standard errors)
-              if se=True
-            - Second level: term names (e.g., 'L(x1)', 'S(x2)', 'Intercept')
-
         """
         if data is not None:
             self._check_valid_data(data)
@@ -777,7 +761,7 @@ class BAM(AbstractGAM):
         Args:
             data: DataFrame containing predictor variables. Must include all
                 variables referenced in the original model specification.
-            se: Whether to compute and return standard errors.
+            compute_se: Whether to compute and return standard errors.
             block_size: Number of rows to process at a time.
             n_threads: Number of threads to use for computation.
             discrete: If True and the model was fitted with discrete=True, then
@@ -822,11 +806,12 @@ class BAM(AbstractGAM):
 
         Calculates the contribution of each model term to the overall prediction.
         This decomposition is useful for understanding which terms contribute most
-        to predictions and for creating partial effect plots.
+        to predictions and for creating partial effect plots. The sum of all fit columns
+        equals the total prediction.
 
         Args:
             data: DataFrame containing predictor variables for evaluation.
-            se: Whether to compute and return standard errors.
+            compute_se: Whether to compute and return standard errors.
             block_size: Number of rows to process at a time. Higher is faster
                 but more memory intensive.
             n_threads: Number of threads to use for computation.
@@ -836,15 +821,6 @@ class BAM(AbstractGAM):
             gc_level: 0 uses R's garbage collector, 1 and 2 use progressively
                 more frequent garbage collection, which takes time but reduces
                 memory requirements.
-
-        Returns:
-            Dictionary mapping target variable names to DataFrames with partial effects.
-            Each DataFrame has hierarchical columns:
-            - Top level: 'fit' (partial effects) and optionally 'se' (standard errors)
-              if se=True
-            - Second level: term names (e.g., 's(x1)', 'x2', 'intercept')
-
-            The sum of all fit columns equals the total prediction:
         """
         if data is not None:
             self._check_valid_data(data)
