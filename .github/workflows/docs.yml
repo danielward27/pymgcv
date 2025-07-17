@@ -19,5 +19,4 @@ jobs:
           environments: dev
       - name: Run examples and deploy docs
         run: |
-          pixi run convert-docs
           pixi run mkdocs gh-deploy --force
