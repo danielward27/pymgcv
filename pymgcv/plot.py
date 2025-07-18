@@ -14,6 +14,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from pandas import CategoricalDtype
 from pandas.api.types import is_numeric_dtype
+from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import RandomWigglyCurve
 from pymgcv.gam import AbstractGAM
@@ -25,6 +26,9 @@ from pymgcv.terms import (
     _RandomWigglyToByInterface,
 )
 
+rbase = importr("base")
+rstats = importr("stats")
+
 
 def plot_gam(
     gam: AbstractGAM,
@@ -32,6 +36,7 @@ def plot_gam(
     ncols: int = 2,
     residuals: bool = False,
     to_plot: type | types.UnionType | dict[str, list[TermLike]] = TermLike,
+    kwargs_mapper: dict[Callable, dict[str, Any]] | None = None,
 ) -> tuple[Figure, plt.Axes | np.ndarray]:
     """Plot a gam model.
 
@@ -43,9 +48,25 @@ def plot_gam(
             of that type (e.g. ``to_plot = S | T`` to plot smooths).
             If a dictionary, it should map the target names to
             an iterable of terms to plot (similar to how models are specified).
+        kwargs_mapper: Used to pass keyword arguments to the underlying plot functions.
+            A dictionary mapping the plotting function to kwargs. For example, to
+            disable the confidence intervals on the 1d plots, set
+            ``kwargs_mapper`` to
+            ```python
+            from pymgcv.plot import plot_continuous_1d
+            {plot_continuous_1d: {"fill_between_kwargs": {"disable": True}}}
+            ```
+
     """
     if gam.fit_state is None:
         raise ValueError("Cannot plot before fitting the model.")
+
+    kwargs_mapper = {} if kwargs_mapper is None else kwargs_mapper
+
+    if residuals:
+        kwargs_mapper.setdefault(plot_continuous_1d, {}).setdefault("residuals", True)
+        kwargs_mapper.setdefault(plot_categorical, {}).setdefault("residuals", True)
+
     if isinstance(to_plot, type | types.UnionType):
         to_plot = {
             k: [v for v in terms if isinstance(v, to_plot)]
@@ -62,7 +83,6 @@ def plot_gam(
                     term=term,
                     gam=gam,
                     data=data,
-                    residuals=residuals,
                 )
             except NotImplementedError:
                 continue
@@ -84,7 +104,8 @@ def plot_gam(
 
     idx = 0
     for plotter in plotters:
-        plotter.make_plot(axes[idx : (idx + plotter.required_axes)])
+        kwargs = kwargs_mapper.get(plotter.underlying_function, {})
+        plotter.make_plot(axes[idx : (idx + plotter.required_axes)], **kwargs)
         idx += plotter.required_axes
 
     return fig, axes
@@ -102,8 +123,6 @@ def get_term_plotter(
     term: TermLike,
     gam: AbstractGAM,
     data: pd.DataFrame | None = None,
-    *,
-    residuals: bool = False,
 ) -> _TermPlotter:
     """Utility for plotting a term in a model.
 
@@ -141,7 +160,6 @@ def get_term_plotter(
                     gam=gam,
                     data=data,
                     ax=axes[0],
-                    residuals=residuals,
                     **kwargs,
                 )
                 return axes
@@ -161,7 +179,6 @@ def get_term_plotter(
                         data=data,
                         level=level,
                         ax=axes[0],
-                        residuals=residuals,
                         plot_kwargs={"label": level},
                         **kwargs,
                     )
@@ -213,16 +230,11 @@ def plot_continuous_1d(
     scatter_kwargs: dict[str, Any] | None = None,
     ax: Axes | None = None,
 ) -> Axes:
-    """Plot 1D smooth or linear terms with confidence intervals and partial residuals.
+    """Plot 1D smooth or linear terms with confidence intervals.
 
-    Creates a plot showing:
+    !!! note
 
-    - The estimated smooth function or linear relationship
-    - Confidence intervals around the estimate
-    - Partial residuals as scatter points if available
-
-    .. Note::
-        For terms with numeric "by" variables, the "by" variable is set to 1,
+        - For terms with numeric "by" variables, the "by" variable is set to 1,
         showing the unscaled effect of the smooth.
 
     Args:
@@ -243,7 +255,7 @@ def plot_continuous_1d(
             the main curve.
         fill_between_kwargs: Keyword arguments passed to
             `matplotlib.pyplot.fill_between` for the confidence interval band.
-            pass `{"disable": True}` to disable the confidence interval band.
+            Pass `{"disable": True}` to disable the confidence interval band.
         scatter_kwargs: Keyword arguments passed to `matplotlib.pyplot.scatter`
             for partial residuals (ignored if `residuals=False`).
         ax: Matplotlib Axes object to plot on. If None, uses current axes.
