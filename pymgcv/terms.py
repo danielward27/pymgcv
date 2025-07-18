@@ -28,7 +28,8 @@ class TermLike(Protocol):
 
     All term types in pymgcv must implement this protocol. It defines the basic
     interface for model terms including variable references, string representations,
-    and the ability to compute partial effects.
+    and the ability to compute partial effects. See the source code of this class
+    for more details.
 
     Attributes:
         varnames: Tuple of variable names used by this term. For univariate terms,
@@ -53,13 +54,19 @@ class TermLike(Protocol):
         """
         ...
 
-    def _mgcv_identifier(self, formula_idx: int = 0) -> str:
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Generate the mgcv identifier for the term.
 
-        This representation is used internally for term identification and
-        matches the format used by mgcv when predicting separate terms.
-        For multi-formula models, mgcv adds an index suffix to distinguish
-        terms from different formulae.
+        When computing partial effects, we look for a column with this
+        name from the mgcv output, and if not we fall back on using
+        [`partial_effect`][pymgcv.gam.AbstractGAM.partial_effect].
+
+        !!! example
+
+            ```python
+            from pymgcv.terms import S
+            assert S("x1").mgcv_identifier(formula_idx=1) == "s.1(x1)"
+            ```
 
         Args:
             formula_idx: Index of the formula in multi-formula models.
@@ -145,7 +152,7 @@ class L(_AddMixin, TermLike):
         """Returns the label, e.g. 'L(x)'."""
         return f"L({self.varnames[0]})"
 
-    def _mgcv_identifier(self, formula_idx: int = 0) -> str:
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Return term identifier with optional formula index."""
         idx = "" if formula_idx == 0 else f".{formula_idx}"
         return self.varnames[0] + idx
@@ -222,7 +229,7 @@ class Interaction(_AddMixin, TermLike):
     def label(self):
         return f"Interaction({','.join(self.varnames)})"
 
-    def _mgcv_identifier(self, formula_idx: int = 0) -> str:
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Return interaction identifier with optional formula index."""
         idx = "" if formula_idx == 0 else f".{formula_idx}"
         return ":".join(self.varnames) + idx
@@ -251,7 +258,7 @@ class Interaction(_AddMixin, TermLike):
 
 @dataclass
 class S(_AddMixin, TermLike):
-    """S term using spline basis functions.
+    """Smooth term.
 
     For all the arguments, passing None will use the mgcv defaults.
 
@@ -273,10 +280,10 @@ class S(_AddMixin, TermLike):
             [`ThinPlateSpline`][pymgcv.basis_functions.ThinPlateSpline].
         by: variable name used to scale the smooth. If it's a numeric vector, it
             scales the smooth, and the "by" variable should not be included as a
-            seperate main effect (as the smooth is usually not centered). If the "by"
-            variable is a factor, a separate smooth is created for each factor level.
-            These smooths are centered, so the factor typically should be included as a
-            main effect.
+            seperate main effect (as the smooth is usually not centered). If the "by" is
+            a categorical variable, a separate smooth is created for each factor level.
+            In this case the smooths are centered, so the categorical variable should
+            be included as a main effect.
         id: Identifier for grouping smooths with shared penalties. If using a
             categorical by variable, providing an id will ensure a shared smoothing
             parameter for each level.
@@ -329,15 +336,15 @@ class S(_AddMixin, TermLike):
         by = f",by={self.by}" if self.by else ""
         return f"S({','.join(self.varnames)}{by})"
 
-    def _mgcv_identifier(self, formula_idx: int = 0) -> str:
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Generate simplified smooth identifier."""
         idx = "" if formula_idx == 0 else f".{formula_idx}"
-        _mgcv_identifier = f"s{idx}({','.join(self.varnames)})"
+        mgcv_identifier = f"s{idx}({','.join(self.varnames)})"
 
         if self.by is not None:
-            _mgcv_identifier += f":{self.by}"
+            mgcv_identifier += f":{self.by}"
 
-        return _mgcv_identifier
+        return mgcv_identifier
 
     def _partial_effect(
         self,
@@ -364,6 +371,30 @@ class T(_AddMixin, TermLike):
 
     Tensor smooths create smooth functions of multiple variables using marginal
     smooths in order to be robust to variables on different scales.
+    For the sequence arguments, the length must match the number of variables if
+    ``d`` is not provided, else they must match the length of ``d``.
+
+    Args:
+        *varnames: Names of variables for the tensor smooth.
+        k: The basis dimension for each marginal smooth. If an integer, all
+            marginal smooths will have the same basis dimension.
+        bs: basis type to use, or an iterable of basis types for each marginal
+            smooth. Defaults to [`CubicSpline`][pymgcv.basis_functions.CubicSpline]
+        d: Sequence specifying the dimension of each variable's smooth. For example,
+            (2, 1) would specify to use one two dimensional marginal smooth and one
+            1 dimensional marginal smooth, where three variables are provided. This
+            is useful for space-time smooths (2 dimensional space and 1 time
+            dimension).
+        by: Variable name for 'by' variable scaling the tensor smooth, or creating
+            a smooth for each level of a categorical by variable.
+        id: Identifier for sharing penalties across multiple tensor smooths.
+        fx: indicates whether the term is a fixed d.f. regression spline (True) or
+            a penalized regression spline (False). Defaults to False.
+        np: If False, use a single penalty for the tensor product.
+            If True (default), use separate penalties for each marginal. Defaults
+            to True.
+        interaction_only: If True, creates ti() instead of te() - interaction only,
+            excluding main effects of individual variables.
     """
 
     varnames: tuple[str, ...]
@@ -388,33 +419,6 @@ class T(_AddMixin, TermLike):
         np: bool = True,
         interaction_only: bool = False,
     ):
-        """Initialize a tensor smooth term.
-
-        For the sequence arguments, the length must match the number of variables if
-        ``d`` is not provided, else they must match the length of ``d``.
-
-        Args:
-            *varnames: Names of variables for the tensor smooth.
-            k: The basis dimension for each marginal smooth. If an integer, all
-                marginal smooths will have the same basis dimension.
-            bs: basis type to use, or an iterable of basis types for each marginal
-                smooth. Defaults to [`CubicSpline`][pymgcv.basis_functions.CubicSpline]
-            d: Sequence specifying the dimension of each variable's smooth. For example,
-                (2, 1) would specify to use one two dimensional marginal smooth and one
-                1 dimensional marginal smooth, where three variables are provided. This
-                is useful for space-time smooths (2 dimensional space and 1 time
-                dimension).
-            by: Variable name for 'by' variable scaling the tensor smooth, or creating
-                a smooth for each level of a categorical by variable.
-            id: Identifier for sharing penalties across multiple tensor smooths.
-            fx: indicates whether the term is a fixed d.f. regression spline (True) or
-                a penalized regression spline (False). Defaults to False.
-            np: If False, use a single penalty for the tensor product.
-                If True (default), use separate penalties for each marginal. Defaults
-                to True.
-            interaction_only: If True, creates ti() instead of te() - interaction only,
-                excluding main effects of individual variables.
-        """
         if len(varnames) < 2:
             raise ValueError("Tensor smooths require at least 2 variables")
 
@@ -480,7 +484,7 @@ class T(_AddMixin, TermLike):
         by = f",by={self.by}" if self.by else ""
         return f"T({','.join(self.varnames)}{by})"
 
-    def _mgcv_identifier(self, formula_idx: int = 0) -> str:
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Generate simplified tensor smooth identifier.
 
         Returns:
@@ -488,10 +492,10 @@ class T(_AddMixin, TermLike):
         """
         idx = "" if formula_idx == 0 else f".{formula_idx}"
         prefix = "ti" if self.interaction_only else "te"
-        _mgcv_identifier = f"{prefix}{idx}({','.join(self.varnames)})"
+        mgcv_identifier = f"{prefix}{idx}({','.join(self.varnames)})"
         if self.by is not None:
-            _mgcv_identifier += ":" + self.by
-        return _mgcv_identifier
+            mgcv_identifier += ":" + self.by
+        return mgcv_identifier
 
     def _partial_effect(
         self,
@@ -515,6 +519,7 @@ class Offset(_AddMixin, TermLike):
     """Offset term, added to the linear predictor as is.
 
     This means:
+
     - For log-link models: offset induces a multiplicative effect on the response scale
     - For identity-link models: an offset induces an additive effect on the response
         scale
@@ -539,7 +544,7 @@ class Offset(_AddMixin, TermLike):
         """Label, e.g. "Offset(x)"."""
         return f"Offset({self.varnames[0]})"
 
-    def _mgcv_identifier(self, formula_idx: int = 0) -> str:
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Return offset identifier.
 
         Note: mgcv doesn't include offsets as parametric terms in predictions,
@@ -611,7 +616,7 @@ class Intercept(_AddMixin, TermLike):
         """The label, "Intercept"."""
         return "Intercept"
 
-    def _mgcv_identifier(self, formula_idx: int = 0) -> str:
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Return term identifier with optional formula index."""
         return f"(Intercept){'' if formula_idx == 0 else f'.{formula_idx}'}"
 
@@ -624,7 +629,7 @@ class Intercept(_AddMixin, TermLike):
         compute_se: bool,
     ) -> PredictionResult:
         coef = rstats.coef(rgam)
-        intercept_name = self._mgcv_identifier(formula_idx)
+        intercept_name = self.mgcv_identifier(formula_idx)
         intercept = to_py(coef.rx2[intercept_name]).item()
         se = None
         if compute_se:
@@ -659,7 +664,7 @@ class _RandomWigglyToByInterface(_AddMixin, TermLike):
     def label(self) -> str:
         return self.random_wiggly_term.label()
 
-    def _mgcv_identifier(self, formula_idx: int = 0) -> str:
+    def mgcv_identifier(self, formula_idx: int = 0) -> str:
         raise NotImplementedError()
 
     def _partial_effect(
@@ -734,7 +739,7 @@ def _smooth_partial_effect(
 
     data = data[required_cols]
 
-    smooth_name = term._mgcv_identifier(formula_idx)
+    smooth_name = term.mgcv_identifier(formula_idx)
     smooths = {s.rx2["label"][0]: s for s in rgam.rx2["smooth"]}
 
     if term.by is not None and data[term.by].dtype == "category":

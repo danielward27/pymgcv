@@ -70,7 +70,6 @@ class AbstractGAM(ABC):
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
     family: str
-    add_intercepts: bool
     fit_state: FitState | None
 
     def __init__(
@@ -121,11 +120,11 @@ class AbstractGAM(ABC):
             identifiers = set()
             labels = set()
             for term in terms:
-                mgcv_id = term._mgcv_identifier()
+                mgcv_id = term.mgcv_identifier()
                 label = term.label()
                 if mgcv_id in identifiers or label in labels:
                     raise ValueError(
-                        f"Duplicate term with label '{label}' and _mgcv_identifier "
+                        f"Duplicate term with label '{label}' and mgcv_identifier "
                         f"'{mgcv_id}' found in formula. pymgcv does not support "
                         "duplicate terms. If this is intentional, consider duplicating "
                         "the corresponding variable in your data under a new name and "
@@ -450,7 +449,7 @@ class AbstractGAM(ABC):
 
             for term in terms:
                 label = term.label()
-                identifier = term._mgcv_identifier(i)
+                identifier = term.mgcv_identifier(i)
 
                 if term.by is not None and data[term.by].dtype == "category":
                     levels = data[term.by].cat.categories.to_list()
