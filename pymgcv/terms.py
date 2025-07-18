@@ -11,6 +11,7 @@ from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import BasisLike
 from pymgcv.converters import data_to_rdf, to_py
+from pymgcv.custom_types import PredictionResult
 from pymgcv.formula_utils import _to_r_constructor_string, _Var
 
 mgcv = importr("mgcv")
@@ -71,13 +72,15 @@ class TermLike(Protocol):
         data: pd.DataFrame,
         rgam: Any,
         formula_idx: int,
-    ) -> tuple[np.ndarray, np.ndarray]:
+        compute_se: bool,
+    ) -> PredictionResult:
         """Compute partial effects and standard errors for this term.
 
         Args:
             data: DataFrame containing predictor variables.
             rgam: Fitted mgcv gam.
             formula_idx: The formula index of the term.
+            compute_se: Whether to compute standard errors.
 
         Returns:
             Tuple of (effects, standard_errors) as numpy array.
@@ -139,6 +142,7 @@ class L(_AddMixin, TermLike):
         return self.varnames[0]
 
     def label(self) -> str:
+        """Returns the label, e.g. 'L(x)'."""
         return f"L({self.varnames[0]})"
 
     def _mgcv_identifier(self, formula_idx: int = 0) -> str:
@@ -152,12 +156,14 @@ class L(_AddMixin, TermLike):
         data: pd.DataFrame,
         rgam: Any,
         formula_idx: int,
-    ) -> tuple[np.ndarray, np.ndarray]:
+        compute_se: bool,
+    ) -> PredictionResult:
         return _parameteric_partial_effect(
             term=self,
             data=data,
             rgam=rgam,
             formula_idx=formula_idx,
+            compute_se=compute_se,
         )
 
 
@@ -227,7 +233,8 @@ class Interaction(_AddMixin, TermLike):
         data: pd.DataFrame,
         rgam: Any,
         formula_idx: int,
-    ) -> tuple[np.ndarray, np.ndarray]:
+        compute_se: bool,
+    ) -> PredictionResult:
         """Compute interaction term partial effects.
 
         Creates the design matrix for the interaction and computes effects
@@ -238,6 +245,7 @@ class Interaction(_AddMixin, TermLike):
             data=data,
             rgam=rgam,
             formula_idx=formula_idx,
+            compute_se=compute_se,
         )
 
 
@@ -249,9 +257,9 @@ class S(_AddMixin, TermLike):
 
     !!! Note
 
-        For multiple variables, this creates an **isotropic** smooth, meaning all variables
-        are treated on the same scale. If variables have very different scales or units,
-        consider using [`T`][pymgcv.terms.T].
+        For multiple variables, this creates an **isotropic** smooth, meaning all
+        variables are treated on the same scale. If variables have very different scales
+        or units, consider using [`T`][pymgcv.terms.T].
 
     Args:
         *varnames: Names of variables to smooth over. For single variables,
@@ -337,12 +345,14 @@ class S(_AddMixin, TermLike):
         data: pd.DataFrame,
         rgam: Any,
         formula_idx: int,
-    ) -> tuple[np.ndarray, np.ndarray]:
+        compute_se: bool,
+    ) -> PredictionResult:
         return _smooth_partial_effect(
             data=data,
             term=self,
             rgam=rgam,
             formula_idx=formula_idx,
+            compute_se=compute_se,
         )
 
 
@@ -466,6 +476,7 @@ class T(_AddMixin, TermLike):
         return f"{prefix}({','.join(self.varnames)}{kwarg_string})"
 
     def label(self) -> str:
+        """Label, e.g. "T(x1,x2,by=x3)"."""
         by = f",by={self.by}" if self.by else ""
         return f"T({','.join(self.varnames)}{by})"
 
@@ -488,12 +499,14 @@ class T(_AddMixin, TermLike):
         data: pd.DataFrame,
         rgam: Any,
         formula_idx: int,
-    ) -> tuple[np.ndarray, np.ndarray]:
+        compute_se: bool,
+    ) -> PredictionResult:
         return _smooth_partial_effect(
             term=self,
             formula_idx=formula_idx,
             rgam=rgam,
             data=data,
+            compute_se=compute_se,
         )
 
 
@@ -523,6 +536,7 @@ class Offset(_AddMixin, TermLike):
         return f"offset({self.varnames[0]})"
 
     def label(self) -> str:
+        """Label, e.g. "Offset(x)"."""
         return f"Offset({self.varnames[0]})"
 
     def _mgcv_identifier(self, formula_idx: int = 0) -> str:
@@ -539,34 +553,38 @@ class Offset(_AddMixin, TermLike):
         data: pd.DataFrame,
         rgam: Any,
         formula_idx: int,
-    ) -> tuple[np.ndarray, np.ndarray]:
+        compute_se: bool,
+    ) -> PredictionResult:
         """Compute offset partial effects.
 
         For offset terms, the partial effect is simply the offset variable
         values, with zero standard errors.
         """
         effect = data[self.varnames[0]].to_numpy()
-        return effect, np.zeros_like(effect)
+        return PredictionResult(effect, np.zeros_like(effect) if compute_se else None)
 
 
-def _mgcv_smooth_prediction_and_se(
+def _mgcv_smooth_prediction(
     *,
     mgcv_smooth: Any,
     data: pd.DataFrame,
     rgam: Any,
-) -> tuple[np.ndarray, np.ndarray]:
+    compute_se: bool,
+) -> PredictionResult:
     """Compute prediction and standard error for a smooth given data."""
     predict_mat = mgcv.PredictMat(mgcv_smooth, data_to_rdf(data))
     first = round(mgcv_smooth.rx2["first.para"][0])
     last = round(mgcv_smooth.rx2["last.para"][0])
     coefs = rstats.coef(rgam)[(first - 1) : last]
-    pred = rbase.drop(predict_mat @ coefs)
-    cov = rbase.as_matrix(
-        rgam.rx2["Vp"].rx(rbase.seq(first, last), rbase.seq(first, last)),
-    )
-    se = rbase.sqrt(rbase.rowSums((predict_mat @ cov).ro * predict_mat))
-    se = rbase.pmax(0, se)
-    return to_py(pred), to_py(se)
+    pred = to_py(rbase.drop(predict_mat @ coefs))
+    se = None
+    if compute_se:
+        cov = rbase.as_matrix(
+            rgam.rx2["Vp"].rx(rbase.seq(first, last), rbase.seq(first, last)),
+        )
+        se = rbase.sqrt(rbase.rowSums((predict_mat @ cov).ro * predict_mat))
+        se = to_py(rbase.pmax(0, se))
+    return PredictionResult(pred, se)
 
 
 class Intercept(_AddMixin, TermLike):
@@ -590,6 +608,7 @@ class Intercept(_AddMixin, TermLike):
         return "1"
 
     def label(self) -> str:
+        """The label, "Intercept"."""
         return "Intercept"
 
     def _mgcv_identifier(self, formula_idx: int = 0) -> str:
@@ -602,15 +621,18 @@ class Intercept(_AddMixin, TermLike):
         data: pd.DataFrame,
         rgam: Any,
         formula_idx: int,
-    ) -> tuple[np.ndarray, np.ndarray]:
+        compute_se: bool,
+    ) -> PredictionResult:
         coef = rstats.coef(rgam)
         intercept_name = self._mgcv_identifier(formula_idx)
-        cov = rgam.rx2("Vp")
-        cov.rownames, cov.colnames = coef.names, coef.names
-        var = cov.rx2(intercept_name, intercept_name)
         intercept = to_py(coef.rx2[intercept_name]).item()
-        se = np.sqrt(var).item()
-        return np.full(len(data), intercept), np.full(len(data), se)
+        se = None
+        if compute_se:
+            cov = rgam.rx2("Vp")
+            cov.rownames, cov.colnames = coef.names, coef.names
+            var = cov.rx2(intercept_name, intercept_name)
+            se = np.sqrt(var).item()
+        return PredictionResult(np.full(len(data), intercept), np.full(len(data), se))
 
 
 @dataclass
@@ -646,11 +668,13 @@ class _RandomWigglyToByInterface(_AddMixin, TermLike):
         data: pd.DataFrame,
         rgam: Any,
         formula_idx: int,
-    ) -> tuple[np.ndarray, np.ndarray]:
+        compute_se: bool,
+    ) -> PredictionResult:
         return self.random_wiggly_term._partial_effect(
             data=data,
             rgam=rgam,
             formula_idx=formula_idx,
+            compute_se=compute_se,
         )
 
 
@@ -658,8 +682,10 @@ def _parameteric_partial_effect(
     term: L | Interaction,
     data: pd.DataFrame,
     rgam: Any,
+    *,
     formula_idx: int,
-) -> tuple[np.ndarray, np.ndarray]:
+    compute_se: bool,
+) -> PredictionResult:
     """Compute partial effects for parametric terms.
 
     Creates the (naive) design matrix then intersects this with the
@@ -674,17 +700,21 @@ def _parameteric_partial_effect(
     post_fix = "" if formula_idx == 0 else f".{formula_idx}"
     predict_mat.colnames = rbase.paste0(predict_mat.colnames, post_fix)
     coef_names = rbase.intersect(predict_mat.colnames, rstats.coef(rgam).names)
-
     predict_mat = rbase.as_matrix(predict_mat.rx(True, coef_names))
     coefs = rstats.coef(rgam).rx(coef_names)
-
     fitted_vals = predict_mat @ coefs
-    cov = rgam.rx2["Vp"]
-    cov.rownames = rstats.coef(rgam).names
-    cov.colnames = rstats.coef(rgam).names
-    subcov = cov.rx(coef_names, coef_names)
-    se = rbase.sqrt(rbase.rowSums((predict_mat @ subcov).ro * predict_mat))
-    return to_py(fitted_vals).squeeze(axis=-1), to_py(se)
+
+    if compute_se:
+        cov = rgam.rx2["Vp"]
+        cov.rownames = rstats.coef(rgam).names
+        cov.colnames = rstats.coef(rgam).names
+        subcov = cov.rx(coef_names, coef_names)
+        se = rbase.sqrt(rbase.rowSums((predict_mat @ subcov).ro * predict_mat))
+        se = to_py(se)
+    else:
+        se = None
+
+    return PredictionResult(to_py(fitted_vals).squeeze(axis=-1), se)
 
 
 def _smooth_partial_effect(
@@ -693,6 +723,7 @@ def _smooth_partial_effect(
     term: T | S,
     rgam: Any,
     data: pd.DataFrame,
+    compute_se: bool,
 ):
     """Predict (partial effect) and standard error for a S or T term."""
     data = data.copy()
@@ -718,18 +749,21 @@ def _smooth_partial_effect(
             if len(data_lev) == 0:
                 continue
             smooth = smooths[smooth_name + lev]
-            fit_lev, se_lev = _mgcv_smooth_prediction_and_se(
+            level_prediction = _mgcv_smooth_prediction(
                 mgcv_smooth=smooth,
                 data=data_lev,
                 rgam=rgam,
+                compute_se=compute_se,
             )
-            fit_vals[is_lev] = fit_lev
-            se[is_lev] = se_lev
-    else:
-        fit_vals, se = _mgcv_smooth_prediction_and_se(
-            mgcv_smooth=smooths[smooth_name],
-            data=data,
-            rgam=rgam,
-        )
+            fit_vals[is_lev] = level_prediction.fit
+            if compute_se:
+                assert level_prediction.se is not None
+                se[is_lev] = level_prediction.se
+        return PredictionResult(fit_vals, se)
 
-    return fit_vals, se
+    return _mgcv_smooth_prediction(
+        mgcv_smooth=smooths[smooth_name],
+        data=data,
+        rgam=rgam,
+        compute_se=compute_se,
+    )
