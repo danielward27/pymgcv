@@ -484,6 +484,22 @@ class AbstractGAM(ABC):
             )
         return results
 
+    def aic(self, k: float = 2) -> float:
+        """Calculate Akaike's Information Criterion for fitted GAM models.
+
+        Where possible (fitting [`GAM`][pymgcv.gam.GAM]/[`BAM`][pymgcv.gam.BAM]
+        models with "ML" or "REML"), this uses the approach of Wood, Pya & Saefken 2016,
+        which accounts for smoothing parameter uncertainty, without favouring
+        overly simple models.
+
+        Args:
+            k: Penalty per parameter (default 2 for classical AIC).
+        """
+        if self.fit_state is None:
+            raise ValueError("Cannot compute AIC before fitting.")
+        res = rstats.AIC(self.fit_state.rgam, k=k)
+        return res[0]
+
 
 @dataclass(init=False)
 class GAM(AbstractGAM):
