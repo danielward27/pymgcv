@@ -18,6 +18,7 @@ from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import RandomWigglyCurve
 from pymgcv.gam import AbstractGAM
+from pymgcv.qq import qq_uniform
 from pymgcv.terms import (
     L,
     S,
@@ -550,6 +551,27 @@ def _is_random_wiggly(term: TermLike) -> TypeGuard[T | S]:
     if isinstance(term, S | T):
         return isinstance(term.bs, RandomWigglyCurve)
     return False
+
+
+def plot_qq(
+    gam: AbstractGAM,
+    ax: Axes | None = None,
+    n: int = 10,
+):
+    if gam.fit_state is None:
+        raise RuntimeError("The model must be fitted before plotting.")
+
+    ax = plt.gca() if ax is None else ax
+    df = qq_uniform(gam, n=n)
+    ax.scatter(df["theoretical"], df["residuals"])
+    ax.set_xlabel("Theoretical Quantiles")
+    ax.set_ylabel("Observed")
+
+    min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])
+    max_val = max(ax.get_xlim()[1], ax.get_ylim()[1])
+    ax.plot([min_val, max_val], [min_val, max_val], color='gray', linestyle='--', linewidth=1)
+    
+    return ax
 
 
 def _with_disable(plot_func):
