@@ -11,8 +11,10 @@ while maintaining pythonic data structures on the Python side.
 
 from collections.abc import Iterable
 
+import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
+from pandas.api.types import is_integer_dtype
 from rpy2.robjects import numpy2ri, pandas2ri
 from rpy2.robjects.packages import importr
 
@@ -75,7 +77,14 @@ def to_py(x):
         ```
     """
     with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
-        return ro.conversion.get_conversion().rpy2py(x)
+        py_obj = ro.conversion.get_conversion().rpy2py(x)
+
+    if isinstance(py_obj, pd.DataFrame):  # Handle R nan integer encoding
+        r_nan = -2147483648
+        for col in py_obj.columns:
+            if is_integer_dtype(py_obj[col]) and any(py_obj[col] == r_nan):
+                py_obj[col] = py_obj[col].replace(r_nan, np.nan).astype(pd.Int64Dtype())
+    return py_obj
 
 
 def data_to_rdf(
