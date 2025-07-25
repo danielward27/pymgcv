@@ -98,3 +98,22 @@ def test_coef_and_cov(test_case: GAMTestCase):
     assert cov.shape[0] == cov.shape[1]
     assert cov.shape[0] == coef.shape[0]
     assert np.all(coef.index == cov.index)
+
+
+# Just check it gives something reasonable in both univariate, and multivariate, and bam cases
+residual_test_cases = [
+    "GAM - multivariate_normal_gam",
+    "GAM - gaulss_gam",
+    "BAM - smooth_1d_random_wiggly_curve_gam",
+]
+
+
+@pytest.mark.parametrize(
+    "test_case",
+    [test_cases[k] for k in residual_test_cases],
+    ids=residual_test_cases,
+)
+def test_residuals(test_case: GAMTestCase):
+    gam = test_case.gam_model.fit(test_case.data)
+    residuals = gam.residuals()
+    assert residuals.shape[0] == test_case.data.shape[0]

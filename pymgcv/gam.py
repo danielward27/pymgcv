@@ -500,6 +500,39 @@ class AbstractGAM(ABC):
         res = rstats.AIC(self.fit_state.rgam, k=k)
         return res[0]
 
+    def residuals(
+        self,
+        type: Literal[
+            "deviance",
+            "pearson",
+            "scaled.pearson",
+            "working",
+            "response",
+        ] = "deviance",
+    ):
+        r"""Compute the residuals for a fitted model.
+
+        Args:
+            type: Type of residuals to compute, one of:
+
+                - **response**: Raw residuals $y - \mu$, where $y$ is the observed data and $\mu$
+                    is the model fitted value.
+                - **pearson**: Pearson residuals — raw residuals divided by the square root of the
+                    model's mean-variance relationship.
+                    $$
+                    \frac{y - \mu}{\sqrt{V(\mu)}}
+                    $$
+                - **scaled.pearson**: Raw residuals divided by the standard deviation of the
+                    data according to the model mean variance relationship and estimated scale
+                    parameter.
+                - **deviance**: Deviance residuals as defined by the model’s family.
+                - **working**: Working residuals are the residuals returned from
+                    model fitting at convergence.
+        """
+        if self.fit_state is None:
+            raise ValueError("Cannot compute residuals before fitting.")
+        return to_py(rstats.residuals(self.fit_state.rgam, type=type))
+
 
 @dataclass(init=False)
 class GAM(AbstractGAM):
