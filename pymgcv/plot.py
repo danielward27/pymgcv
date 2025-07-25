@@ -2,6 +2,7 @@
 
 import types
 from collections.abc import Callable
+from dataclasses import dataclass
 from math import ceil
 from typing import Any, TypeGuard
 
@@ -13,9 +14,10 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from pandas import CategoricalDtype
 from pandas.api.types import is_numeric_dtype
+from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import RandomWigglyCurve
-from pymgcv.gam import GAM, AbstractGAM
+from pymgcv.gam import AbstractGAM
 from pymgcv.terms import (
     L,
     S,
@@ -24,6 +26,9 @@ from pymgcv.terms import (
     _RandomWigglyToByInterface,
 )
 
+rbase = importr("base")
+rstats = importr("stats")
+
 
 def plot_gam(
     gam: AbstractGAM,
@@ -31,6 +36,7 @@ def plot_gam(
     ncols: int = 2,
     residuals: bool = False,
     to_plot: type | types.UnionType | dict[str, list[TermLike]] = TermLike,
+    kwargs_mapper: dict[Callable, dict[str, Any]] | None = None,
 ) -> tuple[Figure, plt.Axes | np.ndarray]:
     """Plot a gam model.
 
@@ -42,9 +48,25 @@ def plot_gam(
             of that type (e.g. ``to_plot = S | T`` to plot smooths).
             If a dictionary, it should map the target names to
             an iterable of terms to plot (similar to how models are specified).
+        kwargs_mapper: Used to pass keyword arguments to the underlying plot functions.
+            A dictionary mapping the plotting function to kwargs. For example, to
+            disable the confidence intervals on the 1d plots, set
+            ``kwargs_mapper`` to
+            ```python
+            from pymgcv.plot import plot_continuous_1d
+            {plot_continuous_1d: {"fill_between_kwargs": {"disable": True}}}
+            ```
+
     """
     if gam.fit_state is None:
         raise ValueError("Cannot plot before fitting the model.")
+
+    kwargs_mapper = {} if kwargs_mapper is None else kwargs_mapper
+
+    if residuals:
+        kwargs_mapper.setdefault(plot_continuous_1d, {}).setdefault("residuals", True)
+        kwargs_mapper.setdefault(plot_categorical, {}).setdefault("residuals", True)
+
     if isinstance(to_plot, type | types.UnionType):
         to_plot = {
             k: [v for v in terms if isinstance(v, to_plot)]
@@ -52,29 +74,27 @@ def plot_gam(
         }
 
     data = gam.fit_state.data
-    n_axs = []
     plotters = []
     for target, terms in to_plot.items():
         for term in terms:
             try:
-                n_ax, plotter = get_term_plotter(
+                plotter = get_term_plotter(
                     target,
                     term=term,
                     gam=gam,
                     data=data,
-                    residuals=residuals,
                 )
             except NotImplementedError:
                 continue
-            n_axs.append(n_ax)
             plotters.append(plotter)
 
-    if sum(n_axs) == 0:
+    n_axs = sum(p.required_axes for p in plotters)
+    if n_axs == 0:
         raise ValueError("Do not know how to plot any terms in the model.")
 
-    ncols = min(sum(n_axs), ncols)
+    ncols = min(n_axs, ncols)
     fig, axes = plt.subplots(
-        nrows=ceil(sum(n_axs) / ncols),
+        nrows=ceil(n_axs / ncols),
         ncols=ncols,
         layout="constrained",
     )
@@ -83,22 +103,27 @@ def plot_gam(
     axes = axes.ravel()
 
     idx = 0
-    for n_ax, plotter in zip(n_axs, plotters, strict=True):
-        plotter(axes[idx : (idx + n_ax)])
-        idx += n_ax
+    for plotter in plotters:
+        kwargs = kwargs_mapper.get(plotter.underlying_function, {})
+        plotter.make_plot(axes[idx : (idx + plotter.required_axes)], **kwargs)
+        idx += plotter.required_axes
 
     return fig, axes
+
+
+@dataclass
+class _TermPlotter:
+    make_plot: Callable
+    underlying_function: Callable
+    required_axes: int = 1
 
 
 def get_term_plotter(
     target: str,
     term: TermLike,
-    gam: GAM,
+    gam: AbstractGAM,
     data: pd.DataFrame | None = None,
-    *,
-    residuals: bool = False,
-    **kwargs,
-) -> tuple[int, Callable]:
+) -> _TermPlotter:
     """Utility for plotting a term in a model.
 
     Because some terms need multiple axes for plotting, this returns the number of axes
@@ -123,28 +148,29 @@ def get_term_plotter(
     def _all_numeric(dtypes):
         return all(is_numeric_dtype(dtype) for dtype in dtypes)
 
+    # TODO improve passing of kwargs, or output the underlying method name
+    # such that we can select an appropriate set of kwargs in plot_gam.
     match (dim, term):
         case (1, L()) if isinstance(dtypes[term.varnames[0]], CategoricalDtype):
 
-            def _plot_wrapper(axes):
+            def _plot_wrapper(axes, **kwargs):
                 axes[0] = plot_categorical(
                     target=target,
                     term=term,
                     gam=gam,
                     data=data,
                     ax=axes[0],
-                    residuals=residuals,
                     **kwargs,
                 )
                 return axes
 
-            return (1, _plot_wrapper)
+            return _TermPlotter(_plot_wrapper, plot_categorical)
 
         # TODO "re" basis?
 
         case (1, TermLike()) if _all_numeric(dtypes):
 
-            def _plot_wrapper(axes):
+            def _plot_wrapper(axes, **kwargs):
                 for level in levels:
                     axes[0] = plot_continuous_1d(
                         target=target,
@@ -153,7 +179,6 @@ def get_term_plotter(
                         data=data,
                         level=level,
                         ax=axes[0],
-                        residuals=residuals,
                         plot_kwargs={"label": level},
                         **kwargs,
                     )
@@ -161,11 +186,11 @@ def get_term_plotter(
                     axes[0].legend()
                 return axes
 
-            return (1, _plot_wrapper)
+            return _TermPlotter(_plot_wrapper, plot_continuous_1d)
 
         case (2, TermLike()) if _all_numeric(dtypes):
 
-            def _plot_wrapper(axes):
+            def _plot_wrapper(axes, **kwargs):
                 for i, level in enumerate(levels):
                     axes[i] = plot_continuous_2d(
                         target=target,
@@ -180,7 +205,11 @@ def get_term_plotter(
                         axes[i].set_title(f"Level={level}")
                 return axes
 
-            return (len(levels), _plot_wrapper)
+            return _TermPlotter(
+                _plot_wrapper,
+                plot_continuous_2d,
+                required_axes=len(levels),
+            )
 
         case _:
             raise NotImplementedError(f"Did not know how to plot term {term}.")
@@ -201,15 +230,11 @@ def plot_continuous_1d(
     scatter_kwargs: dict[str, Any] | None = None,
     ax: Axes | None = None,
 ) -> Axes:
-    """Plot 1D smooth or linear terms with confidence intervals and partial residuals.
+    """Plot 1D smooth or linear terms with confidence intervals.
 
-    Creates a plot showing:
-    - The estimated smooth function or linear relationship
-    - Confidence intervals around the estimate
-    - Partial residuals as scatter points if available
+    !!! note
 
-    .. Note::
-        For terms with numeric "by" variables, the "by" variable is set to 1,
+        - For terms with numeric "by" variables, the "by" variable is set to 1,
         showing the unscaled effect of the smooth.
 
     Args:
@@ -230,6 +255,7 @@ def plot_continuous_1d(
             the main curve.
         fill_between_kwargs: Keyword arguments passed to
             `matplotlib.pyplot.fill_between` for the confidence interval band.
+            Pass `{"disable": True}` to disable the confidence interval band.
         scatter_kwargs: Keyword arguments passed to `matplotlib.pyplot.scatter`
             for partial residuals (ignored if `residuals=False`).
         ax: Matplotlib Axes object to plot on. If None, uses current axes.
@@ -256,6 +282,7 @@ def plot_continuous_1d(
 
     if level is not None:
         data = data.loc[data[term.by] == level]
+        assert isinstance(data, pd.DataFrame)
 
     # TODO handling of partial residuals with numeric by?
     x0_linspace = np.linspace(
@@ -287,7 +314,7 @@ def plot_continuous_1d(
         if "c" not in kwargs and "color" not in kwargs:
             kwargs["color"] = current_color
 
-    pred = gam.partial_effect(target, term, spaced_data)
+    pred = gam.partial_effect(target, term, spaced_data, compute_se=True)
 
     # Add partial residuals
     if residuals and target in data.columns:
@@ -295,14 +322,15 @@ def plot_continuous_1d(
         ax.scatter(data[term.varnames[0]], partial_residuals, **scatter_kwargs)
 
     # Plot interval
-    ax.fill_between(
+    assert pred.se is not None
+    _with_disable(ax.fill_between)(
         x0_linspace,
-        pred["fit"] - n_standard_errors * pred["se"],
-        pred["fit"] + n_standard_errors * pred["se"],
+        pred.fit - n_standard_errors * pred.se,
+        pred.fit + n_standard_errors * pred.se,
         **fill_between_kwargs,
     )
 
-    ax.plot(x0_linspace, pred["fit"], **plot_kwargs)
+    ax.plot(x0_linspace, pred.fit, **plot_kwargs)
     ax.set_xlabel(term.varnames[0])
     ax.set_ylabel(f"link({target})~{term.label()}")
     return ax
@@ -344,7 +372,7 @@ def plot_continuous_2d(
         contourf_kwargs: Keyword arguments passed to `matplotlib.pyplot.contourf`
             for the filled contours.
         scatter_kwargs: Keyword arguments passed to `matplotlib.pyplot.scatter`
-            for the data points overlay.
+            for the data points overlay. Pass `{"disable": True}` to avoid plotting.
         ax: Matplotlib Axes object to plot on. If None, uses current axes.
 
     Returns:
@@ -373,6 +401,7 @@ def plot_continuous_2d(
 
     if level is not None:
         data = data.loc[data[term.by] == level]
+        assert isinstance(data, pd.DataFrame)
 
     x0_lims = (data[term.varnames[0]].min(), data[term.varnames[0]].max())
     x1_lims = (data[term.varnames[1]].min(), data[term.varnames[1]].max())
@@ -407,23 +436,23 @@ def plot_continuous_2d(
         target,
         term,
         data=spaced_data,
-    )["fit"]
+    ).fit
 
     mesh = ax.contourf(
         x0_mesh,
         x1_mesh,
-        pred.to_numpy().reshape(x0_mesh.shape),
+        pred.reshape(x0_mesh.shape),
         **contourf_kwargs,
     )
-    ax.contour(
+    _with_disable(ax.contour)(
         x0_mesh,
         x1_mesh,
-        pred.to_numpy().reshape(x0_mesh.shape),
+        pred.reshape(x0_mesh.shape),
         **contour_kwargs,
     )
     color_bar = ax.figure.colorbar(mesh, ax=ax, pad=0)
     color_bar.set_label(f"link({target})~{term.label()}")
-    ax.scatter(
+    _with_disable(ax.scatter)(
         data[term.varnames[0]],
         data[term.varnames[1]],
         **scatter_kwargs,
@@ -459,6 +488,7 @@ def plot_categorical(
             categorical variable.
         gam: GAM model containing the term to plot.
         data: DataFrame containing the categorical variable and response.
+        residuals: Whether to plot partial residuals (jittered on x-axis).
         n_standard_errors: Number of standard errors for confidence intervals.
         errorbar_kwargs: Keyword arguments passed to `matplotlib.pyplot.errorbar`.
         scatter_kwargs: Keyword arguments passed to `matplotlib.pyplot.scatter`.
@@ -476,10 +506,9 @@ def plot_categorical(
 
     ax = plt.gca() if ax is None else ax
 
-    # TODO: level ordered/order invariance
     levels = pd.Series(
         data[term.varnames[0]].cat.categories,
-        dtype="category",
+        dtype=data[term.varnames[0]].dtype,
         name=term.varnames[0],
     )
 
@@ -501,11 +530,15 @@ def plot_categorical(
         target=target,
         term=term,
         data=pd.DataFrame(levels),
+        compute_se=True,
     )
+
+    assert pred.se is not None
+
     ax.errorbar(
         x=levels.cat.codes,
-        y=pred["fit"],
-        yerr=n_standard_errors * pred["se"],
+        y=pred.fit,
+        yerr=n_standard_errors * pred.se,
         **errorbar_kwargs,
     )
     ax.set_xlabel(term.varnames[0])
@@ -517,3 +550,14 @@ def _is_random_wiggly(term: TermLike) -> TypeGuard[T | S]:
     if isinstance(term, S | T):
         return isinstance(term.bs, RandomWigglyCurve)
     return False
+
+
+def _with_disable(plot_func):
+    """Wraps a plot function to easily disable with disable=True."""
+
+    def wrapper(*args, disable=False, **kwargs):
+        if disable:
+            return None
+        return plot_func(*args, **kwargs)
+
+    return wrapper

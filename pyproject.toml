@@ -36,8 +36,7 @@ dev = [
     "pytest-markdown-docs",
     "mdit-py-plugins",
     "markdown-it-py",
-    "jupytext",                    # Allows converting python examples to notebooks
-    "nbconvert",                   # Allows converting notebooks to python scripts
+    "nbconvert",
 ]
 
 # ----------------- ruff config -------------------#

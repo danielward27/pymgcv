@@ -14,7 +14,7 @@ from pymgcv.basis_functions import (
     RandomEffect,
     RandomWigglyCurve,
 )
-from pymgcv.converters import data_to_rdf, rlistvec_to_dict, to_py
+from pymgcv.converters import data_to_rdf, to_py
 from pymgcv.gam import BAM, GAM, AbstractGAM
 from pymgcv.terms import Interaction, L, S, T
 
@@ -344,7 +344,7 @@ def markov_random_field_gam(model_type: type[AbstractGAM]) -> GAMTestCase:
     polys = ro.packages.data(mgcv).fetch("columb.polys")["columb.polys"]
     data = ro.packages.data(mgcv).fetch("columb")["columb"]
     data = to_py(data)
-    polys_list = list(rlistvec_to_dict(polys).values())
+    polys_list = list([to_py(x) for x in polys.values()])
     return GAMTestCase(
         mgcv_call=f"{model_type.__name__.lower()}(crime ~ s(district,bs='mrf',xt=list(polys=polys)),data=columb,method='REML')",
         gam_model=model_type(
