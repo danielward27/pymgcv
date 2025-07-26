@@ -555,22 +555,46 @@ def _is_random_wiggly(term: TermLike) -> TypeGuard[T | S]:
 
 def plot_qq(
     gam: AbstractGAM,
-    ax: Axes | None = None,
+    *,
     n: int = 10,
+    scatter_kwargs: dict | None = None,
+    plot_kwargs: dict | None = None,
+    ax: Axes | None = None,
 ):
+    """A Q-Q plot of deviance residuals.
+
+    Args:
+        gam: The fitted GAM model.
+        n: The number of simulated sets to use for generating the theoretical
+            quantiles.
+        scatter_kwargs: Key word arguments passed to `matplotlib.pyplot.scatter`.
+        plot_kwargs: Key word arguments passed to `matplotlib.pyplot.plot` for
+            plotting the reference line.
+        ax: Matplotlib axes to use for the plot.
+
+    Returns:
+        The matplotlib axes object.
+    """
     if gam.fit_state is None:
         raise RuntimeError("The model must be fitted before plotting.")
 
+    scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
+    scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
+
+    plot_kwargs = {} if plot_kwargs is None else plot_kwargs
+    if "c" not in plot_kwargs and "color" not in plot_kwargs:
+        plot_kwargs["color"] = "gray"
+    plot_kwargs.setdefault("linestyle", "--")
+
     ax = plt.gca() if ax is None else ax
     df = qq_uniform(gam, n=n)
-    ax.scatter(df["theoretical"], df["residuals"])
+    ax.scatter(df["theoretical"], df["residuals"], **scatter_kwargs)
     ax.set_xlabel("Theoretical Quantiles")
     ax.set_ylabel("Observed")
 
     min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])
     max_val = max(ax.get_xlim()[1], ax.get_ylim()[1])
-    ax.plot([min_val, max_val], [min_val, max_val], color='gray', linestyle='--', linewidth=1)
-    
+    ax.plot([min_val, max_val], [min_val, max_val], **plot_kwargs)
     return ax
 
 
