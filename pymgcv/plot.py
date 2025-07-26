@@ -35,7 +35,7 @@ def plot_gam(
     gam: AbstractGAM,
     *,
     ncols: int = 2,
-    residuals: bool = False,
+    plot_scatter: bool = False,
     to_plot: type | types.UnionType | dict[str, list[TermLike]] = TermLike,
     kwargs_mapper: dict[Callable, dict[str, Any]] | None = None,
 ) -> tuple[Figure, plt.Axes | np.ndarray]:
@@ -44,29 +44,31 @@ def plot_gam(
     Args:
         gam: The fitted gam object to plot.
         ncols: The number of columns before wrapping axes.
-        residuals: Whether to plot the residuals (where possible). Defaults to False.
+        plot_scatter: Whether to plot the residuals (where possible), and the overlayed
+            datapoints on 2D plots. Defaults to False.
         to_plot: Which terms to plot. If a type, only plots terms
             of that type (e.g. ``to_plot = S | T`` to plot smooths).
             If a dictionary, it should map the target names to
             an iterable of terms to plot (similar to how models are specified).
-        kwargs_mapper: Used to pass keyword arguments to the underlying plot functions.
-            A dictionary mapping the plotting function to kwargs. For example, to
-            disable the confidence intervals on the 1d plots, set
+        kwargs_mapper: Used to pass keyword arguments to the underlying `pymgcv.plot`
+            functions. A dictionary mapping the plotting function to kwargs. For
+            example, to disable the confidence intervals on the 1d plots, set
             ``kwargs_mapper`` to
             ```python
             from pymgcv.plot import plot_continuous_1d
             {plot_continuous_1d: {"fill_between_kwargs": {"disable": True}}}
             ```
-
     """
     if gam.fit_state is None:
         raise ValueError("Cannot plot before fitting the model.")
 
     kwargs_mapper = {} if kwargs_mapper is None else kwargs_mapper
 
-    if residuals:
-        kwargs_mapper.setdefault(plot_continuous_1d, {}).setdefault("residuals", True)
+    if plot_scatter:
+        # TODO manually check this. Does providing a kwargs mapper interfer with this?
         kwargs_mapper.setdefault(plot_categorical, {}).setdefault("residuals", True)
+        kwargs_mapper.setdefault(plot_continuous_1d, {}).setdefault("residuals", True)
+        kwargs_mapper.setdefault(plot_continuous_2d, {}).setdefault("scatter_kwargs", {"disable": False})
 
     if isinstance(to_plot, type | types.UnionType):
         to_plot = {
@@ -569,7 +571,7 @@ def plot_qq(
             quantiles.
         scatter_kwargs: Key word arguments passed to `matplotlib.pyplot.scatter`.
         plot_kwargs: Key word arguments passed to `matplotlib.pyplot.plot` for
-            plotting the reference line.
+            plotting the reference line. Pass {"disable": True} to avoid plotting.
         ax: Matplotlib axes to use for the plot.
 
     Returns:
@@ -579,7 +581,7 @@ def plot_qq(
         raise RuntimeError("The model must be fitted before plotting.")
 
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
-    scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
+    scatter_kwargs.setdefault("s", 0.5 * rcParams["lines.markersize"] ** 2)
 
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
     if "c" not in plot_kwargs and "color" not in plot_kwargs:
@@ -594,7 +596,7 @@ def plot_qq(
 
     min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])
     max_val = max(ax.get_xlim()[1], ax.get_ylim()[1])
-    ax.plot([min_val, max_val], [min_val, max_val], **plot_kwargs)
+    _with_disable(ax.plot)([min_val, max_val], [min_val, max_val], **plot_kwargs)
     return ax
 
 

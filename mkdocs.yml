@@ -52,6 +52,7 @@ nav:
       - api/gam.md
       - api/terms.md
       - api/basis_functions.md
+      - api/families.md
       - api/plot.md
   - Development:
       - contributing.md

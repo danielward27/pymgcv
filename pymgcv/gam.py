@@ -15,7 +15,7 @@ from rpy2.robjects.packages import importr
 from pymgcv.converters import data_to_rdf, to_py, to_rpy
 from pymgcv.custom_types import PartialEffectsResult, PredictionResult
 from pymgcv.terms import Intercept, TermLike
-
+from pymgcv.families import FamilyLike, Gaussian
 mgcv = importr("mgcv")
 rbase = importr("base")
 rutils = importr("utils")
@@ -69,7 +69,7 @@ class AbstractGAM(ABC):
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
-    family: str
+    family: FamilyLike
     fit_state: FitState | None
 
     def __init__(
@@ -77,7 +77,7 @@ class AbstractGAM(ABC):
         predictors: dict[str, Iterable[TermLike] | TermLike],
         family_predictors: dict[str, Iterable[TermLike] | TermLike] | None = None,
         *,
-        family: str = "gaussian",
+        family: FamilyLike | None = None,
         add_intercepts: bool = True,
     ):
         r"""Initialize a GAM/BAM model.
@@ -90,14 +90,15 @@ class AbstractGAM(ABC):
             family_predictors: Dictionary mapping family parameter names to an iterable
                 of terms for modeling those parameters. Keys are used as labels during
                 prediction and should match the order expected by the mgcv family.
-            family: String specifying the mgcv family for the error distribution.
-                This is passed directly to R's mgcv and can include family arguments.
+            family: Family for the error distribution. See [Families](./families.md)
+                for available options.
             add_intercepts: If True, adds an intercept term to each formula.
                 If false, we assume that any [`Intercept`][pymgcv.terms.Intercept]
                 terms desired are manually added to the formulae.
         """
         predictors, family_predictors = deepcopy((predictors, family_predictors))
         family_predictors = {} if family_predictors is None else family_predictors
+        family = Gaussian() if family is None else family
 
         def _ensure_list_of_terms(d):
             return {
@@ -368,25 +369,12 @@ class AbstractGAM(ABC):
         link_fit = partial_effects.sum(axis=1).to_numpy()
         term_effect = partial_effects.pop(term.label()).to_numpy()
 
-        family = self.family
-        if "(" not in family:
-            family = f"{family}()"
-
-        rfam: ro.ListVector = ro.r(family)  # type: ignore
-        inv_link_fn = rfam.rx2("linkinv")  # TODO this breaks with GAULSS
-        d_mu_d_eta_fn = rfam.rx2("mu.eta")
-
-        if rbase.is_null(inv_link_fn)[0] or rbase.is_null(d_mu_d_eta_fn)[0]:
-            raise NotImplementedError(
-                f"Computing partial residuals for {family} not yet supported.",
-            )
-        rpy_link_fit = to_rpy(link_fit)
-        response_residual = data[target] - to_py(inv_link_fn(rpy_link_fit))
+        response_residual = data[target] - self.family.inverse_link(link_fit)
 
         # We want to transform residuals to link scale.
         # link(response) - link(response_fit) not sensible: poisson + log link -> log(0)
         # Instead use first order taylor expansion of link function around the fit
-        d_mu_d_eta = to_py(d_mu_d_eta_fn(rpy_link_fit))
+        d_mu_d_eta = self.family.dmu_deta(link_fit)
         d_mu_d_eta = np.maximum(d_mu_d_eta, 1e-6)  # Numerical stability
 
         # If ĝ is the first order approxmation to link, below is:
@@ -540,7 +528,7 @@ class GAM(AbstractGAM):
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
-    family: str
+    family: FamilyLike
     fit_state: FitState | None
 
     def fit(
@@ -596,7 +584,7 @@ class GAM(AbstractGAM):
         rgam = mgcv.gam(
             self._to_r_formulae(),
             data=data_to_rdf(data),
-            family=ro.rl(self.family),
+            family=self.family.rfamily,
             method=method,
             weights=ro.NULL if weights is None else np.asarray(weights),
             optimizer=to_rpy(np.array(optimizer)),
@@ -701,7 +689,7 @@ class BAM(AbstractGAM):
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
-    family: str
+    family: FamilyLike
     fit_state: FitState | None
 
     def fit(
@@ -762,7 +750,7 @@ class BAM(AbstractGAM):
             rgam=mgcv.bam(
                 self._to_r_formulae(),
                 data=data_to_rdf(data),
-                family=ro.rl(self.family),
+                family=self.family.rfamily,
                 method=method,
                 weights=ro.NULL if weights is None else np.asarray(weights),
                 scale=0 if scale is None else (-1 if scale == "unknown" else scale),

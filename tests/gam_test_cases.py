@@ -15,12 +15,9 @@ from pymgcv.basis_functions import (
     RandomWigglyCurve,
 )
 from pymgcv.converters import data_to_rdf, to_py
+from pymgcv.families import MVN, GauLSS, Poisson
 from pymgcv.gam import BAM, GAM, AbstractGAM
 from pymgcv.terms import Interaction, L, S, T
-
-
-class UnsupportedByMGCV(Exception):  # So we can easily try except
-    pass
 
 
 @dataclass
@@ -156,7 +153,7 @@ def multivariate_normal_gam(model_type: type[AbstractGAM]):
     )
     return GAMTestCase(
         mgcv_call=f"{model_type.__name__.lower()}(list(y0 ~ s(x, k=5), y1 ~ x), data=data, family=mvn(d=2))",
-        gam_model=model_type({"y0": S("x", k=5), "y1": L("x")}, family="mvn(d=2)"),
+        gam_model=model_type({"y0": S("x", k=5), "y1": L("x")}, family=MVN(d=2)),
         data=data,
         expected_predict_terms_structure={
             "y0": ["S(x)", "Intercept"],
@@ -179,7 +176,7 @@ def gaulss_gam(model_type: type[AbstractGAM]):
         gam_model=model_type(
             {"y": S("x0")},
             family_predictors={"log_scale": S("x1")},
-            family="gaulss()",
+            family=GauLSS(),
         ),
         data=data,
         expected_predict_terms_structure={
@@ -333,7 +330,7 @@ def poisson_gam(model_type: type[AbstractGAM]) -> GAMTestCase:
     )
     return GAMTestCase(
         mgcv_call=f"{model_type.__name__.lower()}(counts~s(x), data=data, family=poisson)",
-        gam_model=model_type({"counts": S("x")}, family="poisson"),
+        gam_model=model_type({"counts": S("x")}, family=Poisson()),
         data=data,
         expected_predict_terms_structure={"counts": ["S(x)", "Intercept"]},
     )
