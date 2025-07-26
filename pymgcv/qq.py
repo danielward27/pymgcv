@@ -24,7 +24,7 @@ def _get_family_functions(rgam):
     q_fun = family.rx2["qf"]
     if rbase.is_null(q_fun)[0]:
         family_name = str(family.rx2["family"][0])
-        raise ValueError(f"Quantile function not available for family '{family_name}'")
+        raise NotImplementedError(f"Quantile function not available for family '{family_name}'")
 
     return dev_resid_fun, q_fun
 
