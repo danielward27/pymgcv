@@ -14,9 +14,9 @@ from pymgcv.basis_functions import (
     RandomEffect,
     RandomWigglyCurve,
 )
-from pymgcv.converters import data_to_rdf, to_py
 from pymgcv.families import MVN, GauLSS, Poisson
 from pymgcv.gam import BAM, GAM, AbstractGAM
+from pymgcv.rpy_utils import data_to_rdf, to_py
 from pymgcv.terms import Interaction, L, S, T
 
 

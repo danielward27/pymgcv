@@ -10,6 +10,7 @@ while maintaining pythonic data structures on the Python side.
 """
 
 from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -18,7 +19,7 @@ from pandas.api.types import is_integer_dtype
 from rpy2.robjects import numpy2ri, pandas2ri
 from rpy2.robjects.packages import importr
 
-base = importr("base")
+rbase = importr("base")
 
 
 def to_rpy(x):
@@ -52,7 +53,7 @@ def to_rpy(x):
         return ro.conversion.get_conversion().py2rpy(x)
 
 
-def to_py(x):
+def to_py(x) -> Any:
     """Convert R object to Python object using rpy2.
 
     Handles automatic conversion of R data structures back to their Python
@@ -124,10 +125,24 @@ def data_to_rdf(
     matrices = {}
     for prefix in as_array_prefixes:
         subset = data.filter(like=prefix)
-        matrices[prefix] = base.I(to_rpy(subset.to_numpy()))
-    matrices_df = base.data_frame(**matrices)
+        matrices[prefix] = rbase.I(to_rpy(subset.to_numpy()))
+    matrices_df = rbase.data_frame(**matrices)
     if rpy_df.nrow == 0:
         return matrices_df
     if matrices_df.nrow == 0:
         return rpy_df
-    return base.cbind(rpy_df, matrices_df)
+    return rbase.cbind(rpy_df, matrices_df)
+
+
+class NullAttributeError(Exception):
+    """Raised when an attribute is required but not found in an R object."""
+
+
+def is_null(object) -> bool:
+    """Check if an object is NULL.
+
+    We use this to avoid the possible confusion with ``rbase.is_null`` returning
+    a boolean vector, which e.g. acts as a "truthy" value regardless of its
+    contents.
+    """
+    return rbase.is_null(object)[0]

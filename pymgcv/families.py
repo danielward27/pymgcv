@@ -1,20 +1,21 @@
 """Families supported by pymgcv."""
 
-from dataclasses import dataclass
 from typing import Literal, Protocol
 
 import numpy as np
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
-from pymgcv.converters import to_py, to_rpy
+from pymgcv.rpy_utils import is_null, to_py, to_rpy
 
+rbase = importr("base")
 rstats = importr("stats")
 rmgcv = importr("mgcv")
 
 # TODO Some families have multiple links (e.g. gaulss)
 
 
+# TODO switch to absract base class
 class FamilyLike(Protocol):
     rfamily: ro.ListVector
 
@@ -30,17 +31,28 @@ class FamilyLike(Protocol):
         """Compute the derivative dmu/deta of the link function."""
         ...
 
-    def quantile(self, x: np.ndarray) -> np.ndarray:
+    def quantile(
+        self,
+        *,
+        probs: float | np.ndarray,
+        mu: int | float | np.ndarray,
+        wt: int | float | np.ndarray,
+        scale: int | float | np.ndarray | None = None,
+    ) -> np.ndarray:
         """Compute the quantile function."""
         ...
 
-    def deviance_residuals(self, *, y: np.ndarray, fit: np.ndarray, weights: np.ndarray) -> np.ndarray:
-        """Compute the deviance residuals."""
+    def sample(
+        self,
+        mu: int | float | np.ndarray,
+        wt: int | float | np.ndarray,
+        scale: int | float | np.ndarray | None = None,
+    ) -> np.ndarray:
+        """Sample the family distribution (R family rd method)."""
         ...
 
 
-
-class RStandardFamilyMixin:
+class FamilyMixin:
     """Forwards methods from R standard families."""
 
     rfamily: ro.ListVector
@@ -60,25 +72,55 @@ class RStandardFamilyMixin:
         assert isinstance(result, np.ndarray)
         return result
 
-    def quantile(self, x: np.ndarray) -> np.ndarray:
+    def quantile(
+        self,
+        *,
+        probs: float | np.ndarray,
+        mu: int | float | np.ndarray,
+        wt: int | float | np.ndarray | None = None,
+        scale: int | float | np.ndarray | None = None,
+    ) -> np.ndarray:
         """Compute the quantile function."""
-        result = rmgcv.fix_family_qf(self.rfamily).rx2["qf"](to_rpy(x))
+        q_fun = rmgcv.fix_family_qf(self.rfamily).rx2["qf"]
+
+        if is_null(q_fun):
+            raise NotImplementedError(
+                f"Quantile function not available for family {self.__class__.__name__}.",
+            )
+        kwargs = {"mu": mu, "wt": wt, "scale": scale}
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        arrays = np.broadcast_arrays(*kwargs.values())
+        kwargs = {k: to_rpy(v) for k, v in zip(kwargs.keys(), arrays, strict=True)}
+        result = to_py(q_fun(to_rpy(probs), **kwargs))
         assert isinstance(result, np.ndarray)
         return result
 
-    def deviance_residuals(self, *, y: np.ndarray, fit: np.ndarray, weights: np.ndarray) -> np.ndarray:
-        """Compute the deviance residuals."""
-        d_resid = to_py(self.rfamily.rx2["dev.resids"](to_rpy(y), to_rpy(fit), to_rpy(weights)))
-        assert isinstance(d_resid, np.ndarray)
-        return d_resid
+    def sample(
+        self,
+        mu: int | float | np.ndarray,
+        wt: int | float | np.ndarray | None = None,
+        scale: int | float | np.ndarray | None = None,
+    ):
+        """Sample the family distributions (R family rd method)."""
+        sample_fn = rmgcv.fix_family_rd(self.rfamily).rx2["rd"]
+        if is_null(sample_fn):
+            raise NotImplementedError(
+                f"Sample function not available for family {self.__name__}.",
+            )
+
+        kwargs = {"mu": mu, "wt": wt, "scale": scale}
+        kwargs = {k: v for k, v in kwargs.items() if v is not None}
+        arrays = np.broadcast_arrays(*kwargs.values())
+        kwargs = {k: to_rpy(v) for k, v in zip(kwargs.keys(), arrays, strict=True)}
+        return to_py(sample_fn(**kwargs))
 
 
-class Gaussian(RStandardFamilyMixin, FamilyLike):
+class Gaussian(FamilyMixin, FamilyLike):
     def __init__(self, link: Literal["identity", "log", "inverse"] = "identity"):
         self.rfamily = rstats.gaussian(link=link)
 
 
-class Binomial(RStandardFamilyMixin, FamilyLike):
+class Binomial(FamilyMixin, FamilyLike):
     def __init__(
         self,
         link: Literal["logit", "probit", "cauchit", "log", "cloglog"] = "logit",
@@ -91,7 +133,7 @@ class Binomial(RStandardFamilyMixin, FamilyLike):
         self.rfamily = rstats.binomial(link=link)
 
 
-class Gamma(RStandardFamilyMixin, FamilyLike):
+class Gamma(FamilyMixin, FamilyLike):
     def __init__(self, link: Literal["inverse", "identity", "log"] = "inverse"):
         """Gamma family with specified link function.
 
@@ -101,7 +143,7 @@ class Gamma(RStandardFamilyMixin, FamilyLike):
         self.rfamily = rstats.Gamma(link=link)
 
 
-class InverseGaussian(RStandardFamilyMixin, FamilyLike):
+class InverseGaussian(FamilyMixin, FamilyLike):
     def __init__(
         self,
         link: Literal["1/mu^2", "inverse", "identity", "log"] = "1/mu^2",
@@ -114,7 +156,7 @@ class InverseGaussian(RStandardFamilyMixin, FamilyLike):
         self.rfamily = rstats.inverse_gaussian(link=link)
 
 
-class Poisson(RStandardFamilyMixin, FamilyLike):
+class Poisson(FamilyMixin, FamilyLike):
     def __init__(self, link: Literal["log", "identity", "sqrt"] = "log"):
         """Poisson family with specified link function.
 
@@ -124,7 +166,7 @@ class Poisson(RStandardFamilyMixin, FamilyLike):
         self.rfamily = rstats.poisson(link=link)
 
 
-class Quasi(RStandardFamilyMixin, FamilyLike):
+class Quasi(FamilyMixin, FamilyLike):
     def __init__(
         self,
         link: Literal[
@@ -148,7 +190,7 @@ class Quasi(RStandardFamilyMixin, FamilyLike):
         self.rfamily = rstats.quasi(link=link, variance=variance)
 
 
-class QuasiBinomial(RStandardFamilyMixin, FamilyLike):
+class QuasiBinomial(FamilyMixin, FamilyLike):
     def __init__(
         self,
         link: Literal["logit", "probit", "cauchit", "log", "cloglog"] = "logit",
@@ -161,7 +203,7 @@ class QuasiBinomial(RStandardFamilyMixin, FamilyLike):
         self.rfamily = rstats.quasibinomial(link=link)
 
 
-class QuasiPoisson(RStandardFamilyMixin, FamilyLike):
+class QuasiPoisson(FamilyMixin, FamilyLike):
     def __init__(self, link: Literal["log", "identity", "sqrt"] = "log"):
         """Quasi-Poisson family with specified link function.
 
@@ -170,48 +212,130 @@ class QuasiPoisson(RStandardFamilyMixin, FamilyLike):
         """
         self.rfamily = rstats.quasipoisson(link=link)
 
-# TODO implememt!
-@dataclass
-class MVN(FamilyLike): # TODO check options
+
+class Tweedie(FamilyMixin, FamilyLike):
+    def __init__(
+        self,
+        p: float | int = 1,
+        link: Literal["log", "identity", "inverse", "sqrt"] | int | float = 0,
+    ):
+        r"""Tweedie family.
+
+        Args:
+            p: The variance of an observation is proportional to its mean to the power p. p must
+                be greater than 1 and less than or equal to 2. 1 would be Poisson, 2 is gamma.
+            link: If a float/int, treated as $ \lambda $ in a link function based on
+                $ \eta = \mu^ \lambda $, meaning 0 gives the log link and 1 gives the
+                identity link (i.e. R stats package `power`). Can also be one of "log",
+                "identity", "inverse", "sqrt".
+        """
+        if isinstance(link, int | float):
+            link = rstats.power(link)
+        self.rfamily = rmgcv.Tweedie(p, link)
+
+
+class NegBin(FamilyMixin, FamilyLike):
+    def __init__(self):
+        pass
+
+
+class Betar:
+    def __init__(self):
+        pass
+
+
+class CNorm:
+    def __init__(self):
+        pass
+
+
+class CLog:
+    def __init__(self):
+        pass
+
+
+class CPois:
+    def __init__(self):
+        pass
+
+
+class NB:
+    def __init__(self):
+        pass
+
+
+class OCat:
+    def __init__(self):
+        pass
+
+
+class Scat(FamilyMixin, FamilyLike):
+    def __init__(self):
+        self.rfamily = rmgcv.scat(link="identity")
+
+
+class Tw:
+    def __init__(self):
+        pass
+
+
+class ZIP:
+    def __init__(self):
+        pass
+
+
+class CoxPH:
+    def __init__(self):
+        pass
+
+
+class GammaLS:
+    def __init__(self):
+        pass
+
+
+class GauLSS(FamilyMixin, FamilyLike):  # TODO check options
+    rfamily: ro.ListVector
+
+    def __init__(
+        self,
+        link: Literal["identity", "inverse", "log", "sqrt"] = "identity",
+    ):
+        self.rfamily = rmgcv.gaulss(link=ro.StrVector([link, "logb"]))
+
+
+class GevLSS:
+    def __init__(self):
+        pass
+
+
+class GumbLS:
+    def __init__(self):
+        pass
+
+
+class Multinom:
+    def __init__(self):
+        pass
+
+
+class MVN(FamilyMixin, FamilyLike):  # TODO probably needs special casing
     rfamily: ro.ListVector
 
     def __init__(self, d: int):
         self.rfamily = rmgcv.mvn(d=d)
 
-    def link(self, x: np.ndarray) -> np.ndarray:
-         raise NotImplementedError()
 
-    def inverse_link(self, x: np.ndarray) -> np.ndarray:
-        raise NotImplementedError()
+class Shash:
+    def __init__(self):
+        pass
 
-    def dmu_deta(self, x: np.ndarray) -> np.ndarray:
-        raise NotImplementedError()
 
-    def quantile(self, x: np.ndarray) -> np.ndarray:
-        raise NotImplementedError()
+class TwLSS:
+    def __init__(self):
+        pass
 
-    def deviance_residuals(self, *, y: np.ndarray, fit: np.ndarray, weights: np.ndarray) -> np.ndarray:
-        raise NotImplementedError()
 
-# TODO implememt!
-@dataclass
-class GauLSS(FamilyLike): # TODO check options
-    rfamily: ro.ListVector
-
-    def __init__(self):  # TODO link options
-        self.rfamily = rmgcv.gaulss()
-
-    def link(self, x: np.ndarray) -> np.ndarray:
-         raise NotImplementedError()
-
-    def inverse_link(self, x: np.ndarray) -> np.ndarray:
-        raise NotImplementedError()
-
-    def dmu_deta(self, x: np.ndarray) -> np.ndarray:
-        raise NotImplementedError()
-
-    def quantile(self, x: np.ndarray) -> np.ndarray:
-        raise NotImplementedError()
-
-    def deviance_residuals(self, *, y: np.ndarray, fit: np.ndarray, weights: np.ndarray) -> np.ndarray:
-        raise NotImplementedError()
+class ZipLSS:
+    def __init__(self):
+        pass

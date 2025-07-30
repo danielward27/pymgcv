@@ -12,7 +12,7 @@ from pymgcv.plot import (
     plot_continuous_1d,
     plot_continuous_2d,
     plot_gam,
-    plot_qq
+    plot_qq,
 )
 
 from . import gam_test_cases as tc
@@ -120,7 +120,7 @@ def test_plot_gam(test_case: tc.GAMTestCase):
     all_gam_test_cases.values(),
     ids=all_gam_test_cases.keys(),
 )
-def test_qq_plot(test_case: tc.GAMTestCase):
+def test_plot_qq(test_case: tc.GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data)
     try:
         plot_qq(gam=gam)

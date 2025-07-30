@@ -12,10 +12,11 @@ import rpy2.rinterface as ri
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
-from pymgcv.converters import data_to_rdf, to_py, to_rpy
 from pymgcv.custom_types import PartialEffectsResult, PredictionResult
-from pymgcv.terms import Intercept, TermLike
 from pymgcv.families import FamilyLike, Gaussian
+from pymgcv.rpy_utils import data_to_rdf, to_py, to_rpy
+from pymgcv.terms import Intercept, TermLike
+
 mgcv = importr("mgcv")
 rbase = importr("base")
 rutils = importr("utils")
@@ -503,16 +504,16 @@ class AbstractGAM(ABC):
         Args:
             type: Type of residuals to compute, one of:
 
-                - **response**: Raw residuals $y - \mu$, where $y$ is the observed data and $\mu$
-                    is the model fitted value.
-                - **pearson**: Pearson residuals — raw residuals divided by the square root of the
-                    model's mean-variance relationship.
+                - **response**: Raw residuals $y - \mu$, where $y$ is the observed data
+                    and $\mu$ is the model fitted value.
+                - **pearson**: Pearson residuals — raw residuals divided by the square
+                    root of the model's mean-variance relationship.
                     $$
                     \frac{y - \mu}{\sqrt{V(\mu)}}
                     $$
-                - **scaled.pearson**: Raw residuals divided by the standard deviation of the
-                    data according to the model mean variance relationship and estimated scale
-                    parameter.
+                - **scaled.pearson**: Raw residuals divided by the standard deviation of
+                    the data according to the model mean variance relationship and
+                    estimated scale parameter.
                 - **deviance**: Deviance residuals as defined by the model’s family.
                 - **working**: Working residuals are the residuals returned from
                     model fitting at convergence.
@@ -520,6 +521,34 @@ class AbstractGAM(ABC):
         if self.fit_state is None:
             raise ValueError("Cannot compute residuals before fitting.")
         return to_py(rstats.residuals(self.fit_state.rgam, type=type))
+
+    def residuals_from_y_and_fit(
+        self,
+        *,
+        y: np.ndarray,
+        fit: np.ndarray,
+        weights: np.ndarray | None = None,
+        type: Literal[
+            "deviance",
+            "pearson",
+            "scaled.pearson",
+            "working",
+            "response",
+        ] = "deviance",
+    ):
+        """Compute the residuals, from y, fit and optionally prior weights."""
+        # For now just overwrite attributes and use residuals(gam)
+        # From scanning gam.residuals code this looks like it should be reasonable?
+        gam = deepcopy(self)
+        if gam.fit_state is None:
+            raise ValueError("Cannot compute residuals before fitting the model.")
+
+        if weights is None:
+            weights = np.ones_like(y)
+        gam.fit_state.rgam.rx2["y"] = to_rpy(y)
+        gam.fit_state.rgam.rx2["fitted.values"] = to_rpy(fit)
+        gam.fit_state.rgam.rx2["prior.weights"] = to_rpy(weights)
+        return gam.residuals(type)
 
 
 @dataclass(init=False)

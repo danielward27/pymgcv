@@ -6,7 +6,7 @@ from typing import Any
 from rpy2 import robjects as ro
 from rpy2.robjects.packages import importr
 
-from pymgcv.converters import to_rpy
+from pymgcv.rpy_utils import to_rpy
 
 rbase = importr("base")
 rutils = importr("utils")

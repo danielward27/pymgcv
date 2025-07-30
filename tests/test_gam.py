@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 import rpy2.robjects as ro
 
+from pymgcv.rpy_utils import to_py
+
 mgcv = ro.packages.importr("mgcv")  # type: ignore
 
 
@@ -111,8 +113,14 @@ def test_abstract_methods(test_case: GAMTestCase):
     assert cov.shape[0] == cov.shape[1]
     assert cov.shape[0] == coef.shape[0]
     assert np.all(coef.index == cov.index)
+    assert isinstance(fit.aic(), float)
 
     residuals = fit.residuals()
     assert residuals.shape[0] == test_case.data.shape[0]
 
-    assert isinstance(fit.aic(), float)
+    resid_from_y_and_fit = fit.residuals_from_y_and_fit(
+        y=to_py(fit.fit_state.rgam.rx2["y"]),
+        fit=to_py(fit.fit_state.rgam.rx2["fitted.values"]),
+        weights=to_py(fit.fit_state.rgam.rx2["prior.weights"]),
+    )
+    assert np.all(residuals == resid_from_y_and_fit)

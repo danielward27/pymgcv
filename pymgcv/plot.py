@@ -4,7 +4,7 @@ import types
 from collections.abc import Callable
 from dataclasses import dataclass
 from math import ceil
-from typing import Any, TypeGuard
+from typing import Any, Literal, TypeGuard
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -18,7 +18,7 @@ from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import RandomWigglyCurve
 from pymgcv.gam import AbstractGAM
-from pymgcv.qq import qq_uniform
+from pymgcv.qq import qq_simulate, qq_uniform
 from pymgcv.terms import (
     L,
     S,
@@ -68,7 +68,10 @@ def plot_gam(
         # TODO manually check this. Does providing a kwargs mapper interfer with this?
         kwargs_mapper.setdefault(plot_categorical, {}).setdefault("residuals", True)
         kwargs_mapper.setdefault(plot_continuous_1d, {}).setdefault("residuals", True)
-        kwargs_mapper.setdefault(plot_continuous_2d, {}).setdefault("scatter_kwargs", {"disable": False})
+        kwargs_mapper.setdefault(plot_continuous_2d, {}).setdefault(
+            "scatter_kwargs",
+            {"disable": False},
+        )
 
     if isinstance(to_plot, type | types.UnionType):
         to_plot = {
@@ -562,7 +565,8 @@ def plot_qq(
     scatter_kwargs: dict | None = None,
     plot_kwargs: dict | None = None,
     ax: Axes | None = None,
-):
+    method: Literal["uniform", "simulate"] = "uniform",
+) -> Axes:
     """A Q-Q plot of deviance residuals.
 
     Args:
@@ -576,7 +580,50 @@ def plot_qq(
 
     Returns:
         The matplotlib axes object.
+
+    !!! example
+
+        As an example, we will create a heavy tailed response variable,
+        and fit a [`Gaussian`][pymgcv.families.Gaussian] model, and a
+        [`Scat`][pymgcv.families.Scat] model.
+
+        ```python
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import pandas as pd
+
+        from pymgcv.families import Gaussian, Scat
+        from pymgcv.gam import GAM
+        from pymgcv.plot import plot_qq
+        from pymgcv.terms import S
+
+        rng = np.random.default_rng(1)
+        n = 1000
+        x = np.linspace(0, 1, n)
+        y = np.sin(2 * np.pi * x) + rng.standard_t(df=3, size=n)  # Heavy-tailed
+        data = pd.DataFrame({"x": x, "y": y})
+
+        models = [
+            GAM({"y": S("x")}, family=Gaussian()),
+            GAM({"y": S("x")}, family=Scat()),  # Better for heavy-tailed data
+        ]
+
+        fig, axes = plt.subplots(ncols=2)
+
+        for model, ax in zip(models, axes, strict=False):
+            model.fit(data)
+            plot_qq(model, ax=ax, method="simulate")
+            ax.set_title(model.family.__class__.__name__)
+            ax.set_box_aspect(1)
+
+        fig.show()
+        ```
     """
+    method_map = {
+        "uniform": qq_uniform,
+        "simulate": qq_simulate,
+    }
+    qq_fun = method_map[method]
     if gam.fit_state is None:
         raise RuntimeError("The model must be fitted before plotting.")
 
@@ -589,10 +636,10 @@ def plot_qq(
     plot_kwargs.setdefault("linestyle", "--")
 
     ax = plt.gca() if ax is None else ax
-    df = qq_uniform(gam, n=n)
-    ax.scatter(df["theoretical"], df["residuals"], **scatter_kwargs)
+    qq_data = qq_fun(gam, n=n)
+    ax.scatter(qq_data.theoretical, qq_data.residuals, **scatter_kwargs)
     ax.set_xlabel("Theoretical Quantiles")
-    ax.set_ylabel("Observed")
+    ax.set_ylabel("Residuals")
 
     min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])
     max_val = max(ax.get_xlim()[1], ax.get_ylim()[1])

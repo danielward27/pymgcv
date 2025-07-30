@@ -1,12 +1,17 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from pymgcv.gam import GAM
-from pymgcv.qq import qq_uniform
+from pymgcv.qq import qq_simulate, qq_uniform
 from pymgcv.terms import L, S
 
 
-def test_qq_uniform():
+@pytest.mark.parametrize(
+    "qq_fun",
+    [qq_uniform, qq_simulate],
+)
+def test_qq_functions(qq_fun):
     """Test that qq_uniform runs without error and returns expected structure."""
     rng = np.random.default_rng(42)
     n = 100
@@ -22,34 +27,25 @@ def test_qq_uniform():
     gam = GAM({"y": L("x0") + S("x1") + S("x2", "x3")})
     gam.fit(data)
 
-    result = qq_uniform(gam, n=5)
-    assert isinstance(result, pd.DataFrame)
-    assert "theoretical" in result.columns
-    assert "residuals" in result.columns
-    assert len(result) == n
-    assert np.all(np.isfinite(result["theoretical"]))
-    assert np.all(np.isfinite(result["residuals"]))
+    result = qq_fun(gam, n=5)
+    for arr in [result.theoretical, result.residuals]:
+        assert len(arr) == n
+        assert np.all(np.isfinite(arr))
+        assert np.all(np.isfinite(arr))
 
-def test_qq_unifrom_nans_excluded():
-    rng = np.random.default_rng(42)
-    n = 100
-    x0, x1 = rng.uniform(-1, 1, n), np.arange(n)
-    y = 0.5 * x0 + np.sin(x1) + rng.normal(0, 0.3, n)
-    y[0] = np.nan
-    x0[2] = np.nan
-
-    data = pd.DataFrame({"x0": x0, "x1": x1, "y": y})
-    data.at[3, "x1"] = pd.NA
+    # Check nans excluded (at least by default)
+    data.at[0, "y"] = np.nan
+    data.at[1, "x0"] = np.nan
+    data["x1"] = np.arange(len(data))
     data["x1"] = data["x1"].astype(pd.Int64Dtype())
+    data.at[2, "x1"] = pd.NA  # Test pd.NA too (nullable int)
 
-    # Test integer nan with pd.NA
-    gam = GAM({"y": L("x0") + S("x1")})
+    gam = GAM({"y": L("x0") + S("x1") + S("x2", "x3")})
     gam.fit(data)
     result = qq_uniform(gam, n=5)
 
-    assert isinstance(result, pd.DataFrame)
-    assert "theoretical" in result.columns
-    assert "residuals" in result.columns
-    assert len(result) == n - 3  # Nans exluded
-    assert np.all(np.isfinite(result["theoretical"][3:]))
-    assert np.all(np.isfinite(result["residuals"]))
+    assert len(result.theoretical) == n - 3  # Nans exluded
+    assert np.all(np.isfinite(result.theoretical))
+    assert np.all(
+        np.isfinite(result.residuals),
+    )

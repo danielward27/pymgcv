@@ -10,9 +10,9 @@ import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import BasisLike
-from pymgcv.converters import data_to_rdf, to_py
 from pymgcv.custom_types import PredictionResult
 from pymgcv.formula_utils import _to_r_constructor_string, _Var
+from pymgcv.rpy_utils import data_to_rdf, to_py
 
 mgcv = importr("mgcv")
 rbase = importr("base")

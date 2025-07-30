@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
 
-from pymgcv.converters import data_to_rdf, to_py
+from pymgcv.rpy_utils import data_to_rdf, to_py
 
 
 def test_data_to_rdf_basic_dict():
