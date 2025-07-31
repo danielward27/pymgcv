@@ -2,6 +2,11 @@
 
 Families define the distribution and link functions for GAM models. Each family corresponds to a statistical distribution and supports specific link functions.
 
+!!! warning
+
+    The families are not well tested, and mgcv has many families with inconsistent structures of inputs and outputs. Some families, although provided here, may not
+    currently work (but will be supported in due course).
+
 ::: pymgcv.families.Gaussian
     options:
       members:
@@ -55,10 +60,6 @@ Families define the distribution and link functions for GAM models. Each family 
       members:
         - "__init__"
 ::: pymgcv.families.CPois
-    options:
-      members:
-        - "__init__"
-::: pymgcv.families.NB
     options:
       members:
         - "__init__"
@@ -119,4 +120,4 @@ Families define the distribution and link functions for GAM models. Each family 
       members:
         - "__init__"
 
-::: pymgcv.families.FamilyLike
+::: pymgcv.families.AbstractFamily

@@ -13,7 +13,7 @@ import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
 from pymgcv.custom_types import PartialEffectsResult, PredictionResult
-from pymgcv.families import FamilyLike, Gaussian
+from pymgcv.families import AbstractFamily, Gaussian
 from pymgcv.rpy_utils import data_to_rdf, to_py, to_rpy
 from pymgcv.terms import Intercept, TermLike
 
@@ -70,7 +70,7 @@ class AbstractGAM(ABC):
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
-    family: FamilyLike
+    family: AbstractFamily
     fit_state: FitState | None
 
     def __init__(
@@ -78,7 +78,7 @@ class AbstractGAM(ABC):
         predictors: dict[str, Iterable[TermLike] | TermLike],
         family_predictors: dict[str, Iterable[TermLike] | TermLike] | None = None,
         *,
-        family: FamilyLike | None = None,
+        family: AbstractFamily | None = None,
         add_intercepts: bool = True,
     ):
         r"""Initialize a GAM/BAM model.
@@ -156,6 +156,7 @@ class AbstractGAM(ABC):
         self,
         data: pd.DataFrame | None = None,
         *args,
+        type: Literal["response", "link"] = "link",
         compute_se: bool = False,
         **kwargs,
     ) -> dict[str, PredictionResult]:
@@ -557,7 +558,7 @@ class GAM(AbstractGAM):
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
-    family: FamilyLike
+    family: AbstractFamily
     fit_state: FitState | None
 
     def fit(
@@ -632,10 +633,11 @@ class GAM(AbstractGAM):
         self,
         data: pd.DataFrame | None = None,
         *,
+        type: Literal["response", "link"] = "link",
         compute_se: bool = False,
         block_size: int | None = None,
     ) -> dict[str, PredictionResult]:
-        """Compute model predictions with uncertainty estimates.
+        """Compute model predictions with (optionally) uncertainty estimates.
 
         Makes predictions for new data using the fitted GAM model. Predictions
         are returned on the link scale (linear predictor scale), not the response
@@ -646,6 +648,8 @@ class GAM(AbstractGAM):
             data: DataFrame containing predictor variables. Must include all
                 variables referenced in the original model specification.
             compute_se: Whether to compute standard errors for predictions.
+            type: Type of prediction to compute. Either "link" for linear predictor
+                scale or "response" for response scale.
             block_size: Number of rows to process at a time.  If None then block size
                 is 1000 if data supplied, and the number of rows in the model frame
                 otherwise.
@@ -664,6 +668,7 @@ class GAM(AbstractGAM):
             self.fit_state.rgam,
             ri.MissingArg if data is None else data_to_rdf(data),
             se=compute_se,
+            type=type,
             block_size=ri.MissingArg if block_size is None else block_size,
         )
         return self._format_predictions(
@@ -718,7 +723,7 @@ class BAM(AbstractGAM):
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
-    family: FamilyLike
+    family: AbstractFamily
     fit_state: FitState | None
 
     def fit(
@@ -799,6 +804,7 @@ class BAM(AbstractGAM):
         data: pd.DataFrame | None = None,
         *,
         compute_se: bool = False,
+        type: Literal["link", "response"] = "link",
         block_size: int = 50000,
         discrete: bool = True,
         n_threads: int = 1,
@@ -815,6 +821,8 @@ class BAM(AbstractGAM):
             data: DataFrame containing predictor variables. Must include all
                 variables referenced in the original model specification.
             compute_se: Whether to compute and return standard errors.
+            type: Type of prediction to compute. Either "link" for linear predictor
+                scale or "response" for response scale.
             block_size: Number of rows to process at a time.
             n_threads: Number of threads to use for computation.
             discrete: If True and the model was fitted with discrete=True, then
@@ -834,6 +842,7 @@ class BAM(AbstractGAM):
             self.fit_state.rgam,
             ri.MissingArg if data is None else data_to_rdf(data),
             se=compute_se,
+            type=type,
             block_size=ro.NULL if block_size is None else block_size,
             discrete=discrete,
             n_threads=n_threads,

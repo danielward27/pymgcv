@@ -27,10 +27,17 @@ def qq_uniform(
     weights = rstats.weights(rgam, type="prior")
     sigma2 = rgam.rx2["sig2"]
 
+    # TODO we could easily support e.g. gaulss
+
     if is_null(sigma2):
         sigma2 = rbase.summary(rgam, re_test=False).rx2["dispersion"]
 
     fit, weights, sigma2 = to_py(fit), to_py(weights), to_py(sigma2)
+
+    if fit.ndim > 1:
+        raise NotImplementedError(
+            "Families producing matrix outputs are not yet supported for qq_uniform.",
+        )
     n_resids = len(resids)
     rng = np.random.default_rng()
 
@@ -49,7 +56,7 @@ def qq_uniform(
             y=qq,
             fit=fit,
             weights=weights,
-            type="deviance",
+            type=type,
         )
         sims.append(np.sort(res))
 
@@ -86,7 +93,9 @@ def qq_simulate(
     fit, weights, sigma2 = to_py(fit), to_py(weights), to_py(sigma2)
 
     if fit.ndim > 1:
-        raise ValueError("QQ plots not yet supported for multivariate responses.")
+        raise NotImplementedError(
+            "Families producing matrix outputs are not yet supported for qq_simulate.",
+        )
 
     sims = []
     for _ in range(n):
@@ -95,7 +104,7 @@ def qq_simulate(
             y=ysim,
             fit=fit,
             weights=weights,
-            type="deviance",
+            type=type,
         )
         sim = np.sort(res)
         sims.append(sim)
