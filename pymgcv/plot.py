@@ -324,7 +324,13 @@ def plot_continuous_1d(
 
     # Add partial residuals
     if residuals and target in data.columns:
-        partial_residuals = gam.partial_residuals(target, term, data)
+        partial_residuals = gam.partial_residuals(
+            target,
+            term,
+            data,
+            avoid_scaling=True,
+        )
+
         ax.scatter(data[term.varnames[0]], partial_residuals, **scatter_kwargs)
 
     # Plot interval

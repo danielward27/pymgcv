@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Literal, Self
-
+from pandas.api.types import is_numeric_dtype
 import numpy as np
 import pandas as pd
 import rpy2.rinterface as ri
@@ -347,7 +347,8 @@ class AbstractGAM(ABC):
         target: str,
         term: TermLike,
         data: pd.DataFrame,
-        **kwargs: Any,
+        *,
+        avoid_scaling: bool = False
     ) -> pd.Series:
         """Compute partial residuals for model diagnostic plots.
 
@@ -360,14 +361,16 @@ class AbstractGAM(ABC):
             target: Name of the response variable.
             term: The model term to compute partial residuals for.
             data: DataFrame containing the data (must include the response variable).
-            **kwargs: Additional keyword arguments to pass to `partial_effects`.
+            avoid_scaling: If True, and the term has a numeric by variable,
+                the scaling by the by variable is not included in the term effect.
+                This facilitates plotting the residuals, as the plots
+                only show the smooth component (unscaled by the by variable).
 
         Returns:
             Series containing the partial residuals for the specified term
         """
         data = data if data is not None else self.fit_state.data
-        partial_effects = self.partial_effects(data, **kwargs)[target].fit  # Link scale
-        assert isinstance(partial_effects, pd.DataFrame)
+        partial_effects = self.partial_effects(data)[target].fit  # Link scale
         link_fit = partial_effects.sum(axis=1).to_numpy()
         term_effect = partial_effects.pop(term.label()).to_numpy()
 
@@ -382,6 +385,15 @@ class AbstractGAM(ABC):
         # If ĝ is the first order approxmation to link, below is:
         # ĝ(response) - ĝ(response_fit)
         link_residual = response_residual / d_mu_d_eta
+
+        if term.by is not None and is_numeric_dtype(data[term.by].dtype) and avoid_scaling:
+            eps = 1e-7
+            safe_by = data[term.by].copy()
+            too_small = np.abs(safe_by) < eps
+            safe_by[too_small] = np.sign(safe_by[too_small]) * eps
+            safe_by[safe_by == 0] = eps
+            term_effect = term_effect/safe_by
+
         return link_residual + term_effect
 
     def _format_predictions(self, predictions, *, compute_se: bool):
