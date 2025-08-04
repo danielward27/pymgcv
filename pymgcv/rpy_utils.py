@@ -9,7 +9,7 @@ The conversions are essential for seamless integration with R's mgcv library
 while maintaining pythonic data structures on the Python side.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import numpy as np
@@ -89,49 +89,39 @@ def to_py(x) -> Any:
 
 
 def data_to_rdf(
-    data: pd.DataFrame | pd.Series,
-    as_array_prefixes: Iterable[str] = (),
+    data: pd.DataFrame | pd.Series | Mapping[str, np.ndarray | pd.Series],
 ) -> ro.vectors.DataFrame:
-    """Convert pandas DataFrame to R data.frame for use with mgcv.
-
-    Certain columns can be combined into arrays for functional smooth terms.
+    """Convert pandas DataFrame or dictionary to R data.frame for use with mgcv.
 
     Args:
-        data: Pandas DataFrame to convert.
-        as_array_prefixes: Prefixes of column names to group into arrays.
-            Columns matching these prefixes will be combined into R arrays,
-            which mgcv can interpret as functional data for specialized
-            smooth terms.
+        data: DataFrame or dictionary containing all variables referenced in the model.
+            Note, using a dictionary is required when passing matrix-valued variables.
 
     Returns:
-        R data.frame object ready for use with mgcv functions
-
-    Raises:
-        TypeError: If input is not a pandas DataFrame or Series
+        R data.frame object ready for use with mgcv functions.
     """
-    data = pd.DataFrame(data)
-    if not isinstance(data, pd.DataFrame | pd.Series):
-        raise TypeError("Data must be a pandas DataFrame.")
-    if any(data.dtypes == "object") or any(data.dtypes == "string"):
+    multidim_data = {}
+    if isinstance(data, dict):
+        multidim_data = {k: rbase.I(to_rpy(v)) for k, v in data.items() if np.ndim(v) > 1}
+        other_data = {k: v for k, v in data.items() if np.ndim(v) == 1}
+        data = pd.DataFrame(other_data)
+
+    if isinstance(data, pd.Series):
+        data = pd.DataFrame(data)
+
+    dtypes = {k: v.dtype for k, v in data.items()}
+
+    if any(t=="object" for t in dtypes.values()) or any(t=="string" for t in dtypes.values()):
         raise TypeError("DataFrame contains unsupported object or string types.")
 
-    not_array_colnames = [
-        col
-        for col in data.columns
-        if not any(col.startswith(prefix) for prefix in as_array_prefixes)
-    ]
-    rpy_df = to_rpy(data[not_array_colnames])
+    rpy_df = to_rpy(data)
+    multidim_data = rbase.data_frame(**multidim_data)
 
-    matrices = {}
-    for prefix in as_array_prefixes:
-        subset = data.filter(like=prefix)
-        matrices[prefix] = rbase.I(to_rpy(subset.to_numpy()))
-    matrices_df = rbase.data_frame(**matrices)
     if rpy_df.nrow == 0:
-        return matrices_df
-    if matrices_df.nrow == 0:
+        return multidim_data
+    if multidim_data.nrow == 0:
         return rpy_df
-    return rbase.cbind(rpy_df, matrices_df)
+    return rbase.cbind(rpy_df, multidim_data)
 
 
 class NullAttributeError(Exception):

@@ -125,7 +125,7 @@ def test_plot_qq(test_case: tc.GAMTestCase):
     try:
         plot_qq(gam=gam)
     except NotImplementedError as e:
-        if "Quantile" in str(e):  # e.g. mvn and gaulss
+        if "Families producing matrix outputs" in str(e):  # e.g. mvn and gaulss
             pass
         else:
             raise

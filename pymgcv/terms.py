@@ -1,6 +1,6 @@
 """The available terms for constructing GAM models."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -13,7 +13,7 @@ from pymgcv.basis_functions import BasisLike
 from pymgcv.custom_types import PredictionResult
 from pymgcv.formula_utils import _to_r_constructor_string, _Var
 from pymgcv.rpy_utils import data_to_rdf, to_py
-
+from pymgcv.utils import data_len
 mgcv = importr("mgcv")
 rbase = importr("base")
 rstats = importr("stats")
@@ -76,7 +76,7 @@ class TermLike(Protocol):
     def _partial_effect(
         self,
         *,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
         compute_se: bool,
@@ -160,7 +160,7 @@ class L(_AddMixin, TermLike):
     def _partial_effect(
         self,
         *,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
         compute_se: bool,
@@ -237,7 +237,7 @@ class Interaction(_AddMixin, TermLike):
     def _partial_effect(
         self,
         *,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
         compute_se: bool,
@@ -349,7 +349,7 @@ class S(_AddMixin, TermLike):
     def _partial_effect(
         self,
         *,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
         compute_se: bool,
@@ -500,7 +500,7 @@ class T(_AddMixin, TermLike):
     def _partial_effect(
         self,
         *,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
         compute_se: bool,
@@ -555,7 +555,7 @@ class Offset(_AddMixin, TermLike):
     def _partial_effect(
         self,
         *,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
         compute_se: bool,
@@ -565,14 +565,14 @@ class Offset(_AddMixin, TermLike):
         For offset terms, the partial effect is simply the offset variable
         values, with zero standard errors.
         """
-        effect = data[self.varnames[0]].to_numpy()
+        effect = np.asarray(data[self.varnames[0]])
         return PredictionResult(effect, np.zeros_like(effect) if compute_se else None)
 
 
 def _mgcv_smooth_prediction(
     *,
     mgcv_smooth: Any,
-    data: pd.DataFrame,
+    data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
     rgam: Any,
     compute_se: bool,
 ) -> PredictionResult:
@@ -623,21 +623,22 @@ class Intercept(_AddMixin, TermLike):
     def _partial_effect(
         self,
         *,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
         compute_se: bool,
     ) -> PredictionResult:
+        n = data_len(data)
         coef = rstats.coef(rgam)
         intercept_name = self.mgcv_identifier(formula_idx)
-        intercept = to_py(coef.rx2[intercept_name]).item()
+        intercept = np.full(n, to_py(coef.rx2[intercept_name]).item())
         se = None
         if compute_se:
             cov = rgam.rx2("Vp")
             cov.rownames, cov.colnames = coef.names, coef.names
             var = cov.rx2(intercept_name, intercept_name)
-            se = np.sqrt(var).item()
-        return PredictionResult(np.full(len(data), intercept), np.full(len(data), se))
+            se = np.full(n, np.sqrt(var).item())
+        return PredictionResult(intercept, se)
 
 
 @dataclass
@@ -670,7 +671,7 @@ class _RandomWigglyToByInterface(_AddMixin, TermLike):
     def _partial_effect(
         self,
         *,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
         compute_se: bool,
@@ -685,7 +686,7 @@ class _RandomWigglyToByInterface(_AddMixin, TermLike):
 
 def _parameteric_partial_effect(
     term: L | Interaction,
-    data: pd.DataFrame,
+    data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
     rgam: Any,
     *,
     formula_idx: int,
@@ -697,7 +698,10 @@ def _parameteric_partial_effect(
     parameters present in mgcv, as mgcv may drop columns of the
     design matrix, e.g. to avoid indeterminacy.
     """
-    data = data[list(term.varnames)]
+    if isinstance(data, pd.DataFrame):
+        data = pd.DataFrame(data[list(term.varnames)])
+    else:
+        data = {k: v for k, v in data.items() if k in term.varnames}
     predict_mat = rstats.model_matrix(
         ro.Formula(f"~{str(term)}-1"),
         data=data_to_rdf(data),
@@ -727,7 +731,7 @@ def _smooth_partial_effect(
     formula_idx: int,
     term: T | S,
     rgam: Any,
-    data: pd.DataFrame,
+    data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
     compute_se: bool,
 ):
     """Predict (partial effect) and standard error for a S or T term."""
@@ -737,7 +741,10 @@ def _smooth_partial_effect(
     if term.by is not None:
         required_cols.append(term.by)
 
-    data = data[required_cols]
+    if isinstance(data, pd.DataFrame):
+        data = pd.DataFrame(data[required_cols])
+    else:
+        data = {k: v for k, v in data.items() if k in required_cols}
 
     smooth_name = term.mgcv_identifier(formula_idx)
     smooths = {s.rx2["label"][0]: s for s in rgam.rx2["smooth"]}
@@ -745,8 +752,8 @@ def _smooth_partial_effect(
     if term.by is not None and data[term.by].dtype == "category":
         levels = data[term.by].cat.categories
 
-        fit_vals = np.empty(len(data))
-        se = np.empty(len(data))
+        fit_vals = np.empty(data_len(data))
+        se = np.empty(data_len(data))
 
         for lev in levels:
             is_lev = data[term.by] == lev

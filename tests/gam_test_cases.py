@@ -1,7 +1,7 @@
 """A collection of GAM test cases."""
 
 from dataclasses import dataclass, field
-
+from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
@@ -24,7 +24,7 @@ from pymgcv.terms import Interaction, L, S, T
 class GAMTestCase:  # GAM/BAM test cases
     mgcv_call: str
     gam_model: AbstractGAM
-    data: pd.DataFrame
+    data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series]
     expected_predict_terms_structure: dict[str, list[str]]
     add_to_r_env: dict[str, ro.RObject] = field(default_factory=dict)
 
@@ -385,6 +385,24 @@ def linear_and_interaction_gam(model_type: type[AbstractGAM]) -> GAMTestCase:
     )
 
 
+def linear_functional_gam(model_type: type[AbstractGAM]) -> GAMTestCase:
+    rng = np.random.default_rng(123)
+    n = 200
+    n_hours = 24
+    hourly_x = rng.lognormal(size=(n, n_hours))
+    true_fn = lambda x: np.sqrt(x)
+    y = sum(true_fn(col) for col in hourly_x.T) + rng.normal(scale=0.1, size=n)
+    data = {"y": y, "hourly_x": hourly_x}
+    gam = model_type({"y": S("hourly_x")})
+
+    return GAMTestCase(
+        mgcv_call=f"{model_type.__name__.lower()}(y ~ s(hourly_x), data=data)",
+        gam_model=gam,
+        data=data,
+        expected_predict_terms_structure={"y": ["S(hourly_x)", "Intercept"]}
+    )
+
+
 # def many_term_types_gam() -> GAMTestCase:
 # rng = np.random.default_rng(seed=42)
 # n = 400
@@ -454,6 +472,7 @@ def get_test_cases() -> dict[str, GAMTestCase]:
                 tensor_2d_by_numeric_gam,
                 poisson_gam,
                 linear_and_interaction_gam,
+                linear_functional_gam
                 # many_term_types_gam,
                 # markov_random_field_gam  # TODO: Uncomment when ready
             ],

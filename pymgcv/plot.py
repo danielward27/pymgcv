@@ -1,11 +1,11 @@
 """Plotting utilities for visualizing GAM models."""
 
+from copy import deepcopy
 import types
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from math import ceil
 from typing import Any, Literal, TypeGuard
-
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -15,7 +15,7 @@ from matplotlib.figure import Figure
 from pandas import CategoricalDtype
 from pandas.api.types import is_numeric_dtype
 from rpy2.robjects.packages import importr
-
+from pymgcv.utils import data_len
 from pymgcv.basis_functions import RandomWigglyCurve
 from pymgcv.gam import AbstractGAM
 from pymgcv.qq import qq_simulate, qq_uniform
@@ -128,7 +128,7 @@ def get_term_plotter(
     target: str,
     term: TermLike,
     gam: AbstractGAM,
-    data: pd.DataFrame | None = None,
+    data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
 ) -> _TermPlotter:
     """Utility for plotting a term in a model.
 
@@ -140,22 +140,20 @@ def get_term_plotter(
     if gam.fit_state is None:
         raise ValueError("Cannot plot before fitting the model.")
     data = data if data is not None else gam.fit_state.data
-    data = data.copy()
+    data = deepcopy(data)
 
     if _is_random_wiggly(term):
         term = _RandomWigglyToByInterface(term)
 
-    dtypes = data[list(term.varnames)].dtypes
+    dtypes = {k: v.dtype for k, v in data.items()}
     by_dtype = data[term.by].dtype if term.by is not None else None
     dim = len(term.varnames)
     is_categorical_by = term.by is not None and isinstance(by_dtype, CategoricalDtype)
     levels = by_dtype.categories if is_categorical_by else [None]
 
-    def _all_numeric(dtypes):
-        return all(is_numeric_dtype(dtype) for dtype in dtypes)
+    def _all_numeric(dtypes: dict):
+        return all(is_numeric_dtype(dtype) for dtype in dtypes.values())
 
-    # TODO improve passing of kwargs, or output the underlying method name
-    # such that we can select an appropriate set of kwargs in plot_gam.
     match (dim, term):
         case (1, L()) if isinstance(dtypes[term.varnames[0]], CategoricalDtype):
 
@@ -226,7 +224,7 @@ def plot_continuous_1d(
     target: str,
     term: TermLike,
     gam: AbstractGAM,
-    data: pd.DataFrame | None = None,
+    data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
     eval_density: int = 100,
     level: str | None = None,
     n_standard_errors: int | float = 2,
@@ -272,7 +270,7 @@ def plot_continuous_1d(
     if gam.fit_state is None:
         raise ValueError("Cannot plot before fitting the model.")
     data = data if data is not None else gam.fit_state.data
-    data = data.copy()
+    data = deepcopy(data)
     term = _RandomWigglyToByInterface(term) if _is_random_wiggly(term) else term
     is_categorical_by = term.by and isinstance(data[term.by].dtype, CategoricalDtype)
 
@@ -286,11 +284,13 @@ def plot_continuous_1d(
             "RandomWigglyCurves.",
         )
 
-    if level is not None:
-        data = data.loc[data[term.by] == level]
-        assert isinstance(data, pd.DataFrame)
+    if level is not None and term.by is not None:
+        if isinstance(data, Mapping):
+            data = {k: v[data[term.by] == level] for k, v in data.items()}
+        else:
+            data = data.loc[data[term.by] == level]
+            assert isinstance(data, pd.DataFrame)
 
-    # TODO handling of partial residuals with numeric by?
     x0_linspace = np.linspace(
         data[term.varnames[0]].min(),
         data[term.varnames[0]].max(),
@@ -323,7 +323,7 @@ def plot_continuous_1d(
     pred = gam.partial_effect(target, term, spaced_data, compute_se=True)
 
     # Add partial residuals
-    if residuals and target in data.columns:
+    if residuals and target in data:
         partial_residuals = gam.partial_residuals(
             target,
             term,
@@ -353,7 +353,7 @@ def plot_continuous_2d(
     target: str,
     term: TermLike,
     gam: AbstractGAM,
-    data: pd.DataFrame | None = None,
+    data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
     eval_density: int = 50,
     level: str | None = None,
     contour_kwargs: dict | None = None,
@@ -396,7 +396,7 @@ def plot_continuous_2d(
     if gam.fit_state is None:
         raise ValueError("Cannot plot before fitting the model.")
     data = data if data is not None else gam.fit_state.data
-    data = data.copy()
+    data = deepcopy(data)
     term = _RandomWigglyToByInterface(term) if _is_random_wiggly(term) else term
     is_categorical_by = term.by and isinstance(data[term.by].dtype, CategoricalDtype)
 
@@ -411,9 +411,12 @@ def plot_continuous_2d(
             "RandomWigglyCurves.",
         )
 
-    if level is not None:
-        data = data.loc[data[term.by] == level]
-        assert isinstance(data, pd.DataFrame)
+    if level is not None and term.by is not None:
+        if isinstance(data, Mapping):
+            data = {k: v[data[term.by] == level] for k, v in data.items()}
+        else:
+            data = data.loc[data[term.by] == level]
+            assert isinstance(data, pd.DataFrame)
 
     x0_lims = (data[term.varnames[0]].min(), data[term.varnames[0]].max())
     x1_lims = (data[term.varnames[1]].min(), data[term.varnames[1]].max())
@@ -479,7 +482,7 @@ def plot_categorical(
     target: str,
     term: L,
     gam: AbstractGAM,
-    data: pd.DataFrame | None = None,
+    data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
     residuals: bool = False,
     n_standard_errors: int | float = 2,
     errorbar_kwargs: dict[str, Any] | None = None,
@@ -499,7 +502,7 @@ def plot_categorical(
         term: The categorical term to plot. Must be a L term with a single
             categorical variable.
         gam: GAM model containing the term to plot.
-        data: DataFrame containing the categorical variable and response.
+        data: DataFrame (or dictionary) containing the categorical variable and response.
         residuals: Whether to plot partial residuals (jittered on x-axis).
         n_standard_errors: Number of standard errors for confidence intervals.
         errorbar_kwargs: Keyword arguments passed to `matplotlib.pyplot.errorbar`.
@@ -510,6 +513,7 @@ def plot_categorical(
     if gam.fit_state is None:
         raise RuntimeError("The model must be fitted before plotting.")
     data = gam.fit_state.data if data is None else data
+
     errorbar_kwargs = {} if errorbar_kwargs is None else errorbar_kwargs
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
     scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
@@ -517,21 +521,26 @@ def plot_categorical(
     errorbar_kwargs.setdefault("fmt", ".")
 
     ax = plt.gca() if ax is None else ax
+    vals = data[term.varnames[0]]
+
+    if not isinstance(vals.dtype, CategoricalDtype):
+        raise ValueError("The variable must be categorical in the data.")
+    assert isinstance(vals, pd.Series)
 
     levels = pd.Series(
-        data[term.varnames[0]].cat.categories,
-        dtype=data[term.varnames[0]].dtype,
+        vals.cat.categories,
+        dtype=vals.dtype,
         name=term.varnames[0],
     )
 
-    if residuals and target in data.columns:
+    if residuals and target in data:
         partial_residuals = gam.partial_residuals(target, term, data)
 
-        jitter = np.random.uniform(-0.25, 0.25, size=len(data))
+        jitter = np.random.uniform(-0.25, 0.25, size=data_len(data))
         scatter_kwargs.setdefault("alpha", 0.2)
 
         ax.scatter(
-            data[term.varnames[0]].cat.codes + jitter,
+            vals.cat.codes + jitter,
             partial_residuals,
             **scatter_kwargs,
         )

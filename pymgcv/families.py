@@ -13,7 +13,6 @@ rbase = importr("base")
 rstats = importr("stats")
 rmgcv = importr("mgcv")
 
-# TODO Some families have multiple links (e.g. gaulss)
 
 
 class AbstractFamily(ABC):
@@ -196,22 +195,22 @@ class QuasiPoisson(AbstractFamily):
 
 class Betar(AbstractFamily):
     def __init__(self):
-        pass
+        raise NotImplementedError()
 
 
 class CNorm(AbstractFamily):
     def __init__(self):
-        pass
+        raise NotImplementedError()
 
 
 class CLog(AbstractFamily):
     def __init__(self):
-        pass
+        raise NotImplementedError()
 
 
 class CPois(AbstractFamily):
     def __init__(self):
-        pass
+        raise NotImplementedError()
 
 
 class NegBin(AbstractFamily):
@@ -452,15 +451,21 @@ class GevLSS(AbstractFamily):
 
 class GumbLS(AbstractFamily):
     def __init__(self):
-        pass
+        raise NotImplementedError()
 
 
 class Multinom(AbstractFamily):
     def __init__(self):
-        pass
+        raise NotImplementedError()
 
 
 class MVN(AbstractFamily):  # TODO probably needs special casing
+    """Multivariate normal family.
+
+    Args:
+        d: The dimension of the distribution.
+    """
+
     rfamily: ro.ListVector
 
     def __init__(self, d: int):
@@ -469,14 +474,14 @@ class MVN(AbstractFamily):  # TODO probably needs special casing
 
 class Shash(AbstractFamily):
     def __init__(self):
-        pass
+        raise NotImplementedError()
 
 
 class TwLSS(AbstractFamily):
     def __init__(self):
-        pass
+        raise NotImplementedError()
 
 
 class ZipLSS(AbstractFamily):
     def __init__(self):
-        pass
+        raise NotImplementedError()
