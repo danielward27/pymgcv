@@ -1,6 +1,7 @@
 """The available terms for constructing GAM models."""
 
 from collections.abc import Iterable, Mapping
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -735,7 +736,7 @@ def _smooth_partial_effect(
     compute_se: bool,
 ):
     """Predict (partial effect) and standard error for a S or T term."""
-    data = data.copy()
+    data = deepcopy(data)
     required_cols = list(term.varnames)
 
     if term.by is not None:

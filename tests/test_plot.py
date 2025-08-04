@@ -25,6 +25,7 @@ def get_cases_1d_continuous(model_type: type[AbstractGAM]):
         (tc.smooth_1d_by_numeric_gam, {"target": "y"}),
         (tc.smooth_1d_random_wiggly_curve_gam, {"target": "y", "level": "a"}),
         (tc.smooth_1d_by_categorical_gam, {"target": "y", "level": "a"}),
+        (tc.linear_functional_smooth_1d_gam, {"target": "y"})
     ]
     return {
         f"{model_type.__name__} - {f.__name__}": (f(model_type), kwargs)
@@ -54,6 +55,7 @@ def get_cases_2d_continuous(model_type: type[AbstractGAM]):
         (tc.tensor_2d_by_numeric_gam, {"target": "y"}),
         (tc.tensor_2d_by_categorical_gam, {"target": "y", "level": "a"}),
         (tc.tensor_2d_random_wiggly_curve_gam, {"target": "y", "level": "a"}),
+        (tc.linear_functional_tensor_2d_gam, {"target": "y"})
     ]
     return {
         f"{model_type.__name__} - {f.__name__}": (f(model_type), kwargs)
@@ -105,13 +107,12 @@ all_gam_test_cases = tc.get_test_cases()
 def test_plot_gam(test_case: tc.GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data)
     try:
-        plot_gam(gam=gam, ncols=1)
-    except ValueError as e:
+        plot_gam(gam=gam, ncols=1)   # scatter=True fails for mvn + gaulss
+    except (ValueError, NotImplementedError) as e:
         if "plot any" in str(e):
             pass
         else:
             raise
-
     plt.close("all")
 
 

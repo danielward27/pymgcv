@@ -48,6 +48,7 @@ nav:
   - Examples:
       - GAMLSS: examples/gamlss.ipynb
       - Smooth-by-categorical: examples/smooth_by_categorical.ipynb
+      - Linear functional: examples/linear_functional.ipynb
   - API Reference:
       - api/gam.md
       - api/terms.md

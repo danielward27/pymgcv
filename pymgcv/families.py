@@ -107,8 +107,8 @@ class Binomial(AbstractFamily):
 
         Args:
             link: The link function. "logit", "probit" and "cauchit", correspond to
-            logistic, normal and Cauchy CDFs respectively. "cloglog" is the
-            complementary log-log.
+                logistic, normal and Cauchy CDFs respectively. "cloglog" is the
+                complementary log-log.
         """
         self.rfamily = rstats.binomial(link=link)
 

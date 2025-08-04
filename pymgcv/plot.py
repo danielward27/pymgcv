@@ -35,7 +35,7 @@ def plot_gam(
     gam: AbstractGAM,
     *,
     ncols: int = 2,
-    plot_scatter: bool = False,
+    scatter: bool = False,
     to_plot: type | types.UnionType | dict[str, list[TermLike]] = TermLike,
     kwargs_mapper: dict[Callable, dict[str, Any]] | None = None,
 ) -> tuple[Figure, plt.Axes | np.ndarray]:
@@ -44,8 +44,9 @@ def plot_gam(
     Args:
         gam: The fitted gam object to plot.
         ncols: The number of columns before wrapping axes.
-        plot_scatter: Whether to plot the residuals (where possible), and the overlayed
-            datapoints on 2D plots. Defaults to False.
+        scatter: Whether to plot the residuals (where possible), and the overlayed
+            datapoints on 2D plots. For more fine control, see `kwargs_mapper`. Defaults
+            to False.
         to_plot: Which terms to plot. If a type, only plots terms
             of that type (e.g. ``to_plot = S | T`` to plot smooths).
             If a dictionary, it should map the target names to
@@ -63,15 +64,9 @@ def plot_gam(
         raise ValueError("Cannot plot before fitting the model.")
 
     kwargs_mapper = {} if kwargs_mapper is None else kwargs_mapper
-
-    if plot_scatter:
-        # TODO manually check this. Does providing a kwargs mapper interfer with this?
-        kwargs_mapper.setdefault(plot_categorical, {}).setdefault("residuals", True)
-        kwargs_mapper.setdefault(plot_continuous_1d, {}).setdefault("residuals", True)
-        kwargs_mapper.setdefault(plot_continuous_2d, {}).setdefault(
-            "scatter_kwargs",
-            {"disable": False},
-        )
+    kwargs_mapper.setdefault(plot_categorical, {}).setdefault("residuals", scatter)
+    kwargs_mapper.setdefault(plot_continuous_1d, {}).setdefault("residuals", scatter)
+    kwargs_mapper.setdefault(plot_continuous_2d, {}).setdefault("scatter_kwargs", {}).setdefault("disable", not scatter)
 
     if isinstance(to_plot, type | types.UnionType):
         to_plot = {
@@ -134,8 +129,8 @@ def get_term_plotter(
 
     Because some terms need multiple axes for plotting, this returns the number of axes
     required, and a function that applies the plotting to an iterable of axes, taking
-    only the axes as an argument. This allows us to setup the axes before plotting
-    when plotting multiple terms.
+    the axes and **kwargs passed to the plotting function. This allows us to setup the axes
+    before plotting when plotting multiple terms.
     """
     if gam.fit_state is None:
         raise ValueError("Cannot plot before fitting the model.")
@@ -145,7 +140,7 @@ def get_term_plotter(
     if _is_random_wiggly(term):
         term = _RandomWigglyToByInterface(term)
 
-    dtypes = {k: v.dtype for k, v in data.items()}
+    dtypes = {k: data[k].dtype for k in term.varnames}
     by_dtype = data[term.by].dtype if term.by is not None else None
     dim = len(term.varnames)
     is_categorical_by = term.by is not None and isinstance(by_dtype, CategoricalDtype)
@@ -323,7 +318,7 @@ def plot_continuous_1d(
     pred = gam.partial_effect(target, term, spaced_data, compute_se=True)
 
     # Add partial residuals
-    if residuals and target in data:
+    if residuals and target in data and not _is_linear_functional(term, data):
         partial_residuals = gam.partial_residuals(
             target,
             term,
@@ -468,8 +463,8 @@ def plot_continuous_2d(
     color_bar = ax.figure.colorbar(mesh, ax=ax, pad=0)
     color_bar.set_label(f"link({target})~{term.label()}")
     _with_disable(ax.scatter)(
-        data[term.varnames[0]],
-        data[term.varnames[1]],
+        data[term.varnames[0]].ravel(), # Ravel for linear functional terms
+        data[term.varnames[1]].ravel(),
         **scatter_kwargs,
     )
     ax.set_xlabel(term.varnames[0])
@@ -565,12 +560,6 @@ def plot_categorical(
     ax.set_xlabel(term.varnames[0])
     ax.set_ylabel(f"partial effect: {term.label()}")
     return ax
-
-
-def _is_random_wiggly(term: TermLike) -> TypeGuard[T | S]:
-    if isinstance(term, S | T):
-        return isinstance(term.bs, RandomWigglyCurve)
-    return False
 
 
 def plot_qq(
@@ -671,3 +660,11 @@ def _with_disable(plot_func):
         return plot_func(*args, **kwargs)
 
     return wrapper
+
+def _is_random_wiggly(term: TermLike) -> TypeGuard[T | S]:
+    if isinstance(term, S | T):
+        return isinstance(term.bs, RandomWigglyCurve)
+    return False
+
+def _is_linear_functional(term: TermLike, data: pd.DataFrame | dict[str, pd.Series | np.ndarray]) -> bool:
+    return any(np.asarray(data[k]).ndim > 1 for k in term.varnames) and isinstance(term, S | T)
