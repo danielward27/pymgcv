@@ -2,6 +2,8 @@ import numpy as np
 import pytest
 import rpy2.robjects as ro
 
+from pymgcv.rpy_utils import to_py
+
 mgcv = ro.packages.importr("mgcv")  # type: ignore
 
 
@@ -58,8 +60,8 @@ def test_partial_effect_against_partial_effects(test_case: GAMTestCase):
         for term in terms:
             try:
                 effect = gam.partial_effect(
-                    target,
                     term,
+                    target,
                     test_case.data,
                     compute_se=True,
                 )
@@ -90,11 +92,35 @@ def test_with_se_matches_without(test_case: GAMTestCase):
         )
 
 
-@pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
-def test_coef_and_cov(test_case: GAMTestCase):
+abstract_method_test_cases = [
+    "GAM - smooth_1d_gam",
+    "GAM - multivariate_normal_gam",
+    "GAM - gaulss_gam",
+    "BAM - smooth_1d_random_wiggly_curve_gam",
+]
+
+
+# check it gives something reasonable in both uni/multivariate, and bam case
+@pytest.mark.parametrize(
+    "test_case",
+    [test_cases[k] for k in abstract_method_test_cases],
+    ids=abstract_method_test_cases,
+)
+def test_abstract_methods(test_case: GAMTestCase):
     fit = test_case.gam_model.fit(test_case.data)
     coef = fit.coefficients()
     cov = fit.covariance()
     assert cov.shape[0] == cov.shape[1]
     assert cov.shape[0] == coef.shape[0]
     assert np.all(coef.index == cov.index)
+    assert isinstance(fit.aic(), float)
+
+    residuals = fit.residuals()
+    assert residuals.shape[0] == test_case.data.shape[0]
+
+    resid_from_y_and_fit = fit.residuals_from_y_and_fit(
+        y=to_py(fit.fit_state.rgam.rx2["y"]),
+        fit=to_py(fit.fit_state.rgam.rx2["fitted.values"]),
+        weights=to_py(fit.fit_state.rgam.rx2["prior.weights"]),
+    )
+    assert np.all(residuals == resid_from_y_and_fit)

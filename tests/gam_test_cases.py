@@ -1,7 +1,7 @@
 """A collection of GAM test cases."""
 
 from dataclasses import dataclass, field
-
+from collections.abc import Mapping
 import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
@@ -14,20 +14,17 @@ from pymgcv.basis_functions import (
     RandomEffect,
     RandomWigglyCurve,
 )
-from pymgcv.converters import data_to_rdf, to_py
+from pymgcv.families import MVN, GauLSS, Poisson
 from pymgcv.gam import BAM, GAM, AbstractGAM
+from pymgcv.rpy_utils import data_to_rdf, to_py
 from pymgcv.terms import Interaction, L, S, T
-
-
-class UnsupportedByMGCV(Exception):  # So we can easily try except
-    pass
 
 
 @dataclass
 class GAMTestCase:  # GAM/BAM test cases
     mgcv_call: str
     gam_model: AbstractGAM
-    data: pd.DataFrame
+    data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series]
     expected_predict_terms_structure: dict[str, list[str]]
     add_to_r_env: dict[str, ro.RObject] = field(default_factory=dict)
 
@@ -156,7 +153,7 @@ def multivariate_normal_gam(model_type: type[AbstractGAM]):
     )
     return GAMTestCase(
         mgcv_call=f"{model_type.__name__.lower()}(list(y0 ~ s(x, k=5), y1 ~ x), data=data, family=mvn(d=2))",
-        gam_model=model_type({"y0": S("x", k=5), "y1": L("x")}, family="mvn(d=2)"),
+        gam_model=model_type({"y0": S("x", k=5), "y1": L("x")}, family=MVN(d=2)),
         data=data,
         expected_predict_terms_structure={
             "y0": ["S(x)", "Intercept"],
@@ -179,7 +176,7 @@ def gaulss_gam(model_type: type[AbstractGAM]):
         gam_model=model_type(
             {"y": S("x0")},
             family_predictors={"log_scale": S("x1")},
-            family="gaulss()",
+            family=GauLSS(),
         ),
         data=data,
         expected_predict_terms_structure={
@@ -333,7 +330,7 @@ def poisson_gam(model_type: type[AbstractGAM]) -> GAMTestCase:
     )
     return GAMTestCase(
         mgcv_call=f"{model_type.__name__.lower()}(counts~s(x), data=data, family=poisson)",
-        gam_model=model_type({"counts": S("x")}, family="poisson"),
+        gam_model=model_type({"counts": S("x")}, family=Poisson()),
         data=data,
         expected_predict_terms_structure={"counts": ["S(x)", "Intercept"]},
     )
@@ -388,6 +385,41 @@ def linear_and_interaction_gam(model_type: type[AbstractGAM]) -> GAMTestCase:
     )
 
 
+def linear_functional_smooth_1d_gam(model_type: type[AbstractGAM]) -> GAMTestCase:
+    rng = np.random.default_rng(123)
+    n = 200
+    n_hours = 24
+    hourly_x = rng.lognormal(size=(n, n_hours))
+    true_fn = lambda x: np.sqrt(x)
+    y = sum(true_fn(col) for col in hourly_x.T) + rng.normal(scale=0.1, size=n)
+    data = {"y": y, "hourly_x": hourly_x}
+    gam = model_type({"y": S("hourly_x")})
+
+    return GAMTestCase(
+        mgcv_call=f"{model_type.__name__.lower()}(y ~ s(hourly_x), data=data)",
+        gam_model=gam,
+        data=data,
+        expected_predict_terms_structure={"y": ["S(hourly_x)", "Intercept"]}
+    )
+
+
+def linear_functional_tensor_2d_gam(model_type: type[AbstractGAM]) -> GAMTestCase:
+    rng = np.random.default_rng(123)
+    n = 200
+    n_times = 4
+    x0 = rng.lognormal(size=(n, n_times))
+    x1 = rng.lognormal(size=(n, n_times))
+    true_fn = lambda x0, x1: np.sqrt(x0) + np.sqrt(x1)
+    y = sum(true_fn(x0_col, x1_col) for x0_col, x1_col in zip(x0.T, x1.T, strict=True)) + rng.normal(scale=0.1, size=n)
+    data = {"y": y, "x0": x0, "x1": x1}
+    gam = model_type({"y": T("x0", "x1")})
+
+    return GAMTestCase(
+        mgcv_call=f"{model_type.__name__.lower()}(y ~ te(x0, x1), data=data)",
+        gam_model=gam,
+        data=data,
+        expected_predict_terms_structure={"y": ["T(x0,x1)", "Intercept"]}
+    )
 # def many_term_types_gam() -> GAMTestCase:
 # rng = np.random.default_rng(seed=42)
 # n = 400
@@ -457,6 +489,8 @@ def get_test_cases() -> dict[str, GAMTestCase]:
                 tensor_2d_by_numeric_gam,
                 poisson_gam,
                 linear_and_interaction_gam,
+                linear_functional_smooth_1d_gam,
+                linear_functional_tensor_2d_gam,
                 # many_term_types_gam,
                 # markov_random_field_gam  # TODO: Uncomment when ready
             ],

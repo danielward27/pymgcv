@@ -12,3 +12,4 @@
 ::: pymgcv.plot.plot_continuous_1d
 ::: pymgcv.plot.plot_continuous_2d
 ::: pymgcv.plot.plot_categorical
+::: pymgcv.plot.plot_qq

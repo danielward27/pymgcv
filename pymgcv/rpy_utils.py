@@ -9,14 +9,17 @@ The conversions are essential for seamless integration with R's mgcv library
 while maintaining pythonic data structures on the Python side.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Any
 
+import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
+from pandas.api.types import is_integer_dtype
 from rpy2.robjects import numpy2ri, pandas2ri
 from rpy2.robjects.packages import importr
 
-base = importr("base")
+rbase = importr("base")
 
 
 def to_rpy(x):
@@ -50,7 +53,7 @@ def to_rpy(x):
         return ro.conversion.get_conversion().py2rpy(x)
 
 
-def to_py(x):
+def to_py(x) -> Any:
     """Convert R object to Python object using rpy2.
 
     Handles automatic conversion of R data structures back to their Python
@@ -75,50 +78,61 @@ def to_py(x):
         ```
     """
     with (ro.default_converter + pandas2ri.converter + numpy2ri.converter).context():
-        return ro.conversion.get_conversion().rpy2py(x)
+        py_obj = ro.conversion.get_conversion().rpy2py(x)
+
+    if isinstance(py_obj, pd.DataFrame):  # Handle R nan integer encoding
+        r_nan = -2147483648
+        for col in py_obj.columns:
+            if is_integer_dtype(py_obj[col]) and any(py_obj[col] == r_nan):
+                py_obj[col] = py_obj[col].replace(r_nan, np.nan).astype(pd.Int64Dtype())
+    return py_obj
 
 
 def data_to_rdf(
-    data: pd.DataFrame | pd.Series,
-    as_array_prefixes: Iterable[str] = (),
+    data: pd.DataFrame | pd.Series | Mapping[str, np.ndarray | pd.Series],
 ) -> ro.vectors.DataFrame:
-    """Convert pandas DataFrame to R data.frame for use with mgcv.
-
-    Certain columns can be combined into arrays for functional smooth terms.
+    """Convert pandas DataFrame or dictionary to R data.frame for use with mgcv.
 
     Args:
-        data: Pandas DataFrame to convert.
-        as_array_prefixes: Prefixes of column names to group into arrays.
-            Columns matching these prefixes will be combined into R arrays,
-            which mgcv can interpret as functional data for specialized
-            smooth terms.
+        data: DataFrame or dictionary containing all variables referenced in the model.
+            Note, using a dictionary is required when passing matrix-valued variables.
 
     Returns:
-        R data.frame object ready for use with mgcv functions
-
-    Raises:
-        TypeError: If input is not a pandas DataFrame or Series
+        R data.frame object ready for use with mgcv functions.
     """
-    data = pd.DataFrame(data)
-    if not isinstance(data, pd.DataFrame | pd.Series):
-        raise TypeError("Data must be a pandas DataFrame.")
-    if any(data.dtypes == "object") or any(data.dtypes == "string"):
+    multidim_data = {}
+    if isinstance(data, dict):
+        multidim_data = {k: rbase.I(to_rpy(v)) for k, v in data.items() if np.ndim(v) > 1}
+        other_data = {k: v for k, v in data.items() if np.ndim(v) == 1}
+        data = pd.DataFrame(other_data)
+
+    if isinstance(data, pd.Series):
+        data = pd.DataFrame(data)
+
+    dtypes = {k: v.dtype for k, v in data.items()}
+
+    if any(t=="object" for t in dtypes.values()) or any(t=="string" for t in dtypes.values()):
         raise TypeError("DataFrame contains unsupported object or string types.")
 
-    not_array_colnames = [
-        col
-        for col in data.columns
-        if not any(col.startswith(prefix) for prefix in as_array_prefixes)
-    ]
-    rpy_df = to_rpy(data[not_array_colnames])
+    rpy_df = to_rpy(data)
+    multidim_data = rbase.data_frame(**multidim_data)
 
-    matrices = {}
-    for prefix in as_array_prefixes:
-        subset = data.filter(like=prefix)
-        matrices[prefix] = base.I(to_rpy(subset.to_numpy()))
-    matrices_df = base.data_frame(**matrices)
     if rpy_df.nrow == 0:
-        return matrices_df
-    if matrices_df.nrow == 0:
+        return multidim_data
+    if multidim_data.nrow == 0:
         return rpy_df
-    return base.cbind(rpy_df, matrices_df)
+    return rbase.cbind(rpy_df, multidim_data)
+
+
+class NullAttributeError(Exception):
+    """Raised when an attribute is required but not found in an R object."""
+
+
+def is_null(object) -> bool:
+    """Check if an object is NULL.
+
+    We use this to avoid the possible confusion with ``rbase.is_null`` returning
+    a boolean vector, which e.g. acts as a "truthy" value regardless of its
+    contents.
+    """
+    return rbase.is_null(object)[0]

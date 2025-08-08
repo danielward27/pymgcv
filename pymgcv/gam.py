@@ -1,20 +1,23 @@
 """Core GAM fitting and model specification functionality."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Literal, Self
+from typing import Literal, Self
 
 import numpy as np
 import pandas as pd
 import rpy2.rinterface as ri
 import rpy2.robjects as ro
+from pandas.api.types import is_numeric_dtype
 from rpy2.robjects.packages import importr
 
-from pymgcv.converters import data_to_rdf, to_py, to_rpy
 from pymgcv.custom_types import PartialEffectsResult, PredictionResult
+from pymgcv.families import AbstractFamily, Gaussian
+from pymgcv.rpy_utils import data_to_rdf, to_py, to_rpy
 from pymgcv.terms import Intercept, TermLike
+from pymgcv.utils import data_len
 
 mgcv = importr("mgcv")
 rbase = importr("base")
@@ -56,7 +59,7 @@ class FitState:
     """
 
     rgam: ro.ListVector
-    data: pd.DataFrame
+    data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series]
 
 
 @dataclass
@@ -69,7 +72,7 @@ class AbstractGAM(ABC):
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
-    family: str
+    family: AbstractFamily
     fit_state: FitState | None
 
     def __init__(
@@ -77,7 +80,7 @@ class AbstractGAM(ABC):
         predictors: dict[str, Iterable[TermLike] | TermLike],
         family_predictors: dict[str, Iterable[TermLike] | TermLike] | None = None,
         *,
-        family: str = "gaussian",
+        family: AbstractFamily | None = None,
         add_intercepts: bool = True,
     ):
         r"""Initialize a GAM/BAM model.
@@ -90,14 +93,15 @@ class AbstractGAM(ABC):
             family_predictors: Dictionary mapping family parameter names to an iterable
                 of terms for modeling those parameters. Keys are used as labels during
                 prediction and should match the order expected by the mgcv family.
-            family: String specifying the mgcv family for the error distribution.
-                This is passed directly to R's mgcv and can include family arguments.
+            family: Family for the error distribution. See [Families](./families.md)
+                for available options.
             add_intercepts: If True, adds an intercept term to each formula.
                 If false, we assume that any [`Intercept`][pymgcv.terms.Intercept]
                 terms desired are manually added to the formulae.
         """
         predictors, family_predictors = deepcopy((predictors, family_predictors))
         family_predictors = {} if family_predictors is None else family_predictors
+        family = Gaussian() if family is None else family
 
         def _ensure_list_of_terms(d):
             return {
@@ -142,7 +146,7 @@ class AbstractGAM(ABC):
     @abstractmethod
     def fit(
         self,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
         *args,
         **kwargs,
     ) -> Self:
@@ -152,8 +156,9 @@ class AbstractGAM(ABC):
     @abstractmethod
     def predict(
         self,
-        data: pd.DataFrame | None = None,
+        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
         *args,
+        type: Literal["response", "link"] = "link",
         compute_se: bool = False,
         **kwargs,
     ) -> dict[str, PredictionResult]:
@@ -163,7 +168,7 @@ class AbstractGAM(ABC):
     @abstractmethod
     def partial_effects(
         self,
-        data: pd.DataFrame | None = None,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *args,
         compute_se: bool = False,
         **kwargs,
@@ -178,7 +183,7 @@ class AbstractGAM(ABC):
 
     def _check_valid_data(
         self,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
     ) -> None:
         """Validate that data contains all variables required by the model.
 
@@ -188,7 +193,8 @@ class AbstractGAM(ABC):
         - Checking for reserved variable names that conflict with mgcv
 
         Args:
-            data: DataFrame containing the modeling data
+            data: A dictionary or DataFrame containing all variables referenced in the model.
+                Defaults to the data used to fit the model.
 
         Raises:
             ValueError: If required variables are missing from data
@@ -200,16 +206,16 @@ class AbstractGAM(ABC):
 
         for term in all_terms:
             for varname in term.varnames:
-                if varname not in data.columns:
+                if varname not in data:
                     raise ValueError(f"Variable {varname} not found in data.")
 
             if term.by is not None:
-                if term.by not in data.columns:
+                if term.by not in data:
                     raise ValueError(f"Variable {term.by} not found in data.")
 
             disallowed = ["Intercept", "s(", "te(", "ti(", "t2(", ":", "*"]
 
-            for var in data.columns:
+            for var in data:
                 if any(dis in var for dis in disallowed):
                     raise ValueError(
                         f"Variable name '{var}' risks clashing with terms generated by "
@@ -306,9 +312,9 @@ class AbstractGAM(ABC):
 
     def partial_effect(
         self,
-        target: str,
         term: TermLike,
-        data: pd.DataFrame,
+        target: str | None = None,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
         compute_se: bool = False,
     ) -> PredictionResult:
@@ -318,18 +324,29 @@ class AbstractGAM(ABC):
         to the model predictions.
 
         Args:
-            target: Name of the target variable (response variable or family
-                parameter name from the model specification)
             term: The specific term to evaluate (must match a term used in the
                 original model specification)
-            data: DataFrame containing the predictor variables needed for the term
+            target: Name of the target variable (response variable or family
+                parameter name from the model specification). If set to None, an error
+                is raised when multiple predictors are present; otherwise, the sole
+                available target is used.
+            data: DataFrame or dictionary containing the variables needed
+                to compute the partial effect for the term.
             compute_se: Whether to compute and return standard errors
         """
-        data = data if data is not None else self.fit_state.data
         if self.fit_state is None:
-            raise RuntimeError(
+            raise ValueError(
                 "Cannot compute partial effect before fitting the model.",
             )
+
+        if target is None:
+            if len(self.all_predictors) > 1:
+                raise ValueError(
+                    "Target must be specified when multiple predictors are present.",
+                )
+            target = list(self.all_predictors.keys())[0]
+
+        data = data if data is not None else self.fit_state.data
 
         formula_idx = list(self.all_predictors.keys()).index(target)
         return term._partial_effect(
@@ -341,11 +358,12 @@ class AbstractGAM(ABC):
 
     def partial_residuals(
         self,
-        target: str,
         term: TermLike,
-        data: pd.DataFrame,
-        **kwargs: Any,
-    ) -> pd.Series:
+        target: str | None = None,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
+        *,
+        avoid_scaling: bool = False,
+    ) -> np.ndarray:
         """Compute partial residuals for model diagnostic plots.
 
         Partial residuals combine the fitted values from a specific term with
@@ -354,39 +372,53 @@ class AbstractGAM(ABC):
         different functional form might be more appropriate.
 
         Args:
-            target: Name of the response variable.
             term: The model term to compute partial residuals for.
-            data: DataFrame containing the data (must include the response variable).
-            **kwargs: Additional keyword arguments to pass to `partial_effects`.
+            target: Name of the target variable (response variable or family
+                parameter name from the model specification). If set to None, an error
+                is raised when multiple predictors are present; otherwise, the sole
+                available target is used.
+            data: A dictionary or DataFrame containing all variables referenced in the model.
+                Defaults to the data used to fit the model.
+            avoid_scaling: If True, and the term has a numeric by variable,
+                the scaling by the by variable is not included in the term effect.
+                This facilitates plotting the residuals, as the plots
+                only show the smooth component (unscaled by the by variable).
 
         Returns:
             Series containing the partial residuals for the specified term
         """
-        data = data if data is not None else self.fit_state.data
-        partial_effects = self.partial_effects(data, **kwargs)[target].fit  # Link scale
-        assert isinstance(partial_effects, pd.DataFrame)
-        link_fit = partial_effects.sum(axis=1).to_numpy()
-        term_effect = partial_effects.pop(term.label()).to_numpy()
-
-        family = self.family
-        if "(" not in family:
-            family = f"{family}()"
-
-        rfam: ro.ListVector = ro.r(family)  # type: ignore
-        inv_link_fn = rfam.rx2("linkinv")  # TODO this breaks with GAULSS
-        d_mu_d_eta_fn = rfam.rx2("mu.eta")
-
-        if rbase.is_null(inv_link_fn)[0] or rbase.is_null(d_mu_d_eta_fn)[0]:
-            raise NotImplementedError(
-                f"Computing partial residuals for {family} not yet supported.",
+        if self.fit_state is None:
+            raise ValueError(
+                "Cannot compute partial residuals before fitting the model.",
             )
-        rpy_link_fit = to_rpy(link_fit)
-        response_residual = data[target] - to_py(inv_link_fn(rpy_link_fit))
+
+        if target is None:
+            if len(self.all_predictors) > 1:
+                raise ValueError(
+                    "Target must be specified when multiple predictors are present.",
+                )
+            target = list(self.all_predictors.keys())[0]
+
+        data = data if data is not None else self.fit_state.data
+        data = deepcopy(data)
+        link_fit = self.predict(data)[target].fit
+
+        if (
+            term.by is not None
+            and is_numeric_dtype(data[term.by].dtype)
+            and avoid_scaling
+        ):
+            data = dict(data) if isinstance(data, Mapping) else data
+            data[term.by] = np.full(data_len(data), 1)
+
+        term_effect = self.partial_effect(term=term, target=target, data=data).fit
+
+        response_residual = data[target] - self.family.inverse_link(link_fit)
 
         # We want to transform residuals to link scale.
         # link(response) - link(response_fit) not sensible: poisson + log link -> log(0)
         # Instead use first order taylor expansion of link function around the fit
-        d_mu_d_eta = to_py(d_mu_d_eta_fn(rpy_link_fit))
+        d_mu_d_eta = self.family.dmu_deta(link_fit)
         d_mu_d_eta = np.maximum(d_mu_d_eta, 1e-6)  # Numerical stability
 
         # If ĝ is the first order approxmation to link, below is:
@@ -420,7 +452,7 @@ class AbstractGAM(ABC):
     def _format_partial_effects(
         self,
         predictions,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         *,
         compute_se: bool,
     ) -> dict[str, PartialEffectsResult]:
@@ -452,7 +484,7 @@ class AbstractGAM(ABC):
                 identifier = term.mgcv_identifier(i)
 
                 if term.by is not None and data[term.by].dtype == "category":
-                    levels = data[term.by].cat.categories.to_list()
+                    levels = data[term.by].cat.categories.to_list()  # type: ignore
                     cols = [f"{identifier}{lev}" for lev in levels]
                     fit[label] = fit_raw[cols].sum(axis=1)
 
@@ -467,8 +499,8 @@ class AbstractGAM(ABC):
 
                 else:  # Offset + Intercept
                     partial_effect = self.partial_effect(
-                        target,
                         term,
+                        target,
                         data,
                         compute_se=compute_se,
                     )
@@ -484,6 +516,83 @@ class AbstractGAM(ABC):
             )
         return results
 
+    def aic(self, k: float = 2) -> float:
+        """Calculate Akaike's Information Criterion for fitted GAM models.
+
+        Where possible (fitting [`GAM`][pymgcv.gam.GAM]/[`BAM`][pymgcv.gam.BAM]
+        models with "ML" or "REML"), this uses the approach of Wood, Pya & Saefken 2016,
+        which accounts for smoothing parameter uncertainty, without favouring
+        overly simple models.
+
+        Args:
+            k: Penalty per parameter (default 2 for classical AIC).
+        """
+        if self.fit_state is None:
+            raise ValueError("Cannot compute AIC before fitting.")
+        res = rstats.AIC(self.fit_state.rgam, k=k)
+        return res[0]
+
+    def residuals(
+        self,
+        type: Literal[
+            "deviance",
+            "pearson",
+            "scaled.pearson",
+            "working",
+            "response",
+        ] = "deviance",
+    ):
+        r"""Compute the residuals for a fitted model.
+
+        Args:
+            type: Type of residuals to compute, one of:
+
+                - **response**: Raw residuals $y - \mu$, where $y$ is the observed data
+                    and $\mu$ is the model fitted value.
+                - **pearson**: Pearson residuals — raw residuals divided by the square
+                    root of the model's mean-variance relationship.
+                    $$
+                    \frac{y - \mu}{\sqrt{V(\mu)}}
+                    $$
+                - **scaled.pearson**: Raw residuals divided by the standard deviation of
+                    the data according to the model mean variance relationship and
+                    estimated scale parameter.
+                - **deviance**: Deviance residuals as defined by the model’s family.
+                - **working**: Working residuals are the residuals returned from
+                    model fitting at convergence.
+        """
+        if self.fit_state is None:
+            raise ValueError("Cannot compute residuals before fitting.")
+        return to_py(rstats.residuals(self.fit_state.rgam, type=type))
+
+    def residuals_from_y_and_fit(
+        self,
+        *,
+        y: np.ndarray,
+        fit: np.ndarray,
+        weights: np.ndarray | None = None,
+        type: Literal[
+            "deviance",
+            "pearson",
+            "scaled.pearson",
+            "working",
+            "response",
+        ] = "deviance",
+    ):
+        """Compute the residuals, from y, fit and optionally prior weights."""
+        # For now just overwrite attributes and use residuals(gam)
+        # From scanning gam.residuals code this looks like it should be reasonable?
+        gam = deepcopy(self)
+        if gam.fit_state is None:
+            raise ValueError("Cannot compute residuals before fitting the model.")
+
+        if weights is None:
+            weights = np.ones_like(y)
+        gam.fit_state.rgam.rx2["y"] = to_rpy(y)
+        gam.fit_state.rgam.rx2["fitted.values"] = to_rpy(fit)
+        gam.fit_state.rgam.rx2["prior.weights"] = to_rpy(weights)
+        return gam.residuals(type)
+
 
 @dataclass(init=False)
 class GAM(AbstractGAM):
@@ -491,12 +600,12 @@ class GAM(AbstractGAM):
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
-    family: str
+    family: AbstractFamily
     fit_state: FitState | None
 
     def fit(
         self,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
         *,
         method: GAMFitMethods = "GCV.Cp",
         weights: str | np.ndarray | pd.Series | None = None,
@@ -506,15 +615,15 @@ class GAM(AbstractGAM):
         gamma: float | int = 1,
         n_threads: int = 1,
     ) -> Self:
+        # TODO if we do this, we need to support it everywhere we pass data?
         """Fit the GAM.
 
         Args:
-            data: DataFrame containing all variables referenced in the specification.
-                Variable names must match those used in the model terms.
-            method: Method for smoothing parameter estimation, matching the mgcv,
-                options.
+            data: DataFrame or dictionary containing all variables referenced in the model.
+                Note, using a dictionary is required when passing matrix-valued variables.
+            method: Method for smoothing parameter estimation, matching the mgcv options.
             weights: Observation weights. Either a string, matching a column name,
-                or a array/series with length equal to the number of observations.
+                or an array/series with length equal to the number of observations.
             optimizer: An string or length 2 tuple, specifying the numerical
                 optimization method to use to optimize the smoothing parameter
                 estimation criterion (given by method). "outer" for the direct nested
@@ -540,14 +649,14 @@ class GAM(AbstractGAM):
             n_threads: Number of threads to use for fitting the GAM.
         """
         # TODO some missing options: control, sp, knots, min.sp etc
-        data = data.copy()
+        data = deepcopy(data)
         weights = data[weights] if isinstance(weights, str) else weights  # type: ignore
 
         self._check_valid_data(data)
         rgam = mgcv.gam(
             self._to_r_formulae(),
             data=data_to_rdf(data),
-            family=ro.rl(self.family),
+            family=self.family.rfamily,
             method=method,
             weights=ro.NULL if weights is None else np.asarray(weights),
             optimizer=to_rpy(np.array(optimizer)),
@@ -564,12 +673,13 @@ class GAM(AbstractGAM):
 
     def predict(
         self,
-        data: pd.DataFrame | None = None,
+        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
         *,
+        type: Literal["response", "link"] = "link",
         compute_se: bool = False,
         block_size: int | None = None,
     ) -> dict[str, PredictionResult]:
-        """Compute model predictions with uncertainty estimates.
+        """Compute model predictions with (optionally) uncertainty estimates.
 
         Makes predictions for new data using the fitted GAM model. Predictions
         are returned on the link scale (linear predictor scale), not the response
@@ -577,9 +687,11 @@ class GAM(AbstractGAM):
         function to the results.
 
         Args:
-            data: DataFrame containing predictor variables. Must include all
-                variables referenced in the original model specification.
+            data: A dictionary or DataFrame containing all variables referenced in the model.
+                Defaults to the data used to fit the model.
             compute_se: Whether to compute standard errors for predictions.
+            type: Type of prediction to compute. Either "link" for linear predictor
+                scale or "response" for response scale.
             block_size: Number of rows to process at a time.  If None then block size
                 is 1000 if data supplied, and the number of rows in the model frame
                 otherwise.
@@ -598,6 +710,7 @@ class GAM(AbstractGAM):
             self.fit_state.rgam,
             ri.MissingArg if data is None else data_to_rdf(data),
             se=compute_se,
+            type=type,
             block_size=ri.MissingArg if block_size is None else block_size,
         )
         return self._format_predictions(
@@ -607,7 +720,7 @@ class GAM(AbstractGAM):
 
     def partial_effects(
         self,
-        data: pd.DataFrame | None = None,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
         compute_se: bool = False,
         block_size: int | None = None,
@@ -618,8 +731,8 @@ class GAM(AbstractGAM):
         link scale. The sum of all fit columns equals the total prediction (link scale).
 
         Args:
-            data: DataFrame containing predictor variables for evaluation. Defaults to
-                using the data for fitting.
+            data: A dictionary or DataFrame containing all variables referenced in the model.
+                Defaults to the data used to fit the model.
             compute_se: Whether to compute and return standard errors.
             block_size: Number of rows to process at a time.  If None then block size
                 is 1000 if data supplied, and the number of rows in the model frame
@@ -652,12 +765,12 @@ class BAM(AbstractGAM):
 
     predictors: dict[str, list[TermLike]]
     family_predictors: dict[str, list[TermLike]]
-    family: str
+    family: AbstractFamily
     fit_state: FitState | None
 
     def fit(
         self,
-        data: pd.DataFrame,
+        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
         *,
         method: BAMFitMethods = "fREML",
         weights: str | np.ndarray | pd.Series | None = None,
@@ -672,8 +785,8 @@ class BAM(AbstractGAM):
         """Fit the GAM.
 
         Args:
-            data: DataFrame containing all variables referenced in the specification.
-                Variable names must match those used in the model terms.
+            data: DataFrame or dictionary containing all variables referenced in the model.
+                Note, using a dictionary is required when passing matrix-valued variables.
             method: Method for smoothing parameter estimation, matching the mgcv,
                 options.
             weights: Observation weights. Either a string, matching a column name,
@@ -705,7 +818,7 @@ class BAM(AbstractGAM):
                 memory requirements.
         """
         # TODO some missing options: control, sp, knots, min.sp, nthreads
-        data = data.copy()
+        data = deepcopy(data)
         weights = data[weights] if isinstance(weights, str) else weights  # type: ignore
 
         self._check_valid_data(data)
@@ -713,7 +826,7 @@ class BAM(AbstractGAM):
             rgam=mgcv.bam(
                 self._to_r_formulae(),
                 data=data_to_rdf(data),
-                family=ro.rl(self.family),
+                family=self.family.rfamily,
                 method=method,
                 weights=ro.NULL if weights is None else np.asarray(weights),
                 scale=0 if scale is None else (-1 if scale == "unknown" else scale),
@@ -730,9 +843,10 @@ class BAM(AbstractGAM):
 
     def predict(
         self,
-        data: pd.DataFrame | None = None,
+        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
         *,
         compute_se: bool = False,
+        type: Literal["link", "response"] = "link",
         block_size: int = 50000,
         discrete: bool = True,
         n_threads: int = 1,
@@ -746,9 +860,11 @@ class BAM(AbstractGAM):
         function to the results.
 
         Args:
-            data: DataFrame containing predictor variables. Must include all
-                variables referenced in the original model specification.
+            data: A dictionary or DataFrame containing all variables referenced in the model.
+                Defaults to the data used to fit the model.
             compute_se: Whether to compute and return standard errors.
+            type: Type of prediction to compute. Either "link" for linear predictor
+                scale or "response" for response scale.
             block_size: Number of rows to process at a time.
             n_threads: Number of threads to use for computation.
             discrete: If True and the model was fitted with discrete=True, then
@@ -768,6 +884,7 @@ class BAM(AbstractGAM):
             self.fit_state.rgam,
             ri.MissingArg if data is None else data_to_rdf(data),
             se=compute_se,
+            type=type,
             block_size=ro.NULL if block_size is None else block_size,
             discrete=discrete,
             n_threads=n_threads,
@@ -781,7 +898,7 @@ class BAM(AbstractGAM):
 
     def partial_effects(
         self,
-        data: pd.DataFrame | None = None,
+        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
         *,
         compute_se: bool = False,
         block_size: int = 50000,
@@ -797,7 +914,8 @@ class BAM(AbstractGAM):
         equals the total prediction.
 
         Args:
-            data: DataFrame containing predictor variables for evaluation.
+            data: A dictionary or DataFrame containing all variables referenced in the model.
+                Defaults to the data used to fit the model.
             compute_se: Whether to compute and return standard errors.
             block_size: Number of rows to process at a time. Higher is faster
                 but more memory intensive.

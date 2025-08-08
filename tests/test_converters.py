@@ -2,13 +2,12 @@ import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
 
-from pymgcv.converters import data_to_rdf, to_py
+from pymgcv.rpy_utils import data_to_rdf, to_py
 
 
-def test_data_to_rdf_basic_dict():
+def test_data_to_rdf():
     d = pd.DataFrame({"a": np.array([1, 2, 3]), "b": np.array([4, 5, 6])})
     df = data_to_rdf(d)
-
     assert df.nrow == 3
     assert df.ncol == 2
     assert list(df.rx2("a")) == [1, 2, 3]
@@ -16,13 +15,11 @@ def test_data_to_rdf_basic_dict():
 
 
 def test_data_to_rdf_with_matrix():
-    d = pd.DataFrame({"a": np.array([1, 2, 3]), "b0": np.ones(3), "b1": np.ones(3)})
-    df = data_to_rdf(d, as_array_prefixes=("b",))
-
+    d = {"a": np.array([1, 2, 3]), "b": np.ones((3, 4))}
+    df = data_to_rdf(d)
     assert df.nrow == 3
     assert df.ncol == 2
-    assert to_py(df.rx2("a")).shape == (3,)
-    assert to_py(df.rx2("b")).shape == (3, 2)
+    assert df.rx2["b"].ncol == 4
 
 
 def test_data_to_rdf_categorical_factors():

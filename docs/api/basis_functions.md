@@ -4,6 +4,7 @@ Basis functions control how smooth terms behave in your GAM models -- different 
 
 <!-- TODO: Inspection creates strange attribute docs, but cannot disable force_inspection locally -->
 <!-- Hence, we manually specify mebers   -->
+
 ::: pymgcv.basis_functions.ThinPlateSpline
     options:
       members: __init__
@@ -31,6 +32,7 @@ Basis functions control how smooth terms behave in your GAM models -- different 
 ::: pymgcv.basis_functions.RandomWigglyCurve
     options:
       members: __init__
-::: pymgcv.basis_functions.BasisLike
+::: pymgcv.basis_functions.AbstractBasis
     options:
-      members: __init__
+      members: __str__
+      merge_init_into_class: false
