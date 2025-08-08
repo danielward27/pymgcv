@@ -60,8 +60,8 @@ def test_partial_effect_against_partial_effects(test_case: GAMTestCase):
         for term in terms:
             try:
                 effect = gam.partial_effect(
-                    target,
                     term,
+                    target,
                     test_case.data,
                     compute_se=True,
                 )

@@ -1,11 +1,12 @@
 """Plotting utilities for visualizing GAM models."""
 
-from copy import deepcopy
 import types
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from math import ceil
-from typing import Any, Literal, TypeGuard
+from typing import Any, TypeGuard
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -15,10 +16,10 @@ from matplotlib.figure import Figure
 from pandas import CategoricalDtype
 from pandas.api.types import is_numeric_dtype
 from rpy2.robjects.packages import importr
-from pymgcv.utils import data_len
+
 from pymgcv.basis_functions import RandomWigglyCurve
 from pymgcv.gam import AbstractGAM
-from pymgcv.qq import qq_simulate, qq_uniform
+from pymgcv.qq import QQResult, qq_simulate
 from pymgcv.terms import (
     L,
     S,
@@ -26,6 +27,7 @@ from pymgcv.terms import (
     TermLike,
     _RandomWigglyToByInterface,
 )
+from pymgcv.utils import data_len
 
 rbase = importr("base")
 rstats = importr("stats")
@@ -66,7 +68,10 @@ def plot_gam(
     kwargs_mapper = {} if kwargs_mapper is None else kwargs_mapper
     kwargs_mapper.setdefault(plot_categorical, {}).setdefault("residuals", scatter)
     kwargs_mapper.setdefault(plot_continuous_1d, {}).setdefault("residuals", scatter)
-    kwargs_mapper.setdefault(plot_continuous_2d, {}).setdefault("scatter_kwargs", {}).setdefault("disable", not scatter)
+    kwargs_mapper.setdefault(plot_continuous_2d, {}).setdefault(
+        "scatter_kwargs",
+        {},
+    ).setdefault("disable", not scatter)
 
     if isinstance(to_plot, type | types.UnionType):
         to_plot = {
@@ -80,9 +85,9 @@ def plot_gam(
         for term in terms:
             try:
                 plotter = get_term_plotter(
-                    target,
                     term=term,
                     gam=gam,
+                    target=target,
                     data=data,
                 )
             except NotImplementedError:
@@ -120,17 +125,17 @@ class _TermPlotter:
 
 
 def get_term_plotter(
-    target: str,
     term: TermLike,
     gam: AbstractGAM,
+    target: str,
     data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
 ) -> _TermPlotter:
     """Utility for plotting a term in a model.
 
     Because some terms need multiple axes for plotting, this returns the number of axes
     required, and a function that applies the plotting to an iterable of axes, taking
-    the axes and **kwargs passed to the plotting function. This allows us to setup the axes
-    before plotting when plotting multiple terms.
+    the axes and **kwargs passed to the plotting function. This allows us to setup the
+    axes before plotting when plotting multiple terms.
     """
     if gam.fit_state is None:
         raise ValueError("Cannot plot before fitting the model.")
@@ -154,9 +159,9 @@ def get_term_plotter(
 
             def _plot_wrapper(axes, **kwargs):
                 axes[0] = plot_categorical(
-                    target=target,
                     term=term,
                     gam=gam,
+                    target=target,
                     data=data,
                     ax=axes[0],
                     **kwargs,
@@ -172,9 +177,9 @@ def get_term_plotter(
             def _plot_wrapper(axes, **kwargs):
                 for level in levels:
                     axes[0] = plot_continuous_1d(
-                        target=target,
                         term=term,
                         gam=gam,
+                        target=target,
                         data=data,
                         level=level,
                         ax=axes[0],
@@ -192,9 +197,9 @@ def get_term_plotter(
             def _plot_wrapper(axes, **kwargs):
                 for i, level in enumerate(levels):
                     axes[i] = plot_continuous_2d(
-                        target=target,
                         term=term,
                         gam=gam,
+                        target=target,
                         data=data,
                         level=level,
                         ax=axes[i],
@@ -216,9 +221,9 @@ def get_term_plotter(
 
 def plot_continuous_1d(
     *,
-    target: str,
     term: TermLike,
     gam: AbstractGAM,
+    target: str | None = None,
     data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
     eval_density: int = 100,
     level: str | None = None,
@@ -237,9 +242,12 @@ def plot_continuous_1d(
         showing the unscaled effect of the smooth.
 
     Args:
-        target: Name of the response variable from the model specification.
         term: The model term to plot. Must be a univariate term (single variable).
         gam: GAM model containing the term to plot.
+        target: Name of the target variable (response variable or family
+            parameter name from the model specification). If set to None, an error
+            is raised when multiple predictors are present; otherwise, the sole
+            available target is used.
         data: DataFrame used for plotting partial residuals and determining
             axis limits. Defaults to the data used for training.
         eval_density: Number of evaluation points along the variable range
@@ -264,6 +272,14 @@ def plot_continuous_1d(
     """
     if gam.fit_state is None:
         raise ValueError("Cannot plot before fitting the model.")
+
+    if target is None:
+        if len(gam.all_predictors) > 1:
+            raise ValueError(
+                "Target must be specified when multiple predictors are present.",
+            )
+        target = list(gam.all_predictors.keys())[0]
+
     data = data if data is not None else gam.fit_state.data
     data = deepcopy(data)
     term = _RandomWigglyToByInterface(term) if _is_random_wiggly(term) else term
@@ -315,14 +331,14 @@ def plot_continuous_1d(
         if "c" not in kwargs and "color" not in kwargs:
             kwargs["color"] = current_color
 
-    pred = gam.partial_effect(target, term, spaced_data, compute_se=True)
+    pred = gam.partial_effect(term, target, spaced_data, compute_se=True)
 
     # Add partial residuals
     if residuals and target in data and not _is_linear_functional(term, data):
         partial_residuals = gam.partial_residuals(
-            target,
             term,
-            data,
+            target=target,
+            data=data,
             avoid_scaling=True,
         )
 
@@ -345,9 +361,9 @@ def plot_continuous_1d(
 
 def plot_continuous_2d(
     *,
-    target: str,
     term: TermLike,
     gam: AbstractGAM,
+    target: str | None = None,
     data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
     eval_density: int = 50,
     level: str | None = None,
@@ -362,10 +378,13 @@ def plot_continuous_2d(
     and interactions between two continuous variables.
 
     Args:
-        target: Name of the response variable from the model specification.
         term: The bivariate term to plot. Must have exactly two variables.
             Can be S('x1', 'x2') or T('x1', 'x2').
         gam: GAM model containing the term to plot.
+        target: Name of the target variable (response variable or family
+            parameter name from the model specification). If set to None, an error
+            is raised when multiple predictors are present; otherwise, the sole
+            available target is used.
         data: DataFrame containing the variables for determining plot range
             and showing data points. Should typically be the training data.
         eval_density: Number of evaluation points along each axis, creating
@@ -390,6 +409,14 @@ def plot_continuous_2d(
     """
     if gam.fit_state is None:
         raise ValueError("Cannot plot before fitting the model.")
+
+    if target is None:
+        if len(gam.all_predictors) > 1:
+            raise ValueError(
+                "Target must be specified when multiple predictors are present.",
+            )
+        target = list(gam.all_predictors.keys())[0]
+
     data = data if data is not None else gam.fit_state.data
     data = deepcopy(data)
     term = _RandomWigglyToByInterface(term) if _is_random_wiggly(term) else term
@@ -443,8 +470,8 @@ def plot_continuous_2d(
     scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
 
     pred = gam.partial_effect(
-        target,
         term,
+        target,
         data=spaced_data,
     ).fit
 
@@ -463,8 +490,8 @@ def plot_continuous_2d(
     color_bar = ax.figure.colorbar(mesh, ax=ax, pad=0)
     color_bar.set_label(f"link({target})~{term.label()}")
     _with_disable(ax.scatter)(
-        data[term.varnames[0]].ravel(), # Ravel for linear functional terms
-        data[term.varnames[1]].ravel(),
+        np.asarray(data[term.varnames[0]]).ravel(),  # Ravel for linear functional terms
+        np.asarray(data[term.varnames[1]]).ravel(),
         **scatter_kwargs,
     )
     ax.set_xlabel(term.varnames[0])
@@ -474,9 +501,9 @@ def plot_continuous_2d(
 
 def plot_categorical(
     *,
-    target: str,
     term: L,
     gam: AbstractGAM,
+    target: str | None = None,
     data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
     residuals: bool = False,
     n_standard_errors: int | float = 2,
@@ -493,10 +520,13 @@ def plot_categorical(
     - Partial residuals as jittered scatter points.
 
     Args:
-        target: Name of the response variable from the model specification.
         term: The categorical term to plot. Must be a L term with a single
             categorical variable.
         gam: GAM model containing the term to plot.
+        target: Name of the target variable (response variable or family
+            parameter name from the model specification). If set to None, an error
+            is raised when multiple predictors are present; otherwise, the sole
+            available target is used.
         data: DataFrame (or dictionary) containing the categorical variable and response.
         residuals: Whether to plot partial residuals (jittered on x-axis).
         n_standard_errors: Number of standard errors for confidence intervals.
@@ -507,6 +537,14 @@ def plot_categorical(
     """
     if gam.fit_state is None:
         raise RuntimeError("The model must be fitted before plotting.")
+
+    if target is None:
+        if len(gam.all_predictors) > 1:
+            raise ValueError(
+                "Target must be specified when multiple predictors are present.",
+            )
+        target = list(gam.all_predictors.keys())[0]
+
     data = gam.fit_state.data if data is None else data
 
     errorbar_kwargs = {} if errorbar_kwargs is None else errorbar_kwargs
@@ -529,7 +567,7 @@ def plot_categorical(
     )
 
     if residuals and target in data:
-        partial_residuals = gam.partial_residuals(target, term, data)
+        partial_residuals = gam.partial_residuals(term, target, data)
 
         jitter = np.random.uniform(-0.25, 0.25, size=data_len(data))
         scatter_kwargs.setdefault("alpha", 0.2)
@@ -543,8 +581,8 @@ def plot_categorical(
     ax.set_xticks(ticks=levels.cat.codes, labels=levels)
 
     pred = gam.partial_effect(
-        target=target,
         term=term,
+        target=target,
         data=pd.DataFrame(levels),
         compute_se=True,
     )
@@ -565,22 +603,42 @@ def plot_categorical(
 def plot_qq(
     gam: AbstractGAM,
     *,
-    n: int = 10,
+    qq_fun: Callable[[AbstractGAM], QQResult] = qq_simulate,
     scatter_kwargs: dict | None = None,
+    fill_between_kwargs: dict | None = None,
     plot_kwargs: dict | None = None,
     ax: Axes | None = None,
-    method: Literal["uniform", "simulate"] = "uniform",
 ) -> Axes:
     """A Q-Q plot of deviance residuals.
 
     Args:
         gam: The fitted GAM model.
-        n: The number of simulated sets to use for generating the theoretical
-            quantiles.
+        qq_fun: A function taking only the GAM model, and returning a `QQResult`
+            object storing the theoretical residuals, residuals, and the confidence
+            interval. Defaults to [`qq_simulate`][pymgcv.qq.qq_simulate], which is the
+            most widely supported method, only requiring the family to provide a
+            sampling function. [`qq_cdf`][pymgcv.qq.qq_cdf] can be used for families
+            providing a cdf method, which will be more efficient.
+            (only requires the family to provide a sampling function) for families which have a cdf method,
+            which transforms the data to a uniform distribution, and uses
+            `qq_simulate` if the `cdf` is not supported for the family.
         scatter_kwargs: Key word arguments passed to `matplotlib.pyplot.scatter`.
         plot_kwargs: Key word arguments passed to `matplotlib.pyplot.plot` for
             plotting the reference line. Pass {"disable": True} to avoid plotting.
         ax: Matplotlib axes to use for the plot.
+
+
+    !!! note
+
+        We can change e.g. the confidence level and number of simulations using
+        partial application:
+        ```python
+        from pymgcv.qq import qq_simulate
+        from functools import partial
+
+        qq_fun = partial(qq_simulate, level=0.95, n_sim=10)
+        # plot_qq(..., qq_fun=qq_fun)
+        ```
 
     Returns:
         The matplotlib axes object.
@@ -616,31 +674,38 @@ def plot_qq(
 
         for model, ax in zip(models, axes, strict=False):
             model.fit(data)
-            plot_qq(model, ax=ax, method="simulate")
+            plot_qq(model, ax=ax)
             ax.set_title(model.family.__class__.__name__)
             ax.set_box_aspect(1)
 
         fig.show()
         ```
     """
-    method_map = {
-        "uniform": qq_uniform,
-        "simulate": qq_simulate,
-    }
-    qq_fun = method_map[method]
     if gam.fit_state is None:
         raise RuntimeError("The model must be fitted before plotting.")
 
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
-    scatter_kwargs.setdefault("s", 0.5 * rcParams["lines.markersize"] ** 2)
+    scatter_kwargs.setdefault("s", 0.2 * rcParams["lines.markersize"] ** 2)
+    fill_between_kwargs = {} if fill_between_kwargs is None else fill_between_kwargs
+    fill_between_kwargs.setdefault("alpha", 0.4)
+
+    if "c" not in scatter_kwargs and "color" not in scatter_kwargs:
+        scatter_kwargs["color"] = "black"
 
     plot_kwargs = {} if plot_kwargs is None else plot_kwargs
+
     if "c" not in plot_kwargs and "color" not in plot_kwargs:
         plot_kwargs["color"] = "gray"
     plot_kwargs.setdefault("linestyle", "--")
-
     ax = plt.gca() if ax is None else ax
-    qq_data = qq_fun(gam, n=n)
+    qq_data = qq_fun(gam)
+
+    _with_disable(ax.fill_between)(
+        qq_data.theoretical,
+        *qq_data.interval,
+        **fill_between_kwargs,
+    )
+
     ax.scatter(qq_data.theoretical, qq_data.residuals, **scatter_kwargs)
     ax.set_xlabel("Theoretical Quantiles")
     ax.set_ylabel("Residuals")
@@ -661,10 +726,18 @@ def _with_disable(plot_func):
 
     return wrapper
 
+
 def _is_random_wiggly(term: TermLike) -> TypeGuard[T | S]:
     if isinstance(term, S | T):
         return isinstance(term.bs, RandomWigglyCurve)
     return False
 
-def _is_linear_functional(term: TermLike, data: pd.DataFrame | dict[str, pd.Series | np.ndarray]) -> bool:
-    return any(np.asarray(data[k]).ndim > 1 for k in term.varnames) and isinstance(term, S | T)
+
+def _is_linear_functional(
+    term: TermLike,
+    data: pd.DataFrame | dict[str, pd.Series | np.ndarray],
+) -> bool:
+    return any(np.asarray(data[k]).ndim > 1 for k in term.varnames) and isinstance(
+        term,
+        S | T,
+    )

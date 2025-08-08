@@ -1,16 +1,16 @@
 """Core GAM fitting and model specification functionality."""
 
-from typing import Mapping
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Literal, Self
-from pandas.api.types import is_numeric_dtype
+from typing import Literal, Self
+
 import numpy as np
 import pandas as pd
 import rpy2.rinterface as ri
 import rpy2.robjects as ro
+from pandas.api.types import is_numeric_dtype
 from rpy2.robjects.packages import importr
 
 from pymgcv.custom_types import PartialEffectsResult, PredictionResult
@@ -312,8 +312,8 @@ class AbstractGAM(ABC):
 
     def partial_effect(
         self,
-        target: str,
         term: TermLike,
+        target: str | None = None,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
         compute_se: bool = False,
@@ -324,10 +324,12 @@ class AbstractGAM(ABC):
         to the model predictions.
 
         Args:
-            target: Name of the target variable (response variable or family
-                parameter name from the model specification)
             term: The specific term to evaluate (must match a term used in the
                 original model specification)
+            target: Name of the target variable (response variable or family
+                parameter name from the model specification). If set to None, an error
+                is raised when multiple predictors are present; otherwise, the sole
+                available target is used.
             data: DataFrame or dictionary containing the variables needed
                 to compute the partial effect for the term.
             compute_se: Whether to compute and return standard errors
@@ -336,6 +338,14 @@ class AbstractGAM(ABC):
             raise ValueError(
                 "Cannot compute partial effect before fitting the model.",
             )
+
+        if target is None:
+            if len(self.all_predictors) > 1:
+                raise ValueError(
+                    "Target must be specified when multiple predictors are present.",
+                )
+            target = list(self.all_predictors.keys())[0]
+
         data = data if data is not None else self.fit_state.data
 
         formula_idx = list(self.all_predictors.keys()).index(target)
@@ -348,11 +358,11 @@ class AbstractGAM(ABC):
 
     def partial_residuals(
         self,
-        target: str,
         term: TermLike,
+        target: str | None = None,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
-        avoid_scaling: bool = False
+        avoid_scaling: bool = False,
     ) -> np.ndarray:
         """Compute partial residuals for model diagnostic plots.
 
@@ -362,8 +372,11 @@ class AbstractGAM(ABC):
         different functional form might be more appropriate.
 
         Args:
-            target: Name of the response variable.
             term: The model term to compute partial residuals for.
+            target: Name of the target variable (response variable or family
+                parameter name from the model specification). If set to None, an error
+                is raised when multiple predictors are present; otherwise, the sole
+                available target is used.
             data: A dictionary or DataFrame containing all variables referenced in the model.
                 Defaults to the data used to fit the model.
             avoid_scaling: If True, and the term has a numeric by variable,
@@ -375,16 +388,30 @@ class AbstractGAM(ABC):
             Series containing the partial residuals for the specified term
         """
         if self.fit_state is None:
-            raise ValueError("Cannot compute partial residuals before fitting the model.")
+            raise ValueError(
+                "Cannot compute partial residuals before fitting the model.",
+            )
+
+        if target is None:
+            if len(self.all_predictors) > 1:
+                raise ValueError(
+                    "Target must be specified when multiple predictors are present.",
+                )
+            target = list(self.all_predictors.keys())[0]
+
         data = data if data is not None else self.fit_state.data
         data = deepcopy(data)
         link_fit = self.predict(data)[target].fit
 
-        if term.by is not None and is_numeric_dtype(data[term.by].dtype) and avoid_scaling:
+        if (
+            term.by is not None
+            and is_numeric_dtype(data[term.by].dtype)
+            and avoid_scaling
+        ):
             data = dict(data) if isinstance(data, Mapping) else data
             data[term.by] = np.full(data_len(data), 1)
 
-        term_effect = self.partial_effect(target=target, term=term, data=data).fit
+        term_effect = self.partial_effect(term=term, target=target, data=data).fit
 
         response_residual = data[target] - self.family.inverse_link(link_fit)
 
@@ -457,7 +484,7 @@ class AbstractGAM(ABC):
                 identifier = term.mgcv_identifier(i)
 
                 if term.by is not None and data[term.by].dtype == "category":
-                    levels = data[term.by].cat.categories.to_list() # type: ignore
+                    levels = data[term.by].cat.categories.to_list()  # type: ignore
                     cols = [f"{identifier}{lev}" for lev in levels]
                     fit[label] = fit_raw[cols].sum(axis=1)
 
@@ -472,8 +499,8 @@ class AbstractGAM(ABC):
 
                 else:  # Offset + Intercept
                     partial_effect = self.partial_effect(
-                        target,
                         term,
+                        target,
                         data,
                         compute_se=compute_se,
                     )
@@ -566,6 +593,7 @@ class AbstractGAM(ABC):
         gam.fit_state.rgam.rx2["prior.weights"] = to_rpy(weights)
         return gam.residuals(type)
 
+
 @dataclass(init=False)
 class GAM(AbstractGAM):
     """Standard GAM Model."""
@@ -587,7 +615,6 @@ class GAM(AbstractGAM):
         gamma: float | int = 1,
         n_threads: int = 1,
     ) -> Self:
-
         # TODO if we do this, we need to support it everywhere we pass data?
         """Fit the GAM.
 

@@ -20,12 +20,12 @@ from . import gam_test_cases as tc
 
 def get_cases_1d_continuous(model_type: type[AbstractGAM]):
     cases = [
-        (tc.linear_gam, {"target": "y"}),
-        (tc.smooth_1d_gam, {"target": "y", "residuals": True}),
-        (tc.smooth_1d_by_numeric_gam, {"target": "y"}),
-        (tc.smooth_1d_random_wiggly_curve_gam, {"target": "y", "level": "a"}),
-        (tc.smooth_1d_by_categorical_gam, {"target": "y", "level": "a"}),
-        (tc.linear_functional_smooth_1d_gam, {"target": "y"})
+        (tc.linear_gam, {}),
+        (tc.smooth_1d_gam, {"residuals": True}),
+        (tc.smooth_1d_by_numeric_gam, {}),
+        (tc.smooth_1d_random_wiggly_curve_gam, {"level": "a"}),
+        (tc.smooth_1d_by_categorical_gam, {"level": "a"}),
+        (tc.linear_functional_smooth_1d_gam, {}),
     ]
     return {
         f"{model_type.__name__} - {f.__name__}": (f(model_type), kwargs)
@@ -43,19 +43,19 @@ cases_1d_continuous = get_cases_1d_continuous(GAM) | get_cases_1d_continuous(BAM
 )
 def test_plot_continuous_1d(test_case: tc.GAMTestCase, kwargs: dict):
     gam = test_case.gam_model.fit(test_case.data)
-    term = gam.all_predictors[kwargs["target"]][0]  # Assume first term of interest
+    term = list(gam.all_predictors.values())[0][0]
     plot_continuous_1d(**kwargs, gam=gam, term=term, data=test_case.data)
     plt.close("all")
 
 
 def get_cases_2d_continuous(model_type: type[AbstractGAM]):
     test_cases_1d_continuous = [
-        (tc.smooth_2d_gam, {"target": "y"}),
-        (tc.tensor_2d_gam, {"target": "y"}),
-        (tc.tensor_2d_by_numeric_gam, {"target": "y"}),
-        (tc.tensor_2d_by_categorical_gam, {"target": "y", "level": "a"}),
-        (tc.tensor_2d_random_wiggly_curve_gam, {"target": "y", "level": "a"}),
-        (tc.linear_functional_tensor_2d_gam, {"target": "y"})
+        (tc.smooth_2d_gam, {}),
+        (tc.tensor_2d_gam, {}),
+        (tc.tensor_2d_by_numeric_gam, {}),
+        (tc.tensor_2d_by_categorical_gam, {"level": "a"}),
+        (tc.tensor_2d_random_wiggly_curve_gam, {"level": "a"}),
+        (tc.linear_functional_tensor_2d_gam, {}),
     ]
     return {
         f"{model_type.__name__} - {f.__name__}": (f(model_type), kwargs)
@@ -73,7 +73,7 @@ cases_2d_continuous = get_cases_2d_continuous(GAM) | get_cases_2d_continuous(BAM
 )
 def test_plot_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
     gam = test_case.gam_model.fit(test_case.data)
-    term = gam.all_predictors[kwargs["target"]][0]  # Assume first term of interest
+    term = list(gam.all_predictors.values())[0][0]
     plot_continuous_2d(**kwargs, gam=gam, term=term, data=test_case.data)
     plt.close("all")
 
@@ -85,7 +85,7 @@ def test_plot_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
 def test_plot_categorical(model_type: type[AbstractGAM]):
     test_case = tc.categorical_linear_gam(model_type)
     gam = test_case.gam_model.fit(test_case.data)
-    term = gam.predictors["y"][0]
+    term = list(gam.all_predictors.values())[0][0]
     plot_categorical(target="y", gam=gam, term=term, data=test_case.data)
     plt.close("all")
 
@@ -107,7 +107,7 @@ all_gam_test_cases = tc.get_test_cases()
 def test_plot_gam(test_case: tc.GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data)
     try:
-        plot_gam(gam=gam, ncols=1)   # scatter=True fails for mvn + gaulss
+        plot_gam(gam=gam, ncols=1)  # scatter=True fails for mvn + gaulss
     except (ValueError, NotImplementedError) as e:
         if "plot any" in str(e):
             pass
@@ -126,8 +126,14 @@ def test_plot_qq(test_case: tc.GAMTestCase):
     try:
         plot_qq(gam=gam)
     except NotImplementedError as e:
-        if "Families producing matrix outputs" in str(e):  # e.g. mvn and gaulss
+        if "Multivariate response" in str(e):  # e.g. mvn and gaulss
             pass
         else:
             raise
+    except TypeError as e:
+        if "Family must support CDF method" in str(e):
+            pass
+        else:
+            raise
+
     plt.close("all")

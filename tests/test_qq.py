@@ -3,13 +3,13 @@ import pandas as pd
 import pytest
 
 from pymgcv.gam import GAM
-from pymgcv.qq import qq_simulate, qq_uniform
+from pymgcv.qq import qq_cdf, qq_simulate
 from pymgcv.terms import L, S
 
 
 @pytest.mark.parametrize(
     "qq_fun",
-    [qq_uniform, qq_simulate],
+    [qq_cdf, qq_simulate],
 )
 def test_qq_functions(qq_fun):
     """Test that qq_uniform runs without error and returns expected structure."""
@@ -27,7 +27,7 @@ def test_qq_functions(qq_fun):
     gam = GAM({"y": L("x0") + S("x1") + S("x2", "x3")})
     gam.fit(data)
 
-    result = qq_fun(gam, n=5)
+    result = qq_fun(gam)
     for arr in [result.theoretical, result.residuals]:
         assert len(arr) == n
         assert np.all(np.isfinite(arr))
@@ -42,10 +42,26 @@ def test_qq_functions(qq_fun):
 
     gam = GAM({"y": L("x0") + S("x1") + S("x2", "x3")})
     gam.fit(data)
-    result = qq_uniform(gam, n=5)
+    result = qq_fun(gam)
 
     assert len(result.theoretical) == n - 3  # Nans exluded
     assert np.all(np.isfinite(result.theoretical))
     assert np.all(
         np.isfinite(result.residuals),
     )
+
+
+from .gam_test_cases import GAMTestCase, get_test_cases
+
+test_cases = get_test_cases()
+
+
+@pytest.mark.parametrize(
+    "test_case",
+    [test_cases["GAM - gaulss_gam"]],
+)  # TODO add others.
+@pytest.mark.parametrize("qq_fun", [qq_simulate])
+def test_qq_functions_lss(test_case: GAMTestCase, qq_fun):
+    gam = test_case.gam_model
+    gam.fit(test_case.data)
+    result = qq_fun(gam)

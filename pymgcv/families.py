@@ -1,6 +1,6 @@
 """Families supported by pymgcv."""
 
-from abc import ABC
+from abc import ABC, abstractmethod
 from typing import Literal
 
 import numpy as np
@@ -13,6 +13,7 @@ rbase = importr("base")
 rstats = importr("stats")
 rmgcv = importr("mgcv")
 
+# For qq_simulate we need sample, and for qq_cdf we need cdf implemented.
 
 
 class AbstractFamily(ABC):
@@ -42,29 +43,6 @@ class AbstractFamily(ABC):
         assert isinstance(result, np.ndarray)
         return result
 
-    def quantile(
-        self,
-        *,
-        probs: float | np.ndarray,
-        mu: int | float | np.ndarray,
-        wt: int | float | np.ndarray | None = None,
-        scale: int | float | np.ndarray | None = None,
-    ) -> np.ndarray:
-        """Compute the quantile function."""
-        q_fun = rmgcv.fix_family_qf(self.rfamily).rx2["qf"]
-
-        if is_null(q_fun):
-            raise NotImplementedError(
-                f"Quantile function not available for family {self.__class__.__name__}.",
-            )
-        kwargs = {"mu": mu, "wt": wt, "scale": scale}
-        kwargs = {k: v for k, v in kwargs.items() if v is not None}
-        arrays = np.broadcast_arrays(*kwargs.values())
-        kwargs = {k: to_rpy(v) for k, v in zip(kwargs.keys(), arrays, strict=True)}
-        result = to_py(q_fun(to_rpy(probs), **kwargs))
-        assert isinstance(result, np.ndarray)
-        return result
-
     def sample(
         self,
         mu: int | float | np.ndarray,
@@ -79,13 +57,32 @@ class AbstractFamily(ABC):
             )
 
         kwargs = {"mu": mu, "wt": wt, "scale": scale}
-        kwargs = {k: v for k, v in kwargs.items() if v is not None}
-        arrays = np.broadcast_arrays(*kwargs.values())
-        kwargs = {k: to_rpy(v) for k, v in zip(kwargs.keys(), arrays, strict=True)}
+        # R won't broadcast length 1 arrays
+        kwargs = {
+            k: to_rpy(v) if v.size != 1 else v.item()
+            for k, v in kwargs.items()
+            if v is not None
+        }
         return to_py(sample_fn(**kwargs))
 
 
-class Gaussian(AbstractFamily):
+class SupportsCDF(ABC):
+    """Mixin for families supporting cumulative distribution functions."""
+
+    @abstractmethod
+    def cdf(
+        self,
+        x: np.ndarray,
+        *,
+        mu: np.ndarray,
+        wt: np.ndarray,
+        scale: np.ndarray,
+    ) -> np.ndarray:
+        """Cumulative distribution function."""
+        pass
+
+
+class Gaussian(AbstractFamily, SupportsCDF):
     """Gaussian family with specified link function.
 
     Args:
@@ -95,58 +92,120 @@ class Gaussian(AbstractFamily):
     def __init__(self, link: Literal["identity", "log", "inverse"] = "identity"):
         self.rfamily = rstats.gaussian(link=link)
 
+    def cdf(
+        self,
+        x: np.ndarray,
+        *,
+        mu: np.ndarray,
+        wt: np.ndarray,
+        scale: np.ndarray,
+    ) -> np.ndarray:
+        """Gaussian CDF."""
+        sd = np.sqrt(scale / wt)
+        x, mu, sd = (to_rpy(arr) for arr in np.broadcast_arrays(x, mu, sd))
+        return to_py(rstats.pnorm(x, mean=mu, sd=sd))
+
 
 # TODO another case where matrix inputs need to be supported.
-# TODO response form
-class Binomial(AbstractFamily):
+# TODO document response form
+class Binomial(AbstractFamily, SupportsCDF):
+    """Binomial family with specified link function.
+
+    Args:
+        link: The link function. "logit", "probit" and "cauchit", correspond to
+            logistic, normal and Cauchy CDFs respectively. "cloglog" is the
+            complementary log-log.
+    """
+
     def __init__(
         self,
         link: Literal["logit", "probit", "cauchit", "log", "cloglog"] = "logit",
     ):
-        """Binomial family with specified link function.
-
-        Args:
-            link: The link function. "logit", "probit" and "cauchit", correspond to
-                logistic, normal and Cauchy CDFs respectively. "cloglog" is the
-                complementary log-log.
-        """
         self.rfamily = rstats.binomial(link=link)
 
+    def cdf(
+        self,
+        x: np.ndarray,
+        *,
+        mu: np.ndarray,
+        wt: np.ndarray,
+        scale: np.ndarray,
+    ):
+        """Binomial CDF, scale is ignored."""
+        x, mu, wt = (to_rpy(arr) for arr in np.broadcast_arrays(x, mu, wt))
+        return to_py(rstats.pbinom(x * (wt + rbase.as_numeric(wt == 0)), wt, mu))
 
-class Gamma(AbstractFamily):
+
+class Gamma(AbstractFamily, SupportsCDF):
+    """Gamma family with specified link function.
+
+    Args:
+        link: The link function for the Gamma family.
+    """
+
     def __init__(self, link: Literal["inverse", "identity", "log"] = "inverse"):
-        """Gamma family with specified link function.
-
-        Args:
-            link: The link function for the Gamma family.
-        """
         self.rfamily = rstats.Gamma(link=link)
+
+    def cdf(
+        self,
+        x: np.ndarray,
+        *,
+        mu: np.ndarray,
+        wt: np.ndarray,
+        scale: np.ndarray,
+    ):
+        """Gamma CDF, wt is ignored."""
+        x, mu, scale = [to_rpy(arr) for arr in np.broadcast_arrays(x, mu, scale)]
+        return to_py(
+            rstats.pgamma(to_rpy(x), shape=to_rpy(1 / scale), scale=to_rpy(mu * scale)),
+        )
 
 
 class InverseGaussian(AbstractFamily):
+    """Inverse Gaussian family with specified link function.
+
+    Args:
+        link: The link function for the inverse Gaussian family.
+    """
+
     def __init__(
         self,
         link: Literal["1/mu^2", "inverse", "identity", "log"] = "1/mu^2",
     ):
-        """Inverse Gaussian family with specified link function.
-
-        Args:
-            link: The link function for the inverse Gaussian family.
-        """
         self.rfamily = rstats.inverse_gaussian(link=link)
 
 
-class Poisson(AbstractFamily):
-    def __init__(self, link: Literal["log", "identity", "sqrt"] = "log"):
-        """Poisson family with specified link function.
+class Poisson(AbstractFamily, SupportsCDF):
+    """Poisson family with specified link function.
 
-        Args:
-            link: The link function for the Poisson family.
-        """
+    Args:
+        link: The link function for the Poisson family.
+    """
+
+    def __init__(self, link: Literal["log", "identity", "sqrt"] = "log"):
         self.rfamily = rstats.poisson(link=link)
 
+    def cdf(
+        self,
+        x: np.ndarray,
+        *,
+        mu: np.ndarray,
+        wt: np.ndarray | None = None,
+        scale: np.ndarray | None = None,
+    ):
+        """Cumulative distribution function."""
+        return to_py(rstats.ppois(to_rpy(x), to_rpy(mu)))
 
+
+# TODO These won't support sampling
 class Quasi(AbstractFamily):
+    """Quasi family with specified link and variance functions.
+
+    Args:
+        link: The link function for the quasi family. Valid options are:
+        variance: The variance function for the quasi family.
+    """
+
     def __init__(
         self,
         link: Literal[
@@ -161,35 +220,31 @@ class Quasi(AbstractFamily):
         ] = "identity",
         variance: Literal["constant", "mu(1-mu)", "mu", "mu^2", "mu^3"] = "constant",
     ):
-        """Quasi family with specified link and variance functions.
-
-        Args:
-            link: The link function for the quasi family. Valid options are:
-            variance: The variance function for the quasi family.
-        """
         self.rfamily = rstats.quasi(link=link, variance=variance)
 
 
 class QuasiBinomial(AbstractFamily):
+    """Quasi-binomial family with specified link function.
+
+    Args:
+        link: The link function for the quasi-binomial family.
+    """
+
     def __init__(
         self,
         link: Literal["logit", "probit", "cauchit", "log", "cloglog"] = "logit",
     ):
-        """Quasi-binomial family with specified link function.
-
-        Args:
-            link: The link function for the quasi-binomial family.
-        """
         self.rfamily = rstats.quasibinomial(link=link)
 
 
 class QuasiPoisson(AbstractFamily):
-    def __init__(self, link: Literal["log", "identity", "sqrt"] = "log"):
-        """Quasi-Poisson family with specified link function.
+    """Quasi-Poisson family with specified link function.
 
-        Args:
-            link: The link function for the quasi-Poisson family.
-        """
+    Args:
+        link: The link function for the quasi-Poisson family.
+    """
+
+    def __init__(self, link: Literal["log", "identity", "sqrt"] = "log"):
         self.rfamily = rstats.quasipoisson(link=link)
 
 
@@ -214,6 +269,16 @@ class CPois(AbstractFamily):
 
 
 class NegBin(AbstractFamily):
+    r"""Negative binomial family.
+
+    Args:
+        theta: The positive parameter such that
+            $\text{var}(y) = \mu + \mu^2/\theta$, where $\mu = \mathbb{E}[y]$.
+        link: The link function to use.
+        theta_fixed: Whether to treat theta as fixed or estimated. If estimated,
+            then theta is the starting value.
+    """
+
     def __init__(
         self,
         theta: float | int,
@@ -221,15 +286,6 @@ class NegBin(AbstractFamily):
         *,
         theta_fixed: bool = False,
     ):
-        r"""Negative binomial family.
-
-        Args:
-            theta: The positive parameter such that
-                $\text{var}(y) = \mu + \mu^2/\theta$, where $\mu = \mathbb{E}[y]$.
-            link: The link function to use.
-            theta_fixed: Whether to treat theta as fixed or estimated. If estimated,
-                then theta is the starting value.
-        """
         # For now this just uses nb family (not negbin)
         theta = theta if theta_fixed else -theta  # mgcv convention
         self.rfamily = rmgcv.nb(theta=theta, link=link)
@@ -249,6 +305,21 @@ class OCat(AbstractFamily):
 
 
 class Scat(AbstractFamily):
+    r"""Scaled t family for heavy tailed data.
+
+    Args:
+        link: The link function to use.
+        min_df: The minimum degrees of freedom. Must be >2 to avoid infinite
+            response variance.
+        theta: The parameters to be estimated $\nu = b + \exp(\theta_1)$
+            (where $b$ is `min_df`) and $\sigma = \exp(\theta_2)$. If supplied
+            and both positive, then taken to be fixed values of $\nu$ and
+            $\sigma$. If any negative, then absolute values taken as starting
+            values.
+        theta_fixed: If theta is provided, controls whether to treat theta as fixed
+            or estimated. If estimated, then theta is the starting value.
+    """
+
     def __init__(
         self,
         link: Literal["identity", "log", "inverse"] = "identity",
@@ -257,41 +328,28 @@ class Scat(AbstractFamily):
         *,
         theta_fixed: bool = False,
     ):
-        r"""Scaled t family for heavy tailed data.
-
-        Args:
-            link: The link function to use.
-            min_df: The minimum degrees of freedom. Must be >2 to avoid infinite
-                response variance.
-            theta: The parameters to be estimated $\nu = b + \exp(\theta_1)$
-                (where $b$ is `min_df`) and $\sigma = \exp(\theta_2)$. If supplied
-                and both positive, then taken to be fixed values of $\nu$ and
-                $\sigma$. If any negative, then absolute values taken as starting
-                values.
-            theta_fixed: If theta is provided, controls whether to treat theta as fixed
-                or estimated. If estimated, then theta is the starting value.
-        """
         if theta is not None and not theta_fixed:
             theta = -theta  # mgcv convention.
         self.rfamily = rmgcv.scat(link=link, min_df=min_df)
 
 
 class Tweedie(AbstractFamily):
+    r"""Tweedie family with fixed power.
+
+    Args:
+        p: The variance of an observation is proportional to its mean to the power p. p must
+            be greater than 1 and less than or equal to 2. 1 would be Poisson, 2 is gamma.
+        link: If a float/int, treated as $\lambda$ in a link function based on
+            $\eta = \mu^ \lambda$, meaning 0 gives the log link and 1 gives the
+            identity link (i.e. R stats package `power`). Can also be one of "log",
+            "identity", "inverse", "sqrt".
+    """
+
     def __init__(
         self,
         p: float | int = 1,
         link: Literal["log", "identity", "inverse", "sqrt"] | int | float = 0,
     ):
-        r"""Tweedie family with fixed power.
-
-        Args:
-            p: The variance of an observation is proportional to its mean to the power p. p must
-                be greater than 1 and less than or equal to 2. 1 would be Poisson, 2 is gamma.
-            link: If a float/int, treated as $\lambda$ in a link function based on
-                $\eta = \mu^ \lambda$, meaning 0 gives the log link and 1 gives the
-                identity link (i.e. R stats package `power`). Can also be one of "log",
-                "identity", "inverse", "sqrt".
-        """
         if isinstance(link, int | float):
             link = rstats.power(link)
         self.rfamily = rmgcv.Tweedie(p, link)
@@ -459,7 +517,7 @@ class Multinom(AbstractFamily):
         raise NotImplementedError()
 
 
-class MVN(AbstractFamily):  # TODO probably needs special casing
+class MVN(AbstractFamily):
     """Multivariate normal family.
 
     Args:

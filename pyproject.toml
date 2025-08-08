@@ -9,7 +9,7 @@ keywords = ["generalized additive models", "GAMs"]
 license = { file = "LICENSE" }
 readme = "README.md"
 dependencies = [
-    "rpy2>=3.6.1",
+    "rpy2>=3.6.2",      # latest version silences excessive warnings
     "numpy>=2.2.5",
     "pandas>=2.2.3",
     "matplotlib>=3.10",

@@ -55,6 +55,7 @@ nav:
       - api/basis_functions.md
       - api/families.md
       - api/plot.md
+      - api/miscellaneous.md
   - Development:
       - contributing.md
 

@@ -121,3 +121,4 @@ Families define the distribution and link functions for GAM models. Each family 
         - "__init__"
 
 ::: pymgcv.families.AbstractFamily
+::: pymgcv.families.SupportsCDF
