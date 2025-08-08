@@ -81,16 +81,11 @@ plugins:
             separate_signature: true
             line_length: 88
             force_inspection: true
-            preload_modules:
-              - typing
             filters:
               - "!^_"
               - "__init__"
             heading_level: 3
             members_order: source
             show_signature_annotations: true
-            # We manually disable merge_init_into_class for abstract classes / protocols (misleading)
-            merge_init_into_class: true
-
 extra_css:
   - stylesheets/extra.css
