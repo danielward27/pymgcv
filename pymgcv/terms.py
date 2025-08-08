@@ -10,11 +10,12 @@ import pandas as pd
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
-from pymgcv.basis_functions import BasisLike
+from pymgcv.basis_functions import AbstractBasis
 from pymgcv.custom_types import PredictionResult
 from pymgcv.formula_utils import _to_r_constructor_string, _Var
 from pymgcv.rpy_utils import data_to_rdf, to_py
 from pymgcv.utils import data_len
+
 mgcv = importr("mgcv")
 rbase = importr("base")
 rstats = importr("stats")
@@ -295,7 +296,7 @@ class S(_AddMixin, TermLike):
     varnames: tuple[str, ...]
     by: str | None
     k: int | None
-    bs: BasisLike | None
+    bs: AbstractBasis | None
     id: int | None
     fx: bool
 
@@ -304,7 +305,7 @@ class S(_AddMixin, TermLike):
         *varnames: str,
         by: str | None = None,
         k: int | None = None,
-        bs: BasisLike | None = None,
+        bs: AbstractBasis | None = None,
         id: int | None = None,
         fx: bool = False,
     ):
@@ -401,7 +402,7 @@ class T(_AddMixin, TermLike):
     varnames: tuple[str, ...]
     by: str | None
     k: int | tuple[int, ...] | None
-    bs: BasisLike | tuple[BasisLike, ...] | None
+    bs: AbstractBasis | tuple[AbstractBasis, ...] | None
     d: tuple[int, ...] | None
     id: int | None
     fx: bool
@@ -413,7 +414,7 @@ class T(_AddMixin, TermLike):
         *varnames: str,
         by: str | None = None,
         k: int | Iterable[int] | None = None,
-        bs: BasisLike | Iterable[BasisLike] | None = None,
+        bs: AbstractBasis | Iterable[AbstractBasis] | None = None,
         d: Iterable[int] | None = None,
         id: int | None = None,
         fx: bool = False,
@@ -426,7 +427,7 @@ class T(_AddMixin, TermLike):
         self.varnames = varnames
         self.k = k if isinstance(k, int) else (None if k is None else tuple(k))
         self.bs = (
-            None if bs is None else (bs if isinstance(bs, BasisLike) else tuple(bs))
+            None if bs is None else (bs if isinstance(bs, AbstractBasis) else tuple(bs))
         )
         self.d = tuple(d) if d is not None else d
         self.by = by
@@ -444,7 +445,7 @@ class T(_AddMixin, TermLike):
 
         def _handle_bs(bs):  # Returns bs, m, xt compatible with R
             match bs:
-                case BasisLike():
+                case AbstractBasis():
                     from_bases = bs._pass_to_s()
                     return str(bs), from_bases.get("m"), from_bases.get("xt")
                 case tuple():

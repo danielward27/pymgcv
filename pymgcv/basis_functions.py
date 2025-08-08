@@ -4,6 +4,7 @@ This module provides various basis function types that can be used with smooth
 terms to control the shape and properties of the estimated smooth functions.
 """
 
+from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
@@ -17,7 +18,7 @@ from dataclasses import dataclass, field
 # xt can be large (e.g. arrays) so we cannot map this to a string, so we map it to
 # a variable name. m tends to be small, so we store it as a python variable and convert
 # to a string in the formula.
-from typing import Protocol, TypedDict, runtime_checkable
+from typing import TypedDict
 
 import numpy as np
 import rpy2.robjects as ro
@@ -28,8 +29,7 @@ class _PassToS(TypedDict, total=False):
     m: int | float | tuple[int | float, ...]
 
 
-@runtime_checkable
-class BasisLike(Protocol):
+class AbstractBasis(ABC):
     """Protocol defining the interface for GAM basis functions.
 
     All basis function classes must implement this protocol to be usable
@@ -37,6 +37,7 @@ class BasisLike(Protocol):
     to appropriate mgcv R syntax and provide any additional parameters needed.
     """
 
+    @abstractmethod
     def __str__(self) -> str:
         """Convert basis to mgcv string identifier.
 
@@ -45,6 +46,7 @@ class BasisLike(Protocol):
         """
         ...
 
+    @abstractmethod
     def _pass_to_s(self) -> _PassToS:
         """Basis specific arguments to pass to mgcv.s.
 
@@ -64,7 +66,7 @@ class BasisLike(Protocol):
         ...
 
 
-class RandomEffect(BasisLike):
+class RandomEffect(AbstractBasis):
     """Random effect basis for correlated grouped data.
 
     This can be used with any mixture of numeric or categorical variables. Acts
@@ -83,7 +85,7 @@ class RandomEffect(BasisLike):
 
 
 @dataclass(kw_only=True, frozen=True)
-class ThinPlateSpline(BasisLike):
+class ThinPlateSpline(AbstractBasis):
     """Thin plate regression spline basis.
 
     Args:
@@ -107,7 +109,7 @@ class ThinPlateSpline(BasisLike):
 
 
 @dataclass
-class RandomWigglyCurve(BasisLike):
+class RandomWigglyCurve(AbstractBasis):
     """S for each level of a categorical variable.
 
     When using this basis, the first variable of the smooth should
@@ -130,7 +132,7 @@ class RandomWigglyCurve(BasisLike):
             basis function.
     """
 
-    bs: BasisLike = field(default_factory=ThinPlateSpline)
+    bs: AbstractBasis = field(default_factory=ThinPlateSpline)
 
     def __str__(self) -> str:
         """Return mgcv identifier for random effects."""
@@ -148,7 +150,7 @@ class RandomWigglyCurve(BasisLike):
 
 
 @dataclass(kw_only=True)
-class CubicSpline(BasisLike):
+class CubicSpline(AbstractBasis):
     """Cubic regression spline basis.
 
     Cubic splines use piecewise cubic polynomials with knots placed throughout
@@ -189,7 +191,7 @@ class CubicSpline(BasisLike):
 
 
 @dataclass(kw_only=True)
-class DuchonSpline(BasisLike):
+class DuchonSpline(AbstractBasis):
     """Duchon spline basis - a generalization of thin plate splines.
 
     These smoothers allow the use of lower orders of derivative in the penalty than
@@ -229,7 +231,7 @@ class DuchonSpline(BasisLike):
 
 
 @dataclass(kw_only=True)
-class SplineOnSphere(BasisLike):
+class SplineOnSphere(AbstractBasis):
     """Isotropic smooth for data on a sphere (latitude/longitude coordinates).
 
     This should be used with exactly two variables, where the first represents latitude
@@ -256,7 +258,7 @@ class SplineOnSphere(BasisLike):
 
 
 @dataclass
-class BSpline(BasisLike):
+class BSpline(AbstractBasis):
     """B-spline basis with derivative-based penalties.
 
     These are univariate (but note univariate smooths can be used for multivariate
@@ -286,7 +288,7 @@ class BSpline(BasisLike):
 
 
 @dataclass(kw_only=True)
-class PSpline(BasisLike):
+class PSpline(AbstractBasis):
     """P-spline (penalized spline) basis as proposed by Eilers and Marx (1996).
 
     Uses B-spline bases penalized by discrete penalties applied directly to the basis
@@ -320,7 +322,7 @@ class PSpline(BasisLike):
 
 
 @dataclass(kw_only=True)
-class MarkovRandomField(BasisLike):
+class MarkovRandomField(AbstractBasis):
     """Markov Random Field basis for discrete spatial data with neighborhood structure.
 
     The smoothing penalty encourages similar value in neighboring locations. When using
