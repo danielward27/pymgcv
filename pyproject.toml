@@ -57,6 +57,9 @@ r-base = ">=4.4.3,<4.5"
 r-mgcv = ">=1.9_3,<2"
 xz = ">=5.8.1,<6"
 
+
+
+
 [tool.pixi.pypi-options]
 no-build-isolation = ["rpy2"]
 
@@ -66,6 +69,14 @@ pymgcv = { path = ".", editable = true }
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64", "osx-64", "osx-arm64"]
+
+# TODO Currently issue building docs on 3.13, perhaps to do with Mapping type.
+# For now  this is a workaround to enforce dev env to use 3.12
+[tool.pixi.workspace.build-variants]
+python = ["3.11.*", "3.12.*", "3.13.*"]
+
+[tool.pixi.feature.dev.dependencies]
+python = "3.12.*"
 
 [tool.pixi.environments]
 dev = ["dev"]
