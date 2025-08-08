@@ -37,6 +37,7 @@ dev = [
     "mdit-py-plugins",
     "markdown-it-py",
     "nbconvert",
+    "build",
 ]
 
 # ----------------- ruff config -------------------#
