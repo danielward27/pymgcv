@@ -13,6 +13,7 @@ from pymgcv.plot import (
     plot_continuous_2d,
     plot_gam,
     plot_qq,
+    plot_residuals_vs_linear_predictor,
 )
 
 from . import gam_test_cases as tc
@@ -136,4 +137,16 @@ def test_plot_qq(test_case: tc.GAMTestCase):
         else:
             raise
 
+    plt.close("all")
+
+
+@pytest.mark.parametrize(
+    "test_case",
+    all_gam_test_cases.values(),
+    ids=all_gam_test_cases.keys(),
+)
+def test_plot_residuals_vs_linear_predictor(test_case: tc.GAMTestCase):
+    gam = test_case.gam_model.fit(test_case.data)
+    target = list(gam.all_predictors.keys())[0][0]
+    plot_residuals_vs_linear_predictor(gam, target=target)
     plt.close("all")
