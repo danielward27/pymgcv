@@ -356,6 +356,17 @@ class AbstractGAM(ABC):
             compute_se=compute_se,
         )
 
+    def penalty_edf(self):
+        """Computed the effective degrees of freedom (EDF) associated with each penalty in a GAM.
+
+        Returns:
+            A series of EDF values, with the index being the mgcv-style name of the penalty.
+        """
+        if self.fit_state is None:
+            raise ValueError("Model must be fit before computing penalty EDFs.")
+        edf = mgcv.pen_edf(self.fit_state.rgam)
+        return pd.Series(to_py(edf), index=to_py(edf.names))
+
     def partial_residuals(
         self,
         term: TermLike,
