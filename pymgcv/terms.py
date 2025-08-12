@@ -395,6 +395,9 @@ class T(_AddMixin, TermLike):
         np: If False, use a single penalty for the tensor product.
             If True (default), use separate penalties for each marginal. Defaults
             to True.
+        mc: If `interaction_only` is `True`, this specifies the marginals which should
+            have centering constraints applied. The length should match the number of
+            marginals.
         interaction_only: If True, creates ti() instead of te() - interaction only,
             excluding main effects of individual variables.
     """
@@ -408,6 +411,7 @@ class T(_AddMixin, TermLike):
     fx: bool
     np: bool
     interaction_only: bool
+    mc: list[bool] | None
 
     def __init__(
         self,
@@ -419,10 +423,14 @@ class T(_AddMixin, TermLike):
         id: int | None = None,
         fx: bool = False,
         np: bool = True,
+        mc: Iterable[bool] | None = None,
         interaction_only: bool = False,
     ):
         if len(varnames) < 2:
             raise ValueError("Tensor smooths require at least 2 variables")
+
+        if mc is not None and not interaction_only:
+            raise ValueError("mc can only be specified when interaction_only is True.")
 
         self.varnames = varnames
         self.k = k if isinstance(k, int) else (None if k is None else tuple(k))
@@ -434,6 +442,7 @@ class T(_AddMixin, TermLike):
         self.id = id
         self.fx = fx
         self.np = np
+        self.mc = list(mc) if mc is not None else None
         self.interaction_only = interaction_only
 
     def __str__(self) -> str:
@@ -472,6 +481,7 @@ class T(_AddMixin, TermLike):
             "fx": self.fx if self.fx is True else None,
             "np": self.np if self.np is False else None,
             "xt": xt,
+            "mc": None if self.mc is None else np.asarray(self.mc),
         }
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
         kwarg_strings = [

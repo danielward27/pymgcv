@@ -1,7 +1,8 @@
 """A collection of GAM test cases."""
 
-from dataclasses import dataclass, field
 from collections.abc import Mapping
+from dataclasses import dataclass, field
+
 import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
@@ -99,6 +100,22 @@ def tensor_2d_gam(model_type: type[AbstractGAM]) -> GAMTestCase:
     return GAMTestCase(
         mgcv_call=f"{model_type.__name__.lower()}(y~te(x0, x1), data=data)",
         gam_model=model_type({"y": T("x0", "x1")}),
+        data=data,
+        expected_predict_terms_structure={"y": ["T(x0,x1)", "Intercept"]},
+    )
+
+
+def tensor_interaction_2d_gam_with_mc(model_type: type[AbstractGAM]) -> GAMTestCase:
+    rng = np.random.default_rng(seed=42)
+    n = 200
+    x0, x1 = rng.uniform(0, 1, n), rng.uniform(0, 1, n)
+    y = np.sin(2 * np.pi * x0) * np.cos(2 * np.pi * x1) + rng.normal(0, 0.2, n)
+    data = pd.DataFrame({"y": y, "x0": x0, "x1": x1})
+    return GAMTestCase(
+        mgcv_call=f"{model_type.__name__.lower()}(y~ti(x0, x1, mc=c(TRUE, FALSE)), data=data)",
+        gam_model=model_type(
+            {"y": T("x0", "x1", mc=[True, False], interaction_only=True)},
+        ),
         data=data,
         expected_predict_terms_structure={"y": ["T(x0,x1)", "Intercept"]},
     )
@@ -399,7 +416,7 @@ def linear_functional_smooth_1d_gam(model_type: type[AbstractGAM]) -> GAMTestCas
         mgcv_call=f"{model_type.__name__.lower()}(y ~ s(hourly_x), data=data)",
         gam_model=gam,
         data=data,
-        expected_predict_terms_structure={"y": ["S(hourly_x)", "Intercept"]}
+        expected_predict_terms_structure={"y": ["S(hourly_x)", "Intercept"]},
     )
 
 
@@ -410,7 +427,9 @@ def linear_functional_tensor_2d_gam(model_type: type[AbstractGAM]) -> GAMTestCas
     x0 = rng.lognormal(size=(n, n_times))
     x1 = rng.lognormal(size=(n, n_times))
     true_fn = lambda x0, x1: np.sqrt(x0) + np.sqrt(x1)
-    y = sum(true_fn(x0_col, x1_col) for x0_col, x1_col in zip(x0.T, x1.T, strict=True)) + rng.normal(scale=0.1, size=n)
+    y = sum(
+        true_fn(x0_col, x1_col) for x0_col, x1_col in zip(x0.T, x1.T, strict=True)
+    ) + rng.normal(scale=0.1, size=n)
     data = {"y": y, "x0": x0, "x1": x1}
     gam = model_type({"y": T("x0", "x1")})
 
@@ -418,8 +437,10 @@ def linear_functional_tensor_2d_gam(model_type: type[AbstractGAM]) -> GAMTestCas
         mgcv_call=f"{model_type.__name__.lower()}(y ~ te(x0, x1), data=data)",
         gam_model=gam,
         data=data,
-        expected_predict_terms_structure={"y": ["T(x0,x1)", "Intercept"]}
+        expected_predict_terms_structure={"y": ["T(x0,x1)", "Intercept"]},
     )
+
+
 # def many_term_types_gam() -> GAMTestCase:
 # rng = np.random.default_rng(seed=42)
 # n = 400
@@ -479,6 +500,7 @@ def get_test_cases() -> dict[str, GAMTestCase]:
                 smooth_1d_gam,
                 smooth_2d_gam,
                 tensor_2d_gam,
+                tensor_interaction_2d_gam_with_mc,
                 random_effect_gam,
                 smooth_1d_random_wiggly_curve_gam,
                 categorical_interaction_gam,
