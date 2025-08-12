@@ -77,8 +77,8 @@ class AbstractGAM(ABC):
 
     def __init__(
         self,
-        predictors: dict[str, Iterable[TermLike] | TermLike],
-        family_predictors: dict[str, Iterable[TermLike] | TermLike] | None = None,
+        predictors: Mapping[str, Iterable[TermLike] | TermLike],
+        family_predictors: Mapping[str, Iterable[TermLike] | TermLike] | None = None,
         *,
         family: AbstractFamily | None = None,
         add_intercepts: bool = True,
@@ -356,8 +356,19 @@ class AbstractGAM(ABC):
             compute_se=compute_se,
         )
 
+    def edf(self) -> pd.Series:
+        """Compute the effective degrees of freedom (EDF) for the model coefficients.
+
+        Returns:
+            A series of EDF values, with the mgcv-style coefficient names as the index.
+        """
+        if self.fit_state is None:
+            raise ValueError("Model must be fit before computing the EDF.")
+        edf = self.fit_state.rgam.rx2["edf"]
+        return pd.Series(to_py(edf), index=to_py(edf.names))
+
     def penalty_edf(self):
-        """Computed the effective degrees of freedom (EDF) associated with each penalty in a GAM.
+        """Computed the effective degrees of freedom (EDF) associated with each penalty.
 
         Returns:
             A series of EDF values, with the index being the mgcv-style name of the penalty.
