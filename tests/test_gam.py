@@ -125,4 +125,5 @@ def test_abstract_methods(test_case: GAMTestCase):
         weights=to_py(fit.fit_state.rgam.rx2["prior.weights"]),
     )
     assert np.all(residuals == resid_from_y_and_fit)
+    assert isinstance(fit.edf(), pd.Series)
     assert isinstance(fit.penalty_edf(), pd.Series)
