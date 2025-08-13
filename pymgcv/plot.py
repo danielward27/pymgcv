@@ -678,7 +678,7 @@ def plot_qq(
             ax.set_title(model.family.__class__.__name__)
             ax.set_box_aspect(1)
 
-        fig.show()
+        # fig.show()  # Uncomment to display the figure
         ```
     """
     if gam.fit_state is None:
@@ -729,6 +729,11 @@ def plot_residuals_vs_linear_predictor(
     ax: Axes | None = None,
     scatter_kwargs: dict[str, Any] | None = None,
 ):
+    if len(gam.predictors) > 1:
+        raise NotImplementedError(
+            "Multivariate response families are not supported for "
+            "plot_residuals_vs_linear_predictor.",
+        )
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
     scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
 

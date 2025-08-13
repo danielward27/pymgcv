@@ -147,6 +147,13 @@ def test_plot_qq(test_case: tc.GAMTestCase):
 )
 def test_plot_residuals_vs_linear_predictor(test_case: tc.GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data)
-    target = list(gam.all_predictors.keys())[0][0]
-    plot_residuals_vs_linear_predictor(gam, target=target)
+    target = list(gam.all_predictors.keys())[0]
+    try:
+        plot_residuals_vs_linear_predictor(gam, target=target)
+    except NotImplementedError as e:
+        if "Multivariate response" in str(e):  # e.g. mvn and gaulss
+            pass
+        else:
+            raise
+
     plt.close("all")

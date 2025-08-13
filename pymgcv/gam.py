@@ -629,7 +629,7 @@ class GAM(AbstractGAM):
         self,
         data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
         *,
-        method: GAMFitMethods = "GCV.Cp",
+        method: GAMFitMethods = "REML",
         weights: str | np.ndarray | pd.Series | None = None,
         optimizer: str | tuple[str, str] = ("outer", "newton"),
         scale: Literal["unknown"] | float | int | None = None,
