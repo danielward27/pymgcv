@@ -193,8 +193,8 @@ class AbstractGAM(ABC):
         - Checking for reserved variable names that conflict with mgcv
 
         Args:
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
 
         Raises:
             ValueError: If required variables are missing from data
@@ -371,7 +371,8 @@ class AbstractGAM(ABC):
         """Computed the effective degrees of freedom (EDF) associated with each penalty.
 
         Returns:
-            A series of EDF values, with the index being the mgcv-style name of the penalty.
+            A series of EDF values, with the index being the mgcv-style name of the
+            penalty.
         """
         if self.fit_state is None:
             raise ValueError("Model must be fit before computing penalty EDFs.")
@@ -399,8 +400,8 @@ class AbstractGAM(ABC):
                 parameter name from the model specification). If set to None, an error
                 is raised when multiple predictors are present; otherwise, the sole
                 available target is used.
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
             avoid_scaling: If True, and the term has a numeric by variable,
                 the scaling by the by variable is not included in the term effect.
                 This facilitates plotting the residuals, as the plots
@@ -636,14 +637,17 @@ class GAM(AbstractGAM):
         select: bool = False,
         gamma: float | int = 1,
         n_threads: int = 1,
+        knots: dict[str, Iterable[float | int]] | None = None,
     ) -> Self:
         # TODO if we do this, we need to support it everywhere we pass data?
         """Fit the GAM.
 
         Args:
-            data: DataFrame or dictionary containing all variables referenced in the model.
-                Note, using a dictionary is required when passing matrix-valued variables.
-            method: Method for smoothing parameter estimation, matching the mgcv options.
+            data: DataFrame or dictionary containing all variables referenced in the
+                model. Note, using a dictionary is required when passing matrix-valued
+                variables.
+            method: Method for smoothing parameter estimation, matching the mgcv
+                options.
             weights: Observation weights. Either a string, matching a column name,
                 or an array/series with length equal to the number of observations.
             optimizer: An string or length 2 tuple, specifying the numerical
@@ -669,6 +673,9 @@ class GAM(AbstractGAM):
                 enables it to be used with REML/ML. Ignored with P-RE/ML or the efs
                 optimizer.
             n_threads: Number of threads to use for fitting the GAM.
+            knots: Dictionary mapping covariate names to a list of knot locations.
+                For most bases, the list length should match with a user supplied
+                `k` value. Different terms can use different number of knots to
         """
         # TODO some missing options: control, sp, knots, min.sp etc
         data = deepcopy(data)
@@ -709,8 +716,8 @@ class GAM(AbstractGAM):
         function to the results.
 
         Args:
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
             compute_se: Whether to compute standard errors for predictions.
             type: Type of prediction to compute. Either "link" for linear predictor
                 scale or "response" for response scale.
@@ -753,8 +760,8 @@ class GAM(AbstractGAM):
         link scale. The sum of all fit columns equals the total prediction (link scale).
 
         Args:
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
             compute_se: Whether to compute and return standard errors.
             block_size: Number of rows to process at a time.  If None then block size
                 is 1000 if data supplied, and the number of rows in the model frame
@@ -807,8 +814,9 @@ class BAM(AbstractGAM):
         """Fit the GAM.
 
         Args:
-            data: DataFrame or dictionary containing all variables referenced in the model.
-                Note, using a dictionary is required when passing matrix-valued variables.
+            data: DataFrame or dictionary containing all variables referenced in the
+                model. Note, using a dictionary is required when passing matrix-valued
+                variables.
             method: Method for smoothing parameter estimation, matching the mgcv,
                 options.
             weights: Observation weights. Either a string, matching a column name,
@@ -882,8 +890,8 @@ class BAM(AbstractGAM):
         function to the results.
 
         Args:
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
             compute_se: Whether to compute and return standard errors.
             type: Type of prediction to compute. Either "link" for linear predictor
                 scale or "response" for response scale.
@@ -936,8 +944,8 @@ class BAM(AbstractGAM):
         equals the total prediction.
 
         Args:
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
             compute_se: Whether to compute and return standard errors.
             block_size: Number of rows to process at a time. Higher is faster
                 but more memory intensive.

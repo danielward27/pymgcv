@@ -19,17 +19,17 @@ from pymgcv.plot import (
 from . import gam_test_cases as tc
 
 
-def get_cases_1d_continuous(model_type: type[AbstractGAM]):
+def get_cases_1d_continuous(gam_type: type[AbstractGAM]):
     cases = [
         (tc.linear_gam, {}),
         (tc.smooth_1d_gam, {"residuals": True}),
         (tc.smooth_1d_by_numeric_gam, {}),
-        (tc.smooth_1d_random_wiggly_curve_gam, {"level": "a"}),
-        (tc.smooth_1d_by_categorical_gam, {"level": "a"}),
+        (tc.smooth_1d_random_wiggly_curve_gam, {"level": "A"}),
+        (tc.smooth_1d_by_categorical_gam, {"level": "A"}),
         (tc.linear_functional_smooth_1d_gam, {}),
     ]
     return {
-        f"{model_type.__name__} - {f.__name__}": (f(model_type), kwargs)
+        f"{gam_type.__name__} - {f.__name__}": (f(gam_type), kwargs)
         for f, kwargs in cases
     }
 
@@ -49,17 +49,17 @@ def test_plot_continuous_1d(test_case: tc.GAMTestCase, kwargs: dict):
     plt.close("all")
 
 
-def get_cases_2d_continuous(model_type: type[AbstractGAM]):
+def get_cases_2d_continuous(gam_type: type[AbstractGAM]):
     test_cases_1d_continuous = [
         (tc.smooth_2d_gam, {}),
         (tc.tensor_2d_gam, {}),
         (tc.tensor_2d_by_numeric_gam, {}),
-        (tc.tensor_2d_by_categorical_gam, {"level": "a"}),
-        (tc.tensor_2d_random_wiggly_curve_gam, {"level": "a"}),
+        (tc.tensor_2d_by_categorical_gam, {"level": "A"}),
+        (tc.tensor_2d_random_wiggly_curve_gam, {"level": "A"}),
         (tc.linear_functional_tensor_2d_gam, {}),
     ]
     return {
-        f"{model_type.__name__} - {f.__name__}": (f(model_type), kwargs)
+        f"{gam_type.__name__} - {f.__name__}": (f(gam_type), kwargs)
         for f, kwargs in test_cases_1d_continuous
     }
 
@@ -80,11 +80,11 @@ def test_plot_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
 
 
 @pytest.mark.parametrize(
-    "model_type",
+    "gam_type",
     [GAM, BAM],
 )
-def test_plot_categorical(model_type: type[AbstractGAM]):
-    test_case = tc.categorical_linear_gam(model_type)
+def test_plot_categorical(gam_type: type[AbstractGAM]):
+    test_case = tc.categorical_linear_gam(gam_type)
     gam = test_case.gam_model.fit(test_case.data)
     term = list(gam.all_predictors.values())[0][0]
     plot_categorical(target="y", gam=gam, term=term, data=test_case.data)

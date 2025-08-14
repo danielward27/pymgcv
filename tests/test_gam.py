@@ -5,10 +5,10 @@ import rpy2.robjects as ro
 
 from pymgcv.rpy_utils import to_py
 
+from .gam_test_cases import GAMTestCase, get_test_cases
+
 mgcv = ro.packages.importr("mgcv")  # type: ignore
 
-
-from .gam_test_cases import GAMTestCase, get_test_cases
 
 test_cases = get_test_cases()
 
