@@ -43,7 +43,7 @@ cases_1d_continuous = get_cases_1d_continuous(GAM) | get_cases_1d_continuous(BAM
     ids=cases_1d_continuous.keys(),
 )
 def test_plot_continuous_1d(test_case: tc.GAMTestCase, kwargs: dict):
-    gam = test_case.gam_model.fit(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     term = list(gam.all_predictors.values())[0][0]
     plot_continuous_1d(**kwargs, gam=gam, term=term, data=test_case.data)
     plt.close("all")
@@ -73,7 +73,7 @@ cases_2d_continuous = get_cases_2d_continuous(GAM) | get_cases_2d_continuous(BAM
     ids=cases_2d_continuous.keys(),
 )
 def test_plot_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
-    gam = test_case.gam_model.fit(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     term = list(gam.all_predictors.values())[0][0]
     plot_continuous_2d(**kwargs, gam=gam, term=term, data=test_case.data)
     plt.close("all")
@@ -85,7 +85,7 @@ def test_plot_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
 )
 def test_plot_categorical(gam_type: type[AbstractGAM]):
     test_case = tc.categorical_linear_gam(gam_type)
-    gam = test_case.gam_model.fit(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     term = list(gam.all_predictors.values())[0][0]
     plot_categorical(target="y", gam=gam, term=term, data=test_case.data)
     plt.close("all")
@@ -106,7 +106,7 @@ all_gam_test_cases = tc.get_test_cases()
     ids=all_gam_test_cases.keys(),
 )
 def test_plot_gam(test_case: tc.GAMTestCase):
-    gam = test_case.gam_model.fit(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     try:
         plot_gam(gam=gam, ncols=1)  # scatter=True fails for mvn + gaulss
     except (ValueError, NotImplementedError) as e:
@@ -123,7 +123,7 @@ def test_plot_gam(test_case: tc.GAMTestCase):
     ids=all_gam_test_cases.keys(),
 )
 def test_plot_qq(test_case: tc.GAMTestCase):
-    gam = test_case.gam_model.fit(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     try:
         plot_qq(gam=gam)
     except NotImplementedError as e:
@@ -146,7 +146,7 @@ def test_plot_qq(test_case: tc.GAMTestCase):
     ids=all_gam_test_cases.keys(),
 )
 def test_plot_residuals_vs_linear_predictor(test_case: tc.GAMTestCase):
-    gam = test_case.gam_model.fit(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     target = list(gam.all_predictors.keys())[0]
     try:
         plot_residuals_vs_linear_predictor(gam, target=target)

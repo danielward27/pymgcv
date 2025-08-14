@@ -4,6 +4,7 @@ import inspect
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from functools import cache
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -78,6 +79,7 @@ class GAMTestCase:  # GAM/BAM test cases
     data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] = field(
         default_factory=get_test_data,
     )
+    fit_kwargs: dict[str, Any] = field(default_factory=dict)
 
     def mgcv_gam(self, data: pd.DataFrame):
         """Returns the mgcv gam object."""
@@ -119,6 +121,18 @@ def smooth_1d_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
         mgcv_args=f"y~s(x), data=data, method='{method}'",
         gam_model=gam_type({"y": S("x")}),
         expected_predict_terms_structure={"y": ["S(x)", "Intercept"]},
+    )
+
+
+def smooth_with_specified_knots(gam_type: type[AbstractGAM]) -> GAMTestCase:
+    method = get_method_default(gam_type)
+    # We need exact same floating representation
+    knots = to_py(ro.r("(0:4)/4"))
+    return GAMTestCase(
+        mgcv_args=f"y~s(x, k=5), data=data, method='{method}',knots=list(x=(0:4)/4)",
+        gam_model=gam_type({"y": S("x", k=5)}),
+        expected_predict_terms_structure={"y": ["S(x)", "Intercept"]},
+        fit_kwargs={"knots": {"x": knots}},
     )
 
 
@@ -415,6 +429,7 @@ def get_test_cases() -> dict[str, GAMTestCase]:
                 smooth_1d_gam,
                 smooth_2d_gam,
                 smooth_2d_gam_pass_to_s,
+                smooth_with_specified_knots,
                 tensor_2d_gam,
                 tensor_interaction_2d_gam_with_mc,
                 random_effect_gam,

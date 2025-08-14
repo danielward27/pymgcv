@@ -636,8 +636,8 @@ class GAM(AbstractGAM):
         scale: Literal["unknown"] | float | int | None = None,
         select: bool = False,
         gamma: float | int = 1,
+        knots: dict[str, np.ndarray] | None = None,
         n_threads: int = 1,
-        knots: dict[str, Iterable[float | int]] | None = None,
     ) -> Self:
         # TODO if we do this, we need to support it everywhere we pass data?
         """Fit the GAM.
@@ -672,15 +672,36 @@ class GAM(AbstractGAM):
                 viewed as an effective sample size in the GCV score, and this also
                 enables it to be used with REML/ML. Ignored with P-RE/ML or the efs
                 optimizer.
+            knots: Dictionary mapping covariate names to knot locations.
+                For most bases, the length of the knot locations should match with a
+                user supplied `k` value. E.g. for `S("x", k=64)`, you could
+                pass `knots={"x": np.linspace(0, 1, 64)}`. For multidimensional
+                smooths, e.g. `S("x", "z", k=64)`, you could create a grid of
+                coordinates:
+
+                !!! example
+
+                    ```python
+                        import numpy as np
+                        coords = np.linspace(0, 1, num=8)
+                        X, Z = np.meshgrid(coords, coords)
+                        knots = {"x": X.ravel(), "z": Z.ravel()}
+                    ```
+                Note if using
+                [`ThinPlateSpline`][pymgcv.basis_functions.ThinPlateSpline], this will
+                avoid the eigen-decomposition used to find the basis, which although
+                fast often leads to worse results. Different terms can use different
+                numbers of knots, unless they share covariates.
             n_threads: Number of threads to use for fitting the GAM.
-            knots: Dictionary mapping covariate names to a list of knot locations.
-                For most bases, the list length should match with a user supplied
-                `k` value. Different terms can use different number of knots to
         """
-        # TODO some missing options: control, sp, knots, min.sp etc
+        # TODO some missing options: control, sp, min.sp etc
         data = deepcopy(data)
         weights = data[weights] if isinstance(weights, str) else weights  # type: ignore
-
+        r_knots = (
+            ro.NULL
+            if knots is None
+            else ro.ListVector({k: to_rpy(pos) for k, pos in knots.items()})
+        )
         self._check_valid_data(data)
         rgam = mgcv.gam(
             self._to_r_formulae(),
@@ -692,6 +713,7 @@ class GAM(AbstractGAM):
             scale=0 if scale is None else (-1 if scale == "unknown" else scale),
             select=select,
             gamma=gamma,
+            knots=r_knots,
             nthreads=n_threads,
         )
         self.fit_state = FitState(
@@ -806,6 +828,7 @@ class BAM(AbstractGAM):
         scale: Literal["unknown"] | float | int | None = None,
         select: bool = False,
         gamma: float | int = 1,
+        knots: dict[str, np.ndarray] | None = None,
         chunk_size: int = 10000,
         discrete: bool = False,
         samfrac: float | int = 1,
@@ -836,6 +859,26 @@ class BAM(AbstractGAM):
                 viewed as an effective sample size in the GCV score, and this also
                 enables it to be used with REML/ML. Ignored with P-RE/ML or the efs
                 optimizer.
+            knots: Dictionary mapping covariate names to knot locations.
+                For most bases, the length of the knot locations should match with a
+                user supplied `k` value. E.g. for `S("x", k=64)`, you could
+                pass `knots={"x": np.linspace(0, 1, 64)}`. For multidimensional
+                smooths, e.g. `S("x", "z", k=64)`, you could create a grid of
+                coordinates:
+
+                !!! example
+
+                    ```python
+                        import numpy as np
+                        coords = np.linspace(0, 1, num=8)
+                        X, Z = np.meshgrid(coords, coords)
+                        knots = {"x": X.ravel(), "z": Z.ravel()}
+                    ```
+                Note if using
+                [`ThinPlateSpline`][pymgcv.basis_functions.ThinPlateSpline], this will
+                avoid the eigen-decomposition used to find the basis, which although
+                fast often leads to worse results. Different terms can use different
+                numbers of knots, unless they share covariates.
             chunk_size: The model matrix is created in chunks of this size, rather than
                 ever being formed whole. Reset to 4*p if chunk.size < 4*p where p is the
                 number of coefficients.
@@ -850,7 +893,11 @@ class BAM(AbstractGAM):
         # TODO some missing options: control, sp, knots, min.sp, nthreads
         data = deepcopy(data)
         weights = data[weights] if isinstance(weights, str) else weights  # type: ignore
-
+        r_knots = (
+            ro.NULL
+            if knots is None
+            else ro.ListVector({k: to_rpy(pos) for k, pos in knots.items()})
+        )
         self._check_valid_data(data)
         self.fit_state = FitState(
             rgam=mgcv.bam(
@@ -862,6 +909,7 @@ class BAM(AbstractGAM):
                 scale=0 if scale is None else (-1 if scale == "unknown" else scale),
                 select=select,
                 gamma=gamma,
+                knots=r_knots,
                 chunk_size=chunk_size,
                 discrete=discrete,
                 samfrac=samfrac,

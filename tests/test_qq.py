@@ -6,6 +6,8 @@ from pymgcv.gam import GAM
 from pymgcv.qq import qq_cdf, qq_simulate
 from pymgcv.terms import L, S
 
+from .gam_test_cases import GAMTestCase, get_test_cases
+
 
 @pytest.mark.parametrize(
     "qq_fun",
@@ -50,8 +52,6 @@ def test_qq_functions(qq_fun):
         np.isfinite(result.residuals),
     )
 
-
-from .gam_test_cases import GAMTestCase, get_test_cases
 
 test_cases = get_test_cases()
 

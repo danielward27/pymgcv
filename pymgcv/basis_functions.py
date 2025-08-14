@@ -148,8 +148,7 @@ class RandomWigglyCurve(AbstractBasis):
         return "fs"
 
     def _pass_to_s(self) -> _PassToS:
-        listvec = ro.ListVector([str(self.bs)])
-        listvec.names = ["bs"]
+        listvec = ro.ListVector({"bs": str(self.bs)})
         to_s = self.bs._pass_to_s()
         if "xt" in to_s:
             to_s["xt"] = to_s["xt"] + listvec

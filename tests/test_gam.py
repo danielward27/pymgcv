@@ -15,7 +15,7 @@ test_cases = get_test_cases()
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_pymgcv_mgcv_equivilance(test_case: GAMTestCase):
-    pymgcv_gam = test_case.gam_model.fit(test_case.data)
+    pymgcv_gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     mgcv_gam = test_case.mgcv_gam(test_case.data)
     assert (
         pytest.approx(
@@ -27,7 +27,7 @@ def test_pymgcv_mgcv_equivilance(test_case: GAMTestCase):
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_predict_terms_structure(test_case: GAMTestCase):
-    gam = test_case.gam_model.fit(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     all_terms_with_se = gam.partial_effects(test_case.data, compute_se=True)
     expected = test_case.expected_predict_terms_structure
 
@@ -41,7 +41,7 @@ def test_predict_terms_structure(test_case: GAMTestCase):
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_partial_effects_colsum_matches_predict(test_case: GAMTestCase):
-    gam = test_case.gam_model.fit(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     predictions = gam.predict(test_case.data)
     term_predictions = gam.partial_effects(test_case.data, compute_se=True)
 
@@ -52,7 +52,7 @@ def test_partial_effects_colsum_matches_predict(test_case: GAMTestCase):
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_partial_effect_against_partial_effects(test_case: GAMTestCase):
-    gam = test_case.gam_model.fit(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
 
     partial_effects = gam.partial_effects(test_case.data, compute_se=True)
 
@@ -81,7 +81,7 @@ def test_partial_effect_against_partial_effects(test_case: GAMTestCase):
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_with_se_matches_without(test_case: GAMTestCase):
-    gam = test_case.gam_model.fit(test_case.data)
+    gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
 
     partial_effects_with_se = gam.partial_effects(compute_se=True)
     partial_effects_without = gam.partial_effects(compute_se=False)
@@ -108,7 +108,7 @@ abstract_method_test_cases = [
     ids=abstract_method_test_cases,
 )
 def test_abstract_methods(test_case: GAMTestCase):
-    fit = test_case.gam_model.fit(test_case.data)
+    fit = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     coef = fit.coefficients()
     cov = fit.covariance()
     assert cov.shape[0] == cov.shape[1]
