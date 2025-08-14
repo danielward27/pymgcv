@@ -95,17 +95,26 @@ class ThinPlateSpline(AbstractBasis):
             number of covariates for the smooth term, this must satisfy $m>(d+1)/2$. If
             left to None, the smallest value satisfying $m>(d+1)/2$ will be used, which
             creates "visually smooth" functions.
+        max_knots: The maximum number of knots to use. Defaults to 2000.
     """
 
     shrinkage: bool | None = False
     m: int | None = None
+    max_knots: int | None = None
 
     def __str__(self) -> str:
         """Return mgcv identifier: 'ts' for shrinkage, 'tp' for standard."""
         return "ts" if self.shrinkage else "tp"
 
     def _pass_to_s(self) -> _PassToS:
-        return {"m": self.m} if self.m is not None else {}
+        pass_to_s: _PassToS = {}
+        if self.m is not None:
+            pass_to_s["m"] = self.m
+        if self.max_knots is not None:
+            listvec = ro.ListVector([self.max_knots])
+            listvec.names = ["max.knots"]
+            pass_to_s["xt"] = listvec
+        return pass_to_s
 
 
 @dataclass
