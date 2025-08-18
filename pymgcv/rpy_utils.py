@@ -9,7 +9,7 @@ The conversions are essential for seamless integration with R's mgcv library
 while maintaining pythonic data structures on the Python side.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -102,7 +102,9 @@ def data_to_rdf(
     """
     multidim_data = {}
     if isinstance(data, dict):
-        multidim_data = {k: rbase.I(to_rpy(v)) for k, v in data.items() if np.ndim(v) > 1}
+        multidim_data = {
+            k: rbase.I(to_rpy(v)) for k, v in data.items() if np.ndim(v) > 1
+        }
         other_data = {k: v for k, v in data.items() if np.ndim(v) == 1}
         data = pd.DataFrame(other_data)
 
@@ -111,7 +113,9 @@ def data_to_rdf(
 
     dtypes = {k: v.dtype for k, v in data.items()}
 
-    if any(t=="object" for t in dtypes.values()) or any(t=="string" for t in dtypes.values()):
+    if any(t == "object" for t in dtypes.values()) or any(
+        t == "string" for t in dtypes.values()
+    ):
         raise TypeError("DataFrame contains unsupported object or string types.")
 
     rpy_df = to_rpy(data)
@@ -122,10 +126,6 @@ def data_to_rdf(
     if multidim_data.nrow == 0:
         return rpy_df
     return rbase.cbind(rpy_df, multidim_data)
-
-
-class NullAttributeError(Exception):
-    """Raised when an attribute is required but not found in an R object."""
 
 
 def is_null(object) -> bool:
