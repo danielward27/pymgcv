@@ -5,7 +5,7 @@ from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from math import ceil
-from typing import Any, TypeGuard
+from typing import Any, Literal, TypeGuard
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -468,6 +468,7 @@ def plot_continuous_2d(
     contourf_kwargs.setdefault("alpha", 0.8)
     scatter_kwargs.setdefault("color", "black")
     scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
+    scatter_kwargs.setdefault("zorder", 2)  # Ensures above contours
 
     pred = gam.partial_effect(
         term,
@@ -678,7 +679,7 @@ def plot_qq(
             ax.set_title(model.family.__class__.__name__)
             ax.set_box_aspect(1)
 
-        fig.show()
+        # fig.show()  # Uncomment to display the figure
         ```
     """
     if gam.fit_state is None:
@@ -713,6 +714,42 @@ def plot_qq(
     min_val = min(ax.get_xlim()[0], ax.get_ylim()[0])
     max_val = max(ax.get_xlim()[1], ax.get_ylim()[1])
     _with_disable(ax.plot)([min_val, max_val], [min_val, max_val], **plot_kwargs)
+    return ax
+
+
+def plot_residuals_vs_linear_predictor(
+    gam: AbstractGAM,
+    type: Literal[
+        "deviance",
+        "pearson",
+        "scaled.pearson",
+        "working",
+        "response",
+    ] = "deviance",
+    target: str | None = None,
+    ax: Axes | None = None,
+    scatter_kwargs: dict[str, Any] | None = None,
+):
+    if len(gam.predictors) > 1:
+        raise NotImplementedError(
+            "Multivariate response families are not supported for "
+            "plot_residuals_vs_linear_predictor.",
+        )
+    scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
+    scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
+
+    ax = plt.gca() if ax is None else ax
+    residuals = gam.residuals(type)
+    if target is None:
+        if len(gam.all_predictors) > 1:
+            raise ValueError(
+                "Target must be specified when multiple predictors are present.",
+            )
+        target = list(gam.all_predictors.keys())[0]
+    predictions = gam.predict()[target].fit
+    ax.scatter(predictions, residuals, **scatter_kwargs)
+    ax.set_xlabel("Linear predictor")
+    ax.set_ylabel("Residuals")
     return ax
 
 

@@ -281,14 +281,19 @@ class NegBin(AbstractFamily):
 
     def __init__(
         self,
-        theta: float | int,
+        theta: float | int | None = None,
         link: Literal["log", "identity", "sqrt"] = "log",
         *,
         theta_fixed: bool = False,
     ):
         # For now this just uses nb family (not negbin)
-        theta = theta if theta_fixed else -theta  # mgcv convention
-        self.rfamily = rmgcv.nb(theta=theta, link=link)
+        if theta_fixed and theta is None:
+            raise ValueError("Theta must be specified if fixed.")
+
+        if theta is not None:
+            theta = theta if theta_fixed else -theta  # mgcv convention
+
+        self.rfamily = rmgcv.nb(theta=ro.NULL if theta is None else theta, link=link)
 
 
 class OCat(AbstractFamily):
@@ -381,9 +386,13 @@ class Tw(AbstractFamily):
         *,
         theta_fixed: bool = False,
     ):
+        if theta_fixed and theta is None:
+            raise ValueError("Theta must be specified if fixed.")
+
         if theta is not None and not theta_fixed:
             theta = -theta  # mgcv convention.
-        self.rfamily = rmgcv.tw(theta=theta, link=link, a=a, b=b)
+
+        self.rfamily = rmgcv.tw(theta=ro.NULL if theta is None else theta, link=link, a=a, b=b)
 
 
 class ZIP(AbstractFamily):
@@ -424,7 +433,7 @@ class ZIP(AbstractFamily):
     ):
         if theta is not None:
             theta = np.asarray(theta)  # type: ignore
-        self.rfamily = rmgcv.ziP(theta=theta, b=b)
+        self.rfamily = rmgcv.ziP(theta=ro.NULL if theta is None else theta, b=b)
 
 
 # TODO support stratification? There is a lot of small details missing in the docs.

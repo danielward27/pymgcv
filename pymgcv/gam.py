@@ -77,8 +77,8 @@ class AbstractGAM(ABC):
 
     def __init__(
         self,
-        predictors: dict[str, Iterable[TermLike] | TermLike],
-        family_predictors: dict[str, Iterable[TermLike] | TermLike] | None = None,
+        predictors: Mapping[str, Iterable[TermLike] | TermLike],
+        family_predictors: Mapping[str, Iterable[TermLike] | TermLike] | None = None,
         *,
         family: AbstractFamily | None = None,
         add_intercepts: bool = True,
@@ -193,8 +193,8 @@ class AbstractGAM(ABC):
         - Checking for reserved variable names that conflict with mgcv
 
         Args:
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
 
         Raises:
             ValueError: If required variables are missing from data
@@ -356,6 +356,29 @@ class AbstractGAM(ABC):
             compute_se=compute_se,
         )
 
+    def edf(self) -> pd.Series:
+        """Compute the effective degrees of freedom (EDF) for the model coefficients.
+
+        Returns:
+            A series of EDF values, with the mgcv-style coefficient names as the index.
+        """
+        if self.fit_state is None:
+            raise ValueError("Model must be fit before computing the EDF.")
+        edf = self.fit_state.rgam.rx2["edf"]
+        return pd.Series(to_py(edf), index=to_py(edf.names))
+
+    def penalty_edf(self):
+        """Computed the effective degrees of freedom (EDF) associated with each penalty.
+
+        Returns:
+            A series of EDF values, with the index being the mgcv-style name of the
+            penalty.
+        """
+        if self.fit_state is None:
+            raise ValueError("Model must be fit before computing penalty EDFs.")
+        edf = mgcv.pen_edf(self.fit_state.rgam)
+        return pd.Series(to_py(edf), index=to_py(edf.names))
+
     def partial_residuals(
         self,
         term: TermLike,
@@ -377,8 +400,8 @@ class AbstractGAM(ABC):
                 parameter name from the model specification). If set to None, an error
                 is raised when multiple predictors are present; otherwise, the sole
                 available target is used.
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
             avoid_scaling: If True, and the term has a numeric by variable,
                 the scaling by the by variable is not included in the term effect.
                 This facilitates plotting the residuals, as the plots
@@ -607,21 +630,24 @@ class GAM(AbstractGAM):
         self,
         data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
         *,
-        method: GAMFitMethods = "GCV.Cp",
+        method: GAMFitMethods = "REML",
         weights: str | np.ndarray | pd.Series | None = None,
         optimizer: str | tuple[str, str] = ("outer", "newton"),
         scale: Literal["unknown"] | float | int | None = None,
         select: bool = False,
         gamma: float | int = 1,
+        knots: dict[str, np.ndarray] | None = None,
         n_threads: int = 1,
     ) -> Self:
         # TODO if we do this, we need to support it everywhere we pass data?
         """Fit the GAM.
 
         Args:
-            data: DataFrame or dictionary containing all variables referenced in the model.
-                Note, using a dictionary is required when passing matrix-valued variables.
-            method: Method for smoothing parameter estimation, matching the mgcv options.
+            data: DataFrame or dictionary containing all variables referenced in the
+                model. Note, using a dictionary is required when passing matrix-valued
+                variables.
+            method: Method for smoothing parameter estimation, matching the mgcv
+                options.
             weights: Observation weights. Either a string, matching a column name,
                 or an array/series with length equal to the number of observations.
             optimizer: An string or length 2 tuple, specifying the numerical
@@ -646,12 +672,36 @@ class GAM(AbstractGAM):
                 viewed as an effective sample size in the GCV score, and this also
                 enables it to be used with REML/ML. Ignored with P-RE/ML or the efs
                 optimizer.
+            knots: Dictionary mapping covariate names to knot locations.
+                For most bases, the length of the knot locations should match with a
+                user supplied `k` value. E.g. for `S("x", k=64)`, you could
+                pass `knots={"x": np.linspace(0, 1, 64)}`. For multidimensional
+                smooths, e.g. `S("x", "z", k=64)`, you could create a grid of
+                coordinates:
+
+                !!! example
+
+                    ```python
+                        import numpy as np
+                        coords = np.linspace(0, 1, num=8)
+                        X, Z = np.meshgrid(coords, coords)
+                        knots = {"x": X.ravel(), "z": Z.ravel()}
+                    ```
+                Note if using
+                [`ThinPlateSpline`][pymgcv.basis_functions.ThinPlateSpline], this will
+                avoid the eigen-decomposition used to find the basis, which although
+                fast often leads to worse results. Different terms can use different
+                numbers of knots, unless they share covariates.
             n_threads: Number of threads to use for fitting the GAM.
         """
-        # TODO some missing options: control, sp, knots, min.sp etc
+        # TODO some missing options: control, sp, min.sp etc
         data = deepcopy(data)
         weights = data[weights] if isinstance(weights, str) else weights  # type: ignore
-
+        r_knots = (
+            ro.NULL
+            if knots is None
+            else ro.ListVector({k: to_rpy(pos) for k, pos in knots.items()})
+        )
         self._check_valid_data(data)
         rgam = mgcv.gam(
             self._to_r_formulae(),
@@ -663,6 +713,7 @@ class GAM(AbstractGAM):
             scale=0 if scale is None else (-1 if scale == "unknown" else scale),
             select=select,
             gamma=gamma,
+            knots=r_knots,
             nthreads=n_threads,
         )
         self.fit_state = FitState(
@@ -687,8 +738,8 @@ class GAM(AbstractGAM):
         function to the results.
 
         Args:
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
             compute_se: Whether to compute standard errors for predictions.
             type: Type of prediction to compute. Either "link" for linear predictor
                 scale or "response" for response scale.
@@ -731,8 +782,8 @@ class GAM(AbstractGAM):
         link scale. The sum of all fit columns equals the total prediction (link scale).
 
         Args:
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
             compute_se: Whether to compute and return standard errors.
             block_size: Number of rows to process at a time.  If None then block size
                 is 1000 if data supplied, and the number of rows in the model frame
@@ -777,6 +828,7 @@ class BAM(AbstractGAM):
         scale: Literal["unknown"] | float | int | None = None,
         select: bool = False,
         gamma: float | int = 1,
+        knots: dict[str, np.ndarray] | None = None,
         chunk_size: int = 10000,
         discrete: bool = False,
         samfrac: float | int = 1,
@@ -785,8 +837,9 @@ class BAM(AbstractGAM):
         """Fit the GAM.
 
         Args:
-            data: DataFrame or dictionary containing all variables referenced in the model.
-                Note, using a dictionary is required when passing matrix-valued variables.
+            data: DataFrame or dictionary containing all variables referenced in the
+                model. Note, using a dictionary is required when passing matrix-valued
+                variables.
             method: Method for smoothing parameter estimation, matching the mgcv,
                 options.
             weights: Observation weights. Either a string, matching a column name,
@@ -806,6 +859,26 @@ class BAM(AbstractGAM):
                 viewed as an effective sample size in the GCV score, and this also
                 enables it to be used with REML/ML. Ignored with P-RE/ML or the efs
                 optimizer.
+            knots: Dictionary mapping covariate names to knot locations.
+                For most bases, the length of the knot locations should match with a
+                user supplied `k` value. E.g. for `S("x", k=64)`, you could
+                pass `knots={"x": np.linspace(0, 1, 64)}`. For multidimensional
+                smooths, e.g. `S("x", "z", k=64)`, you could create a grid of
+                coordinates:
+
+                !!! example
+
+                    ```python
+                        import numpy as np
+                        coords = np.linspace(0, 1, num=8)
+                        X, Z = np.meshgrid(coords, coords)
+                        knots = {"x": X.ravel(), "z": Z.ravel()}
+                    ```
+                Note if using
+                [`ThinPlateSpline`][pymgcv.basis_functions.ThinPlateSpline], this will
+                avoid the eigen-decomposition used to find the basis, which although
+                fast often leads to worse results. Different terms can use different
+                numbers of knots, unless they share covariates.
             chunk_size: The model matrix is created in chunks of this size, rather than
                 ever being formed whole. Reset to 4*p if chunk.size < 4*p where p is the
                 number of coefficients.
@@ -820,7 +893,11 @@ class BAM(AbstractGAM):
         # TODO some missing options: control, sp, knots, min.sp, nthreads
         data = deepcopy(data)
         weights = data[weights] if isinstance(weights, str) else weights  # type: ignore
-
+        r_knots = (
+            ro.NULL
+            if knots is None
+            else ro.ListVector({k: to_rpy(pos) for k, pos in knots.items()})
+        )
         self._check_valid_data(data)
         self.fit_state = FitState(
             rgam=mgcv.bam(
@@ -832,6 +909,7 @@ class BAM(AbstractGAM):
                 scale=0 if scale is None else (-1 if scale == "unknown" else scale),
                 select=select,
                 gamma=gamma,
+                knots=r_knots,
                 chunk_size=chunk_size,
                 discrete=discrete,
                 samfrac=samfrac,
@@ -860,8 +938,8 @@ class BAM(AbstractGAM):
         function to the results.
 
         Args:
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
             compute_se: Whether to compute and return standard errors.
             type: Type of prediction to compute. Either "link" for linear predictor
                 scale or "response" for response scale.
@@ -914,8 +992,8 @@ class BAM(AbstractGAM):
         equals the total prediction.
 
         Args:
-            data: A dictionary or DataFrame containing all variables referenced in the model.
-                Defaults to the data used to fit the model.
+            data: A dictionary or DataFrame containing all variables referenced in the
+                model. Defaults to the data used to fit the model.
             compute_se: Whether to compute and return standard errors.
             block_size: Number of rows to process at a time. Higher is faster
                 but more memory intensive.
