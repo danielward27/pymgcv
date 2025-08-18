@@ -468,6 +468,7 @@ def plot_continuous_2d(
     contourf_kwargs.setdefault("alpha", 0.8)
     scatter_kwargs.setdefault("color", "black")
     scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
+    scatter_kwargs.setdefault("zorder", 2)  # Ensures above contours
 
     pred = gam.partial_effect(
         term,
