@@ -1,12 +1,12 @@
 from collections.abc import Mapping
-import os
-import sys
+
 import numpy as np
 import pandas as pd
+import rpy2.rinterface_lib.callbacks as rcb
 import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
+
 from pymgcv.rpy_utils import to_py
-import rpy2.rinterface_lib.callbacks as rcb
 
 rutils = importr("utils")
 rbase = importr("base")
@@ -15,7 +15,6 @@ rbase = importr("base")
 
 def load_rdata_dataframe_from_url(url: str) -> pd.DataFrame:
     """Load an RData (.rda) file from URL expecting a single dataframe, without R console output."""
-    
     # Backup the original R console print callback
     original_consolewrite_print = rcb.consolewrite_print
 
