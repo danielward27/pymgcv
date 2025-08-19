@@ -17,7 +17,7 @@ from pandas import CategoricalDtype
 from pandas.api.types import is_numeric_dtype
 from rpy2.robjects.packages import importr
 
-from pymgcv.basis_functions import RandomWigglyCurve
+from pymgcv.basis_functions import FactorSmooth
 from pymgcv.gam import AbstractGAM
 from pymgcv.qq import QQResult, qq_simulate
 from pymgcv.terms import (
@@ -254,7 +254,7 @@ def plot_continuous_1d(
             for plotting the smooth curve. Higher values give smoother curves
             but increase computation time. Default is 100.
         level: Must be provided for smooths with a categorical "by" variable or a
-            [`RandomWigglyCurve`][pymgcv.basis_functions.RandomWigglyCurve] basis.
+            [`FactorSmooth`][pymgcv.basis_functions.FactorSmooth] basis.
             Specifies the level to plot.
         n_standard_errors: Number of standard errors for confidence intervals.
         residuals: Whether to plot partial residuals.
@@ -291,8 +291,7 @@ def plot_continuous_1d(
         )
     if is_categorical_by and level is None:
         raise ValueError(
-            "level must be provided for terms with 'by' variables, or "
-            "RandomWigglyCurves.",
+            "level must be provided for terms with 'by' variables, or FactorSmooths.",
         )
 
     if level is not None and term.by is not None:
@@ -391,7 +390,7 @@ def plot_continuous_2d(
             an eval_density × eval_density grid. Higher values give smoother
             surfaces but increase computation time. Default is 50.
         level: Must be provided for smooths with a categorical "by" variable or a
-            [`RandomWigglyCurve`][pymgcv.basis_functions.RandomWigglyCurve] basis.
+            [`FactorSmooth`][pymgcv.basis_functions.FactorSmooth] basis.
             Specifies the level to plot.
         contour_kwargs: Keyword arguments passed to `matplotlib.pyplot.contour`
             for the contour lines.
@@ -429,8 +428,7 @@ def plot_continuous_2d(
 
     if is_categorical_by and level is None:
         raise ValueError(
-            "level must be provided for terms with 'by' variables, or "
-            "RandomWigglyCurves.",
+            "level must be provided for terms with 'by' variables, or FactorSmooths.",
         )
 
     if level is not None and term.by is not None:
@@ -766,7 +764,7 @@ def _with_disable(plot_func):
 
 def _is_random_wiggly(term: TermLike) -> TypeGuard[T | S]:
     if isinstance(term, S | T):
-        return isinstance(term.bs, RandomWigglyCurve)
+        return isinstance(term.bs, FactorSmooth)
     return False
 
 

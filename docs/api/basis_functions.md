@@ -29,7 +29,7 @@ Basis functions control how smooth terms behave in your GAM models -- different 
 ::: pymgcv.basis_functions.MarkovRandomField
     options:
       members: __init__
-::: pymgcv.basis_functions.RandomWigglyCurve
+::: pymgcv.basis_functions.FactorSmooth
     options:
       members: __init__
 ::: pymgcv.basis_functions.AbstractBasis

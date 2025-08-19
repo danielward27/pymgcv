@@ -655,7 +655,7 @@ class Intercept(_AddMixin, TermLike):
 
 @dataclass
 class _RandomWigglyToByInterface(_AddMixin, TermLike):
-    """This wraps a term using a RandomWigglyCurve basis to a term with a by variable.
+    """This wraps a term using a FactorSmooth basis to a term with a by variable.
 
     This isn't a real usable term, but provides a consistent interface for plotting
     between categorical by variables and random wiggly curve terms.

@@ -16,7 +16,7 @@ from pymgcv.basis_functions import (
     CubicSpline,
     MarkovRandomField,
     RandomEffect,
-    RandomWigglyCurve,
+    FactorSmooth,
     ThinPlateSpline,
 )
 from pymgcv.families import MVN, GauLSS, Poisson
@@ -277,7 +277,7 @@ def tensor_2d_by_numeric_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
 def smooth_1d_random_wiggly_curve_gam(
     gam_type: type[AbstractGAM] = GAM,
 ) -> GAMTestCase:
-    bs = RandomWigglyCurve(CubicSpline())
+    bs = FactorSmooth(CubicSpline())
     method = get_method_default(gam_type)
     return GAMTestCase(
         mgcv_args=f"y~s(x,group,bs='fs',xt=list(bs='cr')),data=data, method='{method}'",
@@ -289,7 +289,7 @@ def smooth_1d_random_wiggly_curve_gam(
 def tensor_2d_random_wiggly_curve_gam(
     gam_type: type[AbstractGAM] = GAM,
 ) -> GAMTestCase:
-    bs = RandomWigglyCurve()
+    bs = FactorSmooth()
     method = get_method_default(gam_type)
     return GAMTestCase(
         mgcv_args=f"y~t(x,x1,group,bs='fs'),data=data, method='{method}'",

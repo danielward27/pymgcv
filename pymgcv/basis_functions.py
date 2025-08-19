@@ -118,7 +118,7 @@ class ThinPlateSpline(AbstractBasis):
 
 
 @dataclass
-class RandomWigglyCurve(AbstractBasis):
+class FactorSmooth(AbstractBasis):
     """S for each level of a categorical variable.
 
     When using this basis, the first variable of the smooth should
