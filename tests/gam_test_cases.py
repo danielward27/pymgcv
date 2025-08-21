@@ -14,9 +14,9 @@ from rpy2.robjects.packages import importr
 from pymgcv import terms
 from pymgcv.basis_functions import (
     CubicSpline,
+    FactorSmooth,
     MarkovRandomField,
     RandomEffect,
-    FactorSmooth,
     ThinPlateSpline,
 )
 from pymgcv.families import MVN, GauLSS, Poisson
@@ -50,6 +50,7 @@ def get_test_data() -> pd.DataFrame:
     pos_float = np.exp(
         1 + 0.4 * x - 0.2 * x1 + 0.5 * group_effect + rng.normal(scale=0.2, size=n),
     )
+    obj = [("a", "b")] * n
     return pd.DataFrame(
         {
             "y": y,
@@ -60,6 +61,7 @@ def get_test_data() -> pd.DataFrame:
             "pos_float": pos_float,
             "group": group,
             "group1": group1,
+            "unused": obj,  # Check object column doesn't prevent conversion to R df
         },
     )
 
@@ -84,7 +86,7 @@ class GAMTestCase:  # GAM/BAM test cases
     def mgcv_gam(self, data: pd.DataFrame):
         """Returns the mgcv gam object."""
         with ro.local_context() as env:
-            env["data"] = data_to_rdf(data)
+            env["data"] = data_to_rdf(data, include=self.gam_model.referenced_variables)
             for k, v in self.add_to_r_env.items():
                 env[k] = v
             return ro.r(self.mgcv_call)

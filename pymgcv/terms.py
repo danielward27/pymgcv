@@ -589,7 +589,7 @@ def _mgcv_smooth_prediction(
     compute_se: bool,
 ) -> PredictionResult:
     """Compute prediction and standard error for a smooth given data."""
-    predict_mat = mgcv.PredictMat(mgcv_smooth, data_to_rdf(data))
+    predict_mat = mgcv.PredictMat(mgcv_smooth, data_to_rdf(data, include="all"))
     first = round(mgcv_smooth.rx2["first.para"][0])
     last = round(mgcv_smooth.rx2["last.para"][0])
     coefs = rstats.coef(rgam)[(first - 1) : last]
@@ -604,6 +604,7 @@ def _mgcv_smooth_prediction(
     return PredictionResult(pred, se)
 
 
+@dataclass
 class Intercept(_AddMixin, TermLike):
     """Intercept term.
 
@@ -716,7 +717,7 @@ def _parameteric_partial_effect(
         data = {k: v for k, v in data.items() if k in term.varnames}
     predict_mat = rstats.model_matrix(
         ro.Formula(f"~{str(term)}-1"),
-        data=data_to_rdf(data),
+        data=data_to_rdf(data, include="all"),
     )
     post_fix = "" if formula_idx == 0 else f".{formula_idx}"
     predict_mat.colnames = rbase.paste0(predict_mat.colnames, post_fix)

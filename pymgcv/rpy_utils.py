@@ -9,8 +9,8 @@ The conversions are essential for seamless integration with R's mgcv library
 while maintaining pythonic data structures on the Python side.
 """
 
-from collections.abc import Mapping
-from typing import Any
+from collections.abc import Iterable, Mapping
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -89,17 +89,29 @@ def to_py(x) -> Any:
 
 
 def data_to_rdf(
-    data: pd.DataFrame | pd.Series | Mapping[str, np.ndarray | pd.Series],
+    data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
+    *,
+    include: Iterable[str] | Literal["all"],
 ) -> ro.vectors.DataFrame:
     """Convert pandas DataFrame or dictionary to R data.frame for use with mgcv.
 
     Args:
         data: DataFrame or dictionary containing all variables referenced in the model.
             Note, using a dictionary is required when passing matrix-valued variables.
+        include: The variables to include. We force passing this because it promotes
+            being explicit which columns to convert, and avoid trying to convert e.g.
+            unused object columns, which will lead to warnings from rpy2. Elements
+            not present in the data will be ignored.
 
     Returns:
         R data.frame object ready for use with mgcv functions.
     """
+    if include != "all":
+        if isinstance(data, pd.DataFrame):
+            data = pd.DataFrame(data[[col for col in data.columns if col in include]])
+        else:
+            data = {k: v for k, v in data.items() if k in include}
+
     multidim_data = {}
     if isinstance(data, dict):
         multidim_data = {
@@ -110,13 +122,6 @@ def data_to_rdf(
 
     if isinstance(data, pd.Series):
         data = pd.DataFrame(data)
-
-    dtypes = {k: v.dtype for k, v in data.items()}
-
-    if any(t == "object" for t in dtypes.values()) or any(
-        t == "string" for t in dtypes.values()
-    ):
-        raise TypeError("DataFrame contains unsupported object or string types.")
 
     rpy_df = to_rpy(data)
     multidim_data = rbase.data_frame(**multidim_data)

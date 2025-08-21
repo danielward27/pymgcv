@@ -1,6 +1,7 @@
 """Families supported by pymgcv."""
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
@@ -82,6 +83,7 @@ class SupportsCDF(ABC):
         pass
 
 
+@dataclass
 class Gaussian(AbstractFamily, SupportsCDF):
     """Gaussian family with specified link function.
 
@@ -108,6 +110,7 @@ class Gaussian(AbstractFamily, SupportsCDF):
 
 # TODO another case where matrix inputs need to be supported.
 # TODO document response form
+@dataclass
 class Binomial(AbstractFamily, SupportsCDF):
     """Binomial family with specified link function.
 
@@ -392,7 +395,12 @@ class Tw(AbstractFamily):
         if theta is not None and not theta_fixed:
             theta = -theta  # mgcv convention.
 
-        self.rfamily = rmgcv.tw(theta=ro.NULL if theta is None else theta, link=link, a=a, b=b)
+        self.rfamily = rmgcv.tw(
+            theta=ro.NULL if theta is None else theta,
+            link=link,
+            a=a,
+            b=b,
+        )
 
 
 class ZIP(AbstractFamily):

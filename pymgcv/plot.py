@@ -354,7 +354,7 @@ def plot_continuous_1d(
 
     ax.plot(x0_linspace, pred.fit, **plot_kwargs)
     ax.set_xlabel(term.varnames[0])
-    ax.set_ylabel(f"link({target})~{term.label()}")
+    ax.set_ylabel(f"{target}~{term.label()}")
     return ax
 
 
@@ -487,7 +487,7 @@ def plot_continuous_2d(
         **contour_kwargs,
     )
     color_bar = ax.figure.colorbar(mesh, ax=ax, pad=0)
-    color_bar.set_label(f"link({target})~{term.label()}")
+    color_bar.set_label(f"{target}~{term.label()}")
     _with_disable(ax.scatter)(
         np.asarray(data[term.varnames[0]]).ravel(),  # Ravel for linear functional terms
         np.asarray(data[term.varnames[1]]).ravel(),

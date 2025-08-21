@@ -3,7 +3,9 @@ import pandas as pd
 import pytest
 import rpy2.robjects as ro
 
+from pymgcv.gam import GAM
 from pymgcv.rpy_utils import to_py
+from pymgcv.terms import L
 
 from .gam_test_cases import GAMTestCase, get_test_cases
 
@@ -77,6 +79,19 @@ def test_partial_effect_against_partial_effects(test_case: GAMTestCase):
 
             assert expected_fit == effect.fit
             assert expected_se == effect.se
+
+
+def test_invalid_type():
+    rng = np.random.default_rng(1)
+    gam = GAM({"y": L("x")})
+    data = pd.DataFrame({"y": rng.normal(size=100), "x": rng.normal(size=100)})
+    data["x"] = data["x"].astype(str)
+    with pytest.raises(TypeError, match="is of unsupported type"):
+        gam = gam.fit(data)
+
+    data = {"x": np.asarray(data["x"]), "y": data["y"]}
+    with pytest.raises(TypeError, match="is of unsupported type"):
+        gam = gam.fit(data)
 
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
