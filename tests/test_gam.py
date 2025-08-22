@@ -49,7 +49,7 @@ def test_partial_effects_colsum_matches_predict(test_case: GAMTestCase):
 
     for target, pred in predictions.items():
         term_fit = term_predictions[target].fit
-        assert pytest.approx(pred.fit) == term_fit.sum(axis=1)
+        assert pytest.approx(pred) == term_fit.sum(axis=1)
 
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())

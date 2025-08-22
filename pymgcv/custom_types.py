@@ -5,18 +5,18 @@ import pandas as pd
 
 
 @dataclass
-class PredictionResult:
+class FitAndSE:
     """Container for predictions or individual partial effects with optional standard errors.
 
     Used for predictions or the partial effect of a single variable.
 
     Attributes:
-        fit: Predicted values or partial effect as a NumPy array.
-        se: Standard errors of the predictions, if available.
+        fit: Predicted values or partial effect.
+        se: Standard errors of the predictions.
     """
 
     fit: np.ndarray
-    se: np.ndarray | None = None
+    se: np.ndarray
 
 
 @dataclass

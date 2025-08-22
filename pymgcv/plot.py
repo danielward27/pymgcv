@@ -25,7 +25,7 @@ from pymgcv.terms import (
     S,
     T,
     TermLike,
-    _RandomWigglyToByInterface,
+    _FactorSmoothToByInterface,
 )
 from pymgcv.utils import data_len
 
@@ -143,7 +143,7 @@ def get_term_plotter(
     data = deepcopy(data)
 
     if _is_random_wiggly(term):
-        term = _RandomWigglyToByInterface(term)
+        term = _FactorSmoothToByInterface(term)
 
     dtypes = {k: data[k].dtype for k in term.varnames}
     by_dtype = data[term.by].dtype if term.by is not None else None
@@ -282,7 +282,7 @@ def plot_continuous_1d(
 
     data = data if data is not None else gam.fit_state.data
     data = deepcopy(data)
-    term = _RandomWigglyToByInterface(term) if _is_random_wiggly(term) else term
+    term = _FactorSmoothToByInterface(term) if _is_random_wiggly(term) else term
     is_categorical_by = term.by and isinstance(data[term.by].dtype, CategoricalDtype)
 
     if len(term.varnames) != 1:
@@ -418,7 +418,7 @@ def plot_continuous_2d(
 
     data = data if data is not None else gam.fit_state.data
     data = deepcopy(data)
-    term = _RandomWigglyToByInterface(term) if _is_random_wiggly(term) else term
+    term = _FactorSmoothToByInterface(term) if _is_random_wiggly(term) else term
     is_categorical_by = term.by and isinstance(data[term.by].dtype, CategoricalDtype)
 
     if len(term.varnames) != 2:
@@ -472,7 +472,7 @@ def plot_continuous_2d(
         term,
         target,
         data=spaced_data,
-    ).fit
+    )
 
     mesh = ax.contourf(
         x0_mesh,
@@ -556,7 +556,7 @@ def plot_categorical(
     vals = data[term.varnames[0]]
 
     if not isinstance(vals.dtype, CategoricalDtype):
-        raise ValueError("The variable must be categorical in the data.")
+        raise TypeError("The variable must be categorical in the data.")
     assert isinstance(vals, pd.Series)
 
     levels = pd.Series(
@@ -615,13 +615,19 @@ def plot_qq(
         qq_fun: A function taking only the GAM model, and returning a `QQResult`
             object storing the theoretical residuals, residuals, and the confidence
             interval. Defaults to [`qq_simulate`][pymgcv.qq.qq_simulate], which is the
-            most widely supported method, only requiring the family to provide a
+            most widely supported method only requiring the family to provide a
             sampling function. [`qq_cdf`][pymgcv.qq.qq_cdf] can be used for families
-            providing a cdf method, which will be more efficient.
-            (only requires the family to provide a sampling function) for families which have a cdf method,
-            which transforms the data to a uniform distribution, and uses
-            `qq_simulate` if the `cdf` is not supported for the family.
+            providing a cdf method, which transforms the data to a uniform
+            distribution
+
+            !!! warning
+
+                `qq_cdf` transforms all data to [0, 1] uniform. This may make it hard to
+                spot deviations in tail behaviour, e.g. due to a few extreme outliers.
+
         scatter_kwargs: Key word arguments passed to `matplotlib.pyplot.scatter`.
+        fill_between_kwargs: Key word arguments passed to
+            `matplotlib.pyplot.fill_between`, for plotting the confidence interval.
         plot_kwargs: Key word arguments passed to `matplotlib.pyplot.plot` for
             plotting the reference line. Pass {"disable": True} to avoid plotting.
         ax: Matplotlib axes to use for the plot.
@@ -728,6 +734,15 @@ def plot_residuals_vs_linear_predictor(
     ax: Axes | None = None,
     scatter_kwargs: dict[str, Any] | None = None,
 ):
+    """Plot the residuals against the linear predictor.
+
+    Args:
+        gam: The fitted GAM model.
+        type: The type of residuals to plot.
+        target: The target variable to plot residuals for.
+        ax: The axes to plot on.
+        scatter_kwargs: Keyword arguments to pass to the scatter plot.
+    """
     if len(gam.predictors) > 1:
         raise NotImplementedError(
             "Multivariate response families are not supported for "
@@ -744,7 +759,7 @@ def plot_residuals_vs_linear_predictor(
                 "Target must be specified when multiple predictors are present.",
             )
         target = list(gam.all_predictors.keys())[0]
-    predictions = gam.predict()[target].fit
+    predictions = gam.predict()[target]
     ax.scatter(predictions, residuals, **scatter_kwargs)
     ax.set_xlabel("Linear predictor")
     ax.set_ylabel("Residuals")
