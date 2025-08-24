@@ -12,7 +12,7 @@ import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import AbstractBasis
-from pymgcv.custom_types import FitAndSEArrays
+from pymgcv.custom_types import FitAndSE
 from pymgcv.formula_utils import _to_r_constructor_string, _Var
 from pymgcv.rpy_utils import data_to_rdf, to_py
 from pymgcv.utils import data_len
@@ -102,7 +102,7 @@ class TermLike(ABC):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
-    ) -> FitAndSEArrays:
+    ) -> FitAndSE[np.ndarray]:
         """Compute partial effects and standard errors for this term.
 
         Args:
@@ -152,7 +152,7 @@ class AbstractParametric(TermLike):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
-    ) -> FitAndSEArrays:
+    ) -> FitAndSE[np.ndarray]:
         model_matrix, coefs = self._get_model_matrix_and_coefs(
             data=data,
             rgam=rgam,
@@ -164,7 +164,7 @@ class AbstractParametric(TermLike):
         cov.colnames = rstats.coef(rgam).names
         subcov = cov.rx(coefs.names, coefs.names)
         se = rbase.sqrt(rbase.rowSums((model_matrix @ subcov).ro * model_matrix))
-        return FitAndSEArrays(fitted_vals, to_py(se))
+        return FitAndSE(fitted_vals, to_py(se))
 
     def _get_model_matrix_and_coefs(
         self,
@@ -304,9 +304,9 @@ class AbstractSmooth(TermLike):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
-    ) -> FitAndSEArrays:
+    ) -> FitAndSE[np.ndarray]:
         result = self._partial_effect_shared(data, rgam, formula_idx, compute_se=True)
-        assert isinstance(result, FitAndSEArrays)
+        assert isinstance(result, FitAndSE)
         return result
 
     def _partial_effect_shared(
@@ -316,7 +316,7 @@ class AbstractSmooth(TermLike):
         formula_idx: int,
         *,
         compute_se: bool,
-    ) -> np.ndarray | FitAndSEArrays:
+    ) -> np.ndarray | FitAndSE[np.ndarray]:
         # Share an implementation with compute_se True/False
         data = deepcopy(data)
         smooth_name = self.mgcv_identifier(formula_idx)
@@ -339,7 +339,7 @@ class AbstractSmooth(TermLike):
         n = data_len(data)
 
         if compute_se:
-            result = FitAndSEArrays(fit=np.empty(n), se=np.empty(n))
+            result = FitAndSE(fit=np.empty(n), se=np.empty(n))
         else:
             result = np.empty(n)
 
@@ -358,8 +358,8 @@ class AbstractSmooth(TermLike):
                 rgam=rgam,
                 compute_se=compute_se,
             )
-            if isinstance(result, FitAndSEArrays):
-                assert isinstance(level_prediction, FitAndSEArrays)
+            if isinstance(result, FitAndSE):
+                assert isinstance(level_prediction, FitAndSE)
                 result.fit[is_lev] = level_prediction.fit
                 result.se[is_lev] = level_prediction.se
             else:
@@ -375,7 +375,7 @@ class AbstractSmooth(TermLike):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         compute_se: bool,
-    ) -> np.ndarray | FitAndSEArrays:
+    ) -> np.ndarray | FitAndSE:
         """Compute prediction and standard error for a smooth given data."""
         include = list(self.varnames)
 
@@ -393,7 +393,7 @@ class AbstractSmooth(TermLike):
             )
             se = rbase.sqrt(rbase.rowSums((predict_mat @ cov).ro * predict_mat))
             se = to_py(rbase.pmax(0, se))
-            return FitAndSEArrays(pred, se)
+            return FitAndSE(pred, se)
         return pred
 
 
@@ -691,14 +691,14 @@ class Offset(TermLike):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
-    ) -> FitAndSEArrays:
+    ) -> FitAndSE[np.ndarray]:
         """Compute offset partial effects.
 
         For offset terms, the partial effect is simply the offset variable
         values, with zero standard errors.
         """
         effect = np.asarray(data[self.varnames[0]])
-        return FitAndSEArrays(effect, np.zeros_like(effect))
+        return FitAndSE(effect, np.zeros_like(effect))
 
 
 @dataclass
@@ -748,7 +748,7 @@ class Intercept(TermLike):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
-    ) -> FitAndSEArrays:
+    ) -> FitAndSE[np.ndarray]:
         intercept = self._partial_effect(data=data, rgam=rgam, formula_idx=formula_idx)
         intercept_name = self.mgcv_identifier(formula_idx)
         cov = rgam.rx2("Vp")
@@ -756,7 +756,7 @@ class Intercept(TermLike):
         cov.rownames, cov.colnames = names, names
         var = cov.rx2(intercept_name, intercept_name)
         se = np.full_like(intercept, np.sqrt(var).item())
-        return FitAndSEArrays(intercept, se)
+        return FitAndSE(intercept, se)
 
 
 @dataclass
@@ -805,7 +805,7 @@ class _FactorSmoothToByInterface(TermLike):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
-    ) -> FitAndSEArrays:
+    ) -> FitAndSE[np.ndarray]:
         return self.factor_smooth_term._partial_effect_with_se(
             data=data,
             rgam=rgam,
