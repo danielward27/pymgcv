@@ -18,7 +18,7 @@ from pandas.api.types import (
 )
 from rpy2.robjects.packages import importr
 
-from pymgcv.custom_types import FitAndSE, PartialEffectsResult
+from pymgcv.custom_types import FitAndSEArrays, FitAndSEDataFrames
 from pymgcv.families import AbstractFamily, Gaussian
 from pymgcv.rpy_utils import data_to_rdf, to_py, to_rpy
 from pymgcv.terms import Intercept, TermLike
@@ -196,7 +196,7 @@ class AbstractGAM(ABC):
         type: Literal["response", "link"] = "link",
         compute_se: Literal[True],
         **kwargs,
-    ) -> dict[str, FitAndSE]:
+    ) -> dict[str, FitAndSEArrays]:
         pass
 
     @abstractmethod
@@ -207,8 +207,28 @@ class AbstractGAM(ABC):
         type: Literal["response", "link"] = "link",
         compute_se: bool = False,
         **kwargs,
-    ) -> dict[str, np.ndarray] | dict[str, FitAndSE]:
+    ) -> dict[str, np.ndarray] | dict[str, FitAndSEArrays]:
         """Predict the response variable(s) (link scale) for the given data."""
+        pass
+
+    @overload
+    def partial_effects(
+        self,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
+        *args,
+        compute_se: Literal[False] = False,
+        **kwargs,
+    ) -> dict[str, pd.DataFrame]:
+        pass
+
+    @overload
+    def partial_effects(
+        self,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
+        *args,
+        compute_se: Literal[True],
+        **kwargs,
+    ) -> dict[str, FitAndSEDataFrames]:
         pass
 
     @abstractmethod
@@ -218,7 +238,7 @@ class AbstractGAM(ABC):
         *args,
         compute_se: bool = False,
         **kwargs,
-    ) -> dict[str, PartialEffectsResult]:
+    ) -> dict[str, pd.DataFrame] | dict[str, FitAndSEDataFrames]:
         """Compute the partial effects for the terms in the model."""
         pass
 
@@ -369,7 +389,7 @@ class AbstractGAM(ABC):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
         compute_se: Literal[True],
-    ) -> FitAndSE: ...
+    ) -> FitAndSEArrays: ...
 
     def partial_effect(
         self,
@@ -378,7 +398,7 @@ class AbstractGAM(ABC):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
         compute_se: bool = False,
-    ) -> np.ndarray | FitAndSE:
+    ) -> np.ndarray | FitAndSEArrays:
         """Compute the partial effect for a single model term.
 
         This method efficiently computes the contribution of one specific term
@@ -530,21 +550,21 @@ class AbstractGAM(ABC):
         predictions,
         *,
         compute_se: Literal[True],
-    ) -> dict[str, FitAndSE]: ...
+    ) -> dict[str, FitAndSEArrays]: ...
 
     def _format_predictions(
         self,
         predictions,
         *,
         compute_se: bool,
-    ) -> dict[str, np.ndarray] | dict[str, FitAndSE]:
+    ) -> dict[str, np.ndarray] | dict[str, FitAndSEArrays]:
         """Formats output from mgcv predict."""
         all_targets = self.all_predictors.keys()
         if compute_se:
             fit_all = to_py(predictions.rx2["fit"]).reshape(-1, len(all_targets))
             se_all = to_py(predictions.rx2["se.fit"]).reshape(-1, len(all_targets))
             return {
-                k: FitAndSE(fit=fit_all[:, i], se=se_all[:, i])
+                k: FitAndSEArrays(fit=fit_all[:, i], se=se_all[:, i])
                 for i, k in enumerate(all_targets)
             }
         fit_all = to_py(predictions).reshape(-1, len(all_targets))
@@ -556,7 +576,7 @@ class AbstractGAM(ABC):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         *,
         compute_se: bool,
-    ) -> dict[str, PartialEffectsResult]:
+    ) -> dict[str, pd.DataFrame] | dict[str, FitAndSEDataFrames]:
         """Formats output from mgcv predict with type="terms" (i.e. partial effects)."""
         if compute_se:
             fit_raw = pd.DataFrame(
@@ -605,16 +625,19 @@ class AbstractGAM(ABC):
                         data,
                         compute_se=compute_se,
                     )
-                    if isinstance(partial_effect, FitAndSE):
+                    if isinstance(partial_effect, FitAndSEArrays):
                         fit[label] = partial_effect.fit
                         se[label] = partial_effect.se
                     else:
                         fit[label] = partial_effect
 
-            results[target] = PartialEffectsResult(
-                fit=pd.DataFrame(fit),
-                se=None if not compute_se else pd.DataFrame(se),
-            )
+            if compute_se:
+                results[target] = FitAndSEDataFrames(
+                    fit=pd.DataFrame(fit),
+                    se=pd.DataFrame(se),
+                )
+            else:
+                results[target] = pd.DataFrame(fit)
         return results
 
     def aic(self, k: float = 2) -> float:
@@ -822,7 +845,7 @@ class GAM(AbstractGAM):
         type: Literal["response", "link"] = "link",
         compute_se: Literal[True] = True,
         block_size: int | None = None,
-    ) -> dict[str, FitAndSE]: ...
+    ) -> dict[str, FitAndSEArrays]: ...
 
     def predict(
         self,
@@ -831,7 +854,7 @@ class GAM(AbstractGAM):
         type: Literal["response", "link"] = "link",
         compute_se: bool = False,
         block_size: int | None = None,
-    ) -> dict[str, np.ndarray] | dict[str, FitAndSE]:
+    ) -> dict[str, np.ndarray] | dict[str, FitAndSEArrays]:
         """Compute model predictions with (optionally) uncertainty estimates.
 
         Makes predictions for new data using the fitted GAM model. Predictions
@@ -873,13 +896,31 @@ class GAM(AbstractGAM):
             compute_se=compute_se,
         )
 
+    @overload
+    def partial_effects(
+        self,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
+        *,
+        compute_se: Literal[False] = False,
+        block_size: int | None = None,
+    ) -> dict[str, pd.DataFrame]: ...
+
+    @overload
+    def partial_effects(
+        self,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
+        *,
+        compute_se: Literal[True],
+        block_size: int | None = None,
+    ) -> dict[str, FitAndSEDataFrames]: ...
+
     def partial_effects(
         self,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
         compute_se: bool = False,
         block_size: int | None = None,
-    ) -> dict[str, PartialEffectsResult]:
+    ) -> dict[str, pd.DataFrame] | dict[str, FitAndSEDataFrames]:
         """Compute partial effects for all model terms.
 
         Calculates the contribution of each model term to the overall prediction on the
@@ -1053,7 +1094,7 @@ class BAM(AbstractGAM):
         discrete: bool = True,
         n_threads: int = 1,
         gc_level: Literal[0, 1, 2] = 0,
-    ) -> dict[str, FitAndSE]: ...
+    ) -> dict[str, FitAndSEArrays]: ...
 
     def predict(
         self,
@@ -1065,7 +1106,7 @@ class BAM(AbstractGAM):
         discrete: bool = True,
         n_threads: int = 1,
         gc_level: Literal[0, 1, 2] = 0,
-    ) -> dict[str, FitAndSE] | dict[str, np.ndarray]:
+    ) -> dict[str, FitAndSEArrays] | dict[str, np.ndarray]:
         """Compute model predictions with uncertainty estimates.
 
         Makes predictions for new data using the fitted GAM model. Predictions
@@ -1121,7 +1162,7 @@ class BAM(AbstractGAM):
         n_threads: int = 1,
         discrete: bool = True,
         gc_level: Literal[0, 1, 2] = 0,
-    ) -> dict[str, PartialEffectsResult]:
+    ) -> dict[str, pd.DataFrame] | dict[str, FitAndSEDataFrames]:
         """Compute partial effects for all model terms.
 
         Calculates the contribution of each model term to the overall prediction.

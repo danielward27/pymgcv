@@ -104,7 +104,7 @@ def test_with_se_matches_without(test_case: GAMTestCase):
     for target in gam.all_predictors.keys():
         assert (
             pytest.approx(partial_effects_with_se[target].fit)
-            == partial_effects_without[target].fit
+            == partial_effects_without[target]
         )
 
 
