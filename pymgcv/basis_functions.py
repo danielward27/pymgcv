@@ -30,7 +30,7 @@ class _PassToS(TypedDict, total=False):
 
 
 class AbstractBasis(ABC):
-    """Protocol defining the interface for GAM basis functions.
+    """Abstract class defining the interface for GAM basis functions.
 
     All basis function classes must implement this protocol to be usable
     with smooth terms. The protocol ensures basis functions can be converted
@@ -118,7 +118,7 @@ class ThinPlateSpline(AbstractBasis):
 
 
 @dataclass
-class RandomWigglyCurve(AbstractBasis):
+class FactorSmooth(AbstractBasis):
     """S for each level of a categorical variable.
 
     When using this basis, the first variable of the smooth should

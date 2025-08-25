@@ -17,15 +17,15 @@ from pandas import CategoricalDtype
 from pandas.api.types import is_numeric_dtype
 from rpy2.robjects.packages import importr
 
-from pymgcv.basis_functions import RandomWigglyCurve
+from pymgcv.basis_functions import FactorSmooth
 from pymgcv.gam import AbstractGAM
 from pymgcv.qq import QQResult, qq_simulate
 from pymgcv.terms import (
+    AbstractTerm,
     L,
     S,
     T,
-    TermLike,
-    _RandomWigglyToByInterface,
+    _FactorSmoothToByInterface,
 )
 from pymgcv.utils import data_len
 
@@ -38,9 +38,9 @@ def plot_gam(
     *,
     ncols: int = 2,
     scatter: bool = False,
-    to_plot: type | types.UnionType | dict[str, list[TermLike]] = TermLike,
+    to_plot: type | types.UnionType | dict[str, list[AbstractTerm]] = AbstractTerm,
     kwargs_mapper: dict[Callable, dict[str, Any]] | None = None,
-) -> tuple[Figure, plt.Axes | np.ndarray]:
+) -> tuple[Figure, Axes | np.ndarray]:
     """Plot a gam model.
 
     Args:
@@ -125,7 +125,7 @@ class _TermPlotter:
 
 
 def get_term_plotter(
-    term: TermLike,
+    term: AbstractTerm,
     gam: AbstractGAM,
     target: str,
     data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
@@ -143,13 +143,15 @@ def get_term_plotter(
     data = deepcopy(data)
 
     if _is_random_wiggly(term):
-        term = _RandomWigglyToByInterface(term)
+        term = _FactorSmoothToByInterface(term)
 
     dtypes = {k: data[k].dtype for k in term.varnames}
     by_dtype = data[term.by].dtype if term.by is not None else None
+    if isinstance(by_dtype, CategoricalDtype):
+        levels = by_dtype.categories
+    else:
+        levels = [None]
     dim = len(term.varnames)
-    is_categorical_by = term.by is not None and isinstance(by_dtype, CategoricalDtype)
-    levels = by_dtype.categories if is_categorical_by else [None]
 
     def _all_numeric(dtypes: dict):
         return all(is_numeric_dtype(dtype) for dtype in dtypes.values())
@@ -172,7 +174,7 @@ def get_term_plotter(
 
         # TODO "re" basis?
 
-        case (1, TermLike()) if _all_numeric(dtypes):
+        case (1, AbstractTerm()) if _all_numeric(dtypes):
 
             def _plot_wrapper(axes, **kwargs):
                 for level in levels:
@@ -186,13 +188,13 @@ def get_term_plotter(
                         plot_kwargs={"label": level},
                         **kwargs,
                     )
-                if is_categorical_by:
+                if isinstance(by_dtype, CategoricalDtype):
                     axes[0].legend()
                 return axes
 
             return _TermPlotter(_plot_wrapper, plot_continuous_1d)
 
-        case (2, TermLike()) if _all_numeric(dtypes):
+        case (2, AbstractTerm()) if _all_numeric(dtypes):
 
             def _plot_wrapper(axes, **kwargs):
                 for i, level in enumerate(levels):
@@ -205,7 +207,7 @@ def get_term_plotter(
                         ax=axes[i],
                         **kwargs,
                     )
-                    if is_categorical_by:
+                    if isinstance(by_dtype, CategoricalDtype):
                         axes[i].set_title(f"Level={level}")
                 return axes
 
@@ -221,7 +223,7 @@ def get_term_plotter(
 
 def plot_continuous_1d(
     *,
-    term: TermLike,
+    term: AbstractTerm,
     gam: AbstractGAM,
     target: str | None = None,
     data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
@@ -254,7 +256,7 @@ def plot_continuous_1d(
             for plotting the smooth curve. Higher values give smoother curves
             but increase computation time. Default is 100.
         level: Must be provided for smooths with a categorical "by" variable or a
-            [`RandomWigglyCurve`][pymgcv.basis_functions.RandomWigglyCurve] basis.
+            [`FactorSmooth`][pymgcv.basis_functions.FactorSmooth] basis.
             Specifies the level to plot.
         n_standard_errors: Number of standard errors for confidence intervals.
         residuals: Whether to plot partial residuals.
@@ -282,7 +284,7 @@ def plot_continuous_1d(
 
     data = data if data is not None else gam.fit_state.data
     data = deepcopy(data)
-    term = _RandomWigglyToByInterface(term) if _is_random_wiggly(term) else term
+    term = _FactorSmoothToByInterface(term) if _is_random_wiggly(term) else term
     is_categorical_by = term.by and isinstance(data[term.by].dtype, CategoricalDtype)
 
     if len(term.varnames) != 1:
@@ -291,8 +293,7 @@ def plot_continuous_1d(
         )
     if is_categorical_by and level is None:
         raise ValueError(
-            "level must be provided for terms with 'by' variables, or "
-            "RandomWigglyCurves.",
+            "level must be provided for terms with 'by' variables, or FactorSmooths.",
         )
 
     if level is not None and term.by is not None:
@@ -326,7 +327,7 @@ def plot_continuous_1d(
     scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
 
     # Matching color, particularly nice for plotting categorical by smooths on same ax
-    current_color = ax._get_lines.get_next_color()
+    current_color = ax._get_lines.get_next_color()  # type: ignore Can't find reasonable alternative for now
     for kwargs in (plot_kwargs, fill_between_kwargs, scatter_kwargs):
         if "c" not in kwargs and "color" not in kwargs:
             kwargs["color"] = current_color
@@ -334,7 +335,7 @@ def plot_continuous_1d(
     pred = gam.partial_effect(term, target, spaced_data, compute_se=True)
 
     # Add partial residuals
-    if residuals and target in data and not _is_linear_functional(term, data):
+    if residuals and target in data and not _is_linear_functional(term, data):  # type: ignore
         partial_residuals = gam.partial_residuals(
             term,
             target=target,
@@ -355,13 +356,13 @@ def plot_continuous_1d(
 
     ax.plot(x0_linspace, pred.fit, **plot_kwargs)
     ax.set_xlabel(term.varnames[0])
-    ax.set_ylabel(f"link({target})~{term.label()}")
+    ax.set_ylabel(f"{target}~{term.label()}")
     return ax
 
 
 def plot_continuous_2d(
     *,
-    term: TermLike,
+    term: AbstractTerm,
     gam: AbstractGAM,
     target: str | None = None,
     data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
@@ -391,7 +392,7 @@ def plot_continuous_2d(
             an eval_density × eval_density grid. Higher values give smoother
             surfaces but increase computation time. Default is 50.
         level: Must be provided for smooths with a categorical "by" variable or a
-            [`RandomWigglyCurve`][pymgcv.basis_functions.RandomWigglyCurve] basis.
+            [`FactorSmooth`][pymgcv.basis_functions.FactorSmooth] basis.
             Specifies the level to plot.
         contour_kwargs: Keyword arguments passed to `matplotlib.pyplot.contour`
             for the contour lines.
@@ -419,7 +420,7 @@ def plot_continuous_2d(
 
     data = data if data is not None else gam.fit_state.data
     data = deepcopy(data)
-    term = _RandomWigglyToByInterface(term) if _is_random_wiggly(term) else term
+    term = _FactorSmoothToByInterface(term) if _is_random_wiggly(term) else term
     is_categorical_by = term.by and isinstance(data[term.by].dtype, CategoricalDtype)
 
     if len(term.varnames) != 2:
@@ -429,8 +430,7 @@ def plot_continuous_2d(
 
     if is_categorical_by and level is None:
         raise ValueError(
-            "level must be provided for terms with 'by' variables, or "
-            "RandomWigglyCurves.",
+            "level must be provided for terms with 'by' variables, or FactorSmooths.",
         )
 
     if level is not None and term.by is not None:
@@ -474,7 +474,7 @@ def plot_continuous_2d(
         term,
         target,
         data=spaced_data,
-    ).fit
+    )
 
     mesh = ax.contourf(
         x0_mesh,
@@ -489,7 +489,7 @@ def plot_continuous_2d(
         **contour_kwargs,
     )
     color_bar = ax.figure.colorbar(mesh, ax=ax, pad=0)
-    color_bar.set_label(f"link({target})~{term.label()}")
+    color_bar.set_label(f"{target}~{term.label()}")
     _with_disable(ax.scatter)(
         np.asarray(data[term.varnames[0]]).ravel(),  # Ravel for linear functional terms
         np.asarray(data[term.varnames[1]]).ravel(),
@@ -528,7 +528,8 @@ def plot_categorical(
             parameter name from the model specification). If set to None, an error
             is raised when multiple predictors are present; otherwise, the sole
             available target is used.
-        data: DataFrame (or dictionary) containing the categorical variable and response.
+        data: DataFrame (or dictionary) containing the categorical variable and
+            response variable.
         residuals: Whether to plot partial residuals (jittered on x-axis).
         n_standard_errors: Number of standard errors for confidence intervals.
         errorbar_kwargs: Keyword arguments passed to `matplotlib.pyplot.errorbar`.
@@ -558,7 +559,7 @@ def plot_categorical(
     vals = data[term.varnames[0]]
 
     if not isinstance(vals.dtype, CategoricalDtype):
-        raise ValueError("The variable must be categorical in the data.")
+        raise TypeError("The variable must be categorical in the data.")
     assert isinstance(vals, pd.Series)
 
     levels = pd.Series(
@@ -617,13 +618,19 @@ def plot_qq(
         qq_fun: A function taking only the GAM model, and returning a `QQResult`
             object storing the theoretical residuals, residuals, and the confidence
             interval. Defaults to [`qq_simulate`][pymgcv.qq.qq_simulate], which is the
-            most widely supported method, only requiring the family to provide a
+            most widely supported method only requiring the family to provide a
             sampling function. [`qq_cdf`][pymgcv.qq.qq_cdf] can be used for families
-            providing a cdf method, which will be more efficient.
-            (only requires the family to provide a sampling function) for families which have a cdf method,
-            which transforms the data to a uniform distribution, and uses
-            `qq_simulate` if the `cdf` is not supported for the family.
+            providing a cdf method, which transforms the data to a uniform
+            distribution
+
+            !!! warning
+
+                `qq_cdf` transforms all data to [0, 1] uniform. This may make it hard to
+                spot deviations in tail behaviour, e.g. due to a few extreme outliers.
+
         scatter_kwargs: Key word arguments passed to `matplotlib.pyplot.scatter`.
+        fill_between_kwargs: Key word arguments passed to
+            `matplotlib.pyplot.fill_between`, for plotting the confidence interval.
         plot_kwargs: Key word arguments passed to `matplotlib.pyplot.plot` for
             plotting the reference line. Pass {"disable": True} to avoid plotting.
         ax: Matplotlib axes to use for the plot.
@@ -730,6 +737,15 @@ def plot_residuals_vs_linear_predictor(
     ax: Axes | None = None,
     scatter_kwargs: dict[str, Any] | None = None,
 ):
+    """Plot the residuals against the linear predictor.
+
+    Args:
+        gam: The fitted GAM model.
+        type: The type of residuals to plot.
+        target: The target variable to plot residuals for.
+        ax: The axes to plot on.
+        scatter_kwargs: Keyword arguments to pass to the scatter plot.
+    """
     if len(gam.predictors) > 1:
         raise NotImplementedError(
             "Multivariate response families are not supported for "
@@ -746,7 +762,7 @@ def plot_residuals_vs_linear_predictor(
                 "Target must be specified when multiple predictors are present.",
             )
         target = list(gam.all_predictors.keys())[0]
-    predictions = gam.predict()[target].fit
+    predictions = gam.predict()[target]
     ax.scatter(predictions, residuals, **scatter_kwargs)
     ax.set_xlabel("Linear predictor")
     ax.set_ylabel("Residuals")
@@ -764,14 +780,14 @@ def _with_disable(plot_func):
     return wrapper
 
 
-def _is_random_wiggly(term: TermLike) -> TypeGuard[T | S]:
+def _is_random_wiggly(term: AbstractTerm) -> TypeGuard[T | S]:
     if isinstance(term, S | T):
-        return isinstance(term.bs, RandomWigglyCurve)
+        return isinstance(term.bs, FactorSmooth)
     return False
 
 
 def _is_linear_functional(
-    term: TermLike,
+    term: AbstractTerm,
     data: pd.DataFrame | dict[str, pd.Series | np.ndarray],
 ) -> bool:
     return any(np.asarray(data[k]).ndim > 1 for k in term.varnames) and isinstance(

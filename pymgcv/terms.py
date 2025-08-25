@@ -1,9 +1,10 @@
 """The available terms for constructing GAM models."""
 
+from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import asdict, dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -11,7 +12,7 @@ import rpy2.robjects as ro
 from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import AbstractBasis
-from pymgcv.custom_types import PredictionResult
+from pymgcv.custom_types import FitAndSE
 from pymgcv.formula_utils import _to_r_constructor_string, _Var
 from pymgcv.rpy_utils import data_to_rdf, to_py
 from pymgcv.utils import data_len
@@ -24,14 +25,8 @@ rstats = importr("stats")
 # TODO: Not supporting 'sp' or 'pc' basis types.
 
 
-@runtime_checkable
-class TermLike(Protocol):
-    """Protocol defining the interface for GAM model terms.
-
-    All term types in pymgcv must implement this protocol. It defines the basic
-    interface for model terms including variable references, string representations,
-    and the ability to compute partial effects. See the source code of this class
-    for more details.
+class AbstractTerm(ABC):
+    """Abstract class defining the interface for GAM model terms.
 
     Attributes:
         varnames: Tuple of variable names used by this term. For univariate terms,
@@ -43,10 +38,12 @@ class TermLike(Protocol):
     varnames: tuple[str, ...]
     by: str | None
 
+    @abstractmethod
     def __str__(self) -> str:
         """Convert the term to mgcv formula syntax."""
-        ...
+        pass
 
+    @abstractmethod
     def label(self) -> str:
         """The label used by pymgcv for the term in plotting and columns.
 
@@ -56,6 +53,7 @@ class TermLike(Protocol):
         """
         ...
 
+    @abstractmethod
     def mgcv_identifier(self, formula_idx: int = 0) -> str:
         """Generate the mgcv identifier for the term.
 
@@ -75,59 +73,118 @@ class TermLike(Protocol):
         """
         ...
 
+    @abstractmethod
     def _partial_effect(
         self,
         *,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
-        compute_se: bool,
-    ) -> PredictionResult:
+    ) -> np.ndarray:
+        """Compute partial effects for this term.
+
+        Args:
+            data: DataFrame containing predictor variables.
+            rgam: Fitted mgcv gam.
+            formula_idx: The formula index of the term.
+        """
+        ...
+
+    @abstractmethod
+    def _partial_effect_with_se(
+        self,
+        *,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
+        rgam: Any,
+        formula_idx: int,
+    ) -> FitAndSE[np.ndarray]:
         """Compute partial effects and standard errors for this term.
 
         Args:
             data: DataFrame containing predictor variables.
             rgam: Fitted mgcv gam.
             formula_idx: The formula index of the term.
-            compute_se: Whether to compute standard errors.
-
-        Returns:
-            Tuple of (effects, standard_errors) as numpy array.
         """
         ...
 
-    def __add__(self, other):
-        """Supports adding of terms to create lists of terms."""
-        ...
-
-    def __radd__(self, other):
-        """Supports adding of terms to create lists of terms."""
-        ...
-
-
-class _AddMixin:
     def __add__(self, other) -> list:
-        """Mixin class allowing adding of terms to terms and lists.
-
-        It is important to note this is doing nothing but defining a list of terms.
-        It arguably makes formulas more readable though!
-        """
+        """Allow adding of terms to terms and lists."""
         if isinstance(other, list):
             return [self] + other
-        if isinstance(other, TermLike):
+        if isinstance(other, AbstractTerm):
             return [self, other]
         return NotImplemented
 
     def __radd__(self, other):
+        """Allow adding of terms to terms and lists."""
         if isinstance(other, list):
             return other + [self]
-        if isinstance(other, TermLike):
+        if isinstance(other, AbstractTerm):
             return [other, self]
         return NotImplemented
 
 
+class AbstractParametric(AbstractTerm):
+    """Abstract class for parametric terms e.g. Linear and Interaction."""
+
+    def _partial_effect(
+        self,
+        *,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
+        rgam: Any,
+        formula_idx: int,
+    ) -> np.ndarray:
+        model_matrix, coefs = self._get_model_matrix_and_coefs(
+            data=data,
+            rgam=rgam,
+            formula_idx=formula_idx,
+        )
+        return to_py(model_matrix @ coefs).squeeze(axis=-1)
+
+    def _partial_effect_with_se(
+        self,
+        *,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
+        rgam: Any,
+        formula_idx: int,
+    ) -> FitAndSE[np.ndarray]:
+        model_matrix, coefs = self._get_model_matrix_and_coefs(
+            data=data,
+            rgam=rgam,
+            formula_idx=formula_idx,
+        )
+        fitted_vals = to_py(model_matrix @ coefs).squeeze(axis=-1)
+        cov = rgam.rx2["Vp"]
+        cov.rownames = rstats.coef(rgam).names
+        cov.colnames = rstats.coef(rgam).names
+        subcov = cov.rx(coefs.names, coefs.names)
+        se = rbase.sqrt(rbase.rowSums((model_matrix @ subcov).ro * model_matrix))
+        return FitAndSE(fitted_vals, to_py(se))
+
+    def _get_model_matrix_and_coefs(
+        self,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
+        rgam: Any,
+        formula_idx: int,
+    ) -> tuple[Any, Any]:
+        if isinstance(data, pd.DataFrame):
+            data = pd.DataFrame(data[list(self.varnames)])
+        else:
+            data = {k: v for k, v in data.items() if k in self.varnames}
+        predict_mat = rstats.model_matrix(
+            ro.Formula(f"~{str(self)}-1"),
+            data=data_to_rdf(data, include="all"),
+        )
+        post_fix = "" if formula_idx == 0 else f".{formula_idx}"
+        predict_mat.colnames = rbase.paste0(predict_mat.colnames, post_fix)
+        coef_names = rbase.intersect(predict_mat.colnames, rstats.coef(rgam).names)
+        predict_mat = rbase.as_matrix(predict_mat.rx(True, coef_names))  # noqa: FBT003
+        coefs = rstats.coef(rgam).rx(coef_names)
+        return predict_mat, coefs
+
+
 @dataclass
-class L(_AddMixin, TermLike):
+class L(AbstractParametric):
     """Linear (parametric) term with no basis expansion.
 
     - If the variable if continuous, the term will be included in the model matrix
@@ -159,25 +216,9 @@ class L(_AddMixin, TermLike):
         idx = "" if formula_idx == 0 else f".{formula_idx}"
         return self.varnames[0] + idx
 
-    def _partial_effect(
-        self,
-        *,
-        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
-        rgam: Any,
-        formula_idx: int,
-        compute_se: bool,
-    ) -> PredictionResult:
-        return _parameteric_partial_effect(
-            term=self,
-            data=data,
-            rgam=rgam,
-            formula_idx=formula_idx,
-            compute_se=compute_se,
-        )
-
 
 @dataclass
-class Interaction(_AddMixin, TermLike):
+class Interaction(AbstractParametric):
     """Parametric interaction term between multiple variables.
 
     Any categorical variables involved in an interaction are expanded into indicator
@@ -229,6 +270,7 @@ class Interaction(_AddMixin, TermLike):
         return ":".join(self.varnames)
 
     def label(self):
+        """The label for the interaction term."""
         return f"Interaction({','.join(self.varnames)})"
 
     def mgcv_identifier(self, formula_idx: int = 0) -> str:
@@ -236,30 +278,123 @@ class Interaction(_AddMixin, TermLike):
         idx = "" if formula_idx == 0 else f".{formula_idx}"
         return ":".join(self.varnames) + idx
 
+
+class AbstractSmooth(AbstractTerm):
+    """Abstract class for smooth terms (including tensor smooths)."""
+
     def _partial_effect(
         self,
         *,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
-        compute_se: bool,
-    ) -> PredictionResult:
-        """Compute interaction term partial effects.
+    ) -> np.ndarray:
+        result = self._partial_effect_shared(data, rgam, formula_idx, compute_se=False)
+        assert isinstance(result, np.ndarray)
+        return result
 
-        Creates the design matrix for the interaction and computes effects
-        using the fitted coefficients and covariance matrix.
-        """
-        return _parameteric_partial_effect(
-            term=self,
-            data=data,
-            rgam=rgam,
-            formula_idx=formula_idx,
-            compute_se=compute_se,
+    def _partial_effect_with_se(
+        self,
+        *,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
+        rgam: Any,
+        formula_idx: int,
+    ) -> FitAndSE[np.ndarray]:
+        result = self._partial_effect_shared(data, rgam, formula_idx, compute_se=True)
+        assert isinstance(result, FitAndSE)
+        return result
+
+    def _partial_effect_shared(
+        self,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
+        rgam: Any,
+        formula_idx: int,
+        *,
+        compute_se: bool,
+    ) -> np.ndarray | FitAndSE[np.ndarray]:
+        # Share an implementation with compute_se True/False
+        data = deepcopy(data)
+        smooth_name = self.mgcv_identifier(formula_idx)
+        smooths = {s.rx2["label"][0]: s for s in rgam.rx2["smooth"]}
+
+        is_categorical_by = self.by is not None and isinstance(
+            data[self.by].dtype,
+            pd.CategoricalDtype,
         )
+
+        if not is_categorical_by:
+            return self._mgcv_smooth_prediction(
+                mgcv_smooth=smooths[smooth_name],
+                data=data,
+                rgam=rgam,
+                compute_se=compute_se,
+            )
+
+        levels = data[self.by].cat.categories  # type: ignore
+        n = data_len(data)
+
+        if compute_se:
+            result = FitAndSE(fit=np.empty(n), se=np.empty(n))
+        else:
+            result = np.empty(n)
+
+        for lev in levels:
+            assert self.by is not None
+            is_lev = data[self.by] == lev
+            if isinstance(data, pd.DataFrame):
+                data_lev = pd.DataFrame(data[is_lev])
+            else:
+                data_lev = {k: v[is_lev] for k, v in data.items()}
+            if len(data_lev) == 0:
+                continue
+            smooth = smooths[smooth_name + lev]
+            level_prediction = self._mgcv_smooth_prediction(
+                mgcv_smooth=smooth,
+                data=data_lev,
+                rgam=rgam,
+                compute_se=compute_se,
+            )
+            if isinstance(result, FitAndSE):
+                assert isinstance(level_prediction, FitAndSE)
+                result.fit[is_lev] = level_prediction.fit
+                result.se[is_lev] = level_prediction.se
+            else:
+                assert isinstance(level_prediction, np.ndarray)
+                result[is_lev] = level_prediction
+
+        return result
+
+    def _mgcv_smooth_prediction(
+        self,
+        *,
+        mgcv_smooth: Any,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
+        rgam: Any,
+        compute_se: bool,
+    ) -> np.ndarray | FitAndSE:
+        """Compute prediction and standard error for a smooth given data."""
+        include = list(self.varnames)
+
+        if self.by is not None:
+            include.append(self.by)
+
+        predict_mat = mgcv.PredictMat(mgcv_smooth, data_to_rdf(data, include=include))
+        first = round(mgcv_smooth.rx2["first.para"][0])
+        last = round(mgcv_smooth.rx2["last.para"][0])
+        coefs = rstats.coef(rgam)[(first - 1) : last]
+        pred = to_py(rbase.drop(predict_mat @ coefs))
+        if compute_se:
+            cov = rbase.as_matrix(
+                rgam.rx2["Vp"].rx(rbase.seq(first, last), rbase.seq(first, last)),
+            )
+            se = rbase.sqrt(rbase.rowSums((predict_mat @ cov).ro * predict_mat))
+            se = to_py(rbase.pmax(0, se))
+            return FitAndSE(pred, se)
+        return pred
 
 
 @dataclass
-class S(_AddMixin, TermLike):
+class S(AbstractSmooth):
     """Smooth term.
 
     For all the arguments, passing None will use the mgcv defaults.
@@ -335,6 +470,7 @@ class S(_AddMixin, TermLike):
         return f"s({','.join(varnames)}{kwarg_string})"
 
     def label(self) -> str:
+        """The label for the term, e.g. S(x,y,by=group)."""
         by = f",by={self.by}" if self.by else ""
         return f"S({','.join(self.varnames)}{by})"
 
@@ -348,27 +484,11 @@ class S(_AddMixin, TermLike):
 
         return mgcv_identifier
 
-    def _partial_effect(
-        self,
-        *,
-        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
-        rgam: Any,
-        formula_idx: int,
-        compute_se: bool,
-    ) -> PredictionResult:
-        return _smooth_partial_effect(
-            data=data,
-            term=self,
-            rgam=rgam,
-            formula_idx=formula_idx,
-            compute_se=compute_se,
-        )
-
 
 # A far more intuitive interface would be to specify a list of smooths.
 # But that deviates pretty far from the mgcv way.
 @dataclass
-class T(_AddMixin, TermLike):
+class T(AbstractSmooth):
     """Tensor product smooth for scale-invariant multi-dimensional smoothing.
 
     Tensor smooths create smooth functions of multiple variables using marginal
@@ -509,25 +629,9 @@ class T(_AddMixin, TermLike):
             mgcv_identifier += ":" + self.by
         return mgcv_identifier
 
-    def _partial_effect(
-        self,
-        *,
-        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
-        rgam: Any,
-        formula_idx: int,
-        compute_se: bool,
-    ) -> PredictionResult:
-        return _smooth_partial_effect(
-            term=self,
-            formula_idx=formula_idx,
-            rgam=rgam,
-            data=data,
-            compute_se=compute_se,
-        )
-
 
 @dataclass
-class Offset(_AddMixin, TermLike):
+class Offset(AbstractTerm):
     """Offset term, added to the linear predictor as is.
 
     This means:
@@ -570,41 +674,32 @@ class Offset(_AddMixin, TermLike):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
-        compute_se: bool,
-    ) -> PredictionResult:
+    ) -> np.ndarray:
+        """Compute offset partial effects.
+
+        For offset terms, the partial effect is simply the offset variable
+        values, with zero standard errors.
+        """
+        return np.asarray(data[self.varnames[0]])
+
+    def _partial_effect_with_se(
+        self,
+        *,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
+        rgam: Any,
+        formula_idx: int,
+    ) -> FitAndSE[np.ndarray]:
         """Compute offset partial effects.
 
         For offset terms, the partial effect is simply the offset variable
         values, with zero standard errors.
         """
         effect = np.asarray(data[self.varnames[0]])
-        return PredictionResult(effect, np.zeros_like(effect) if compute_se else None)
+        return FitAndSE(effect, np.zeros_like(effect))
 
 
-def _mgcv_smooth_prediction(
-    *,
-    mgcv_smooth: Any,
-    data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
-    rgam: Any,
-    compute_se: bool,
-) -> PredictionResult:
-    """Compute prediction and standard error for a smooth given data."""
-    predict_mat = mgcv.PredictMat(mgcv_smooth, data_to_rdf(data))
-    first = round(mgcv_smooth.rx2["first.para"][0])
-    last = round(mgcv_smooth.rx2["last.para"][0])
-    coefs = rstats.coef(rgam)[(first - 1) : last]
-    pred = to_py(rbase.drop(predict_mat @ coefs))
-    se = None
-    if compute_se:
-        cov = rbase.as_matrix(
-            rgam.rx2["Vp"].rx(rbase.seq(first, last), rbase.seq(first, last)),
-        )
-        se = rbase.sqrt(rbase.rowSums((predict_mat @ cov).ro * predict_mat))
-        se = to_py(rbase.pmax(0, se))
-    return PredictionResult(pred, se)
-
-
-class Intercept(_AddMixin, TermLike):
+@dataclass
+class Intercept(AbstractTerm):
     """Intercept term.
 
     By default, this is added to all formulas in the model. If you want to control
@@ -638,44 +733,52 @@ class Intercept(_AddMixin, TermLike):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
-        compute_se: bool,
-    ) -> PredictionResult:
+    ) -> np.ndarray:
         n = data_len(data)
         coef = rstats.coef(rgam)
         intercept_name = self.mgcv_identifier(formula_idx)
-        intercept = np.full(n, to_py(coef.rx2[intercept_name]).item())
-        se = None
-        if compute_se:
-            cov = rgam.rx2("Vp")
-            cov.rownames, cov.colnames = coef.names, coef.names
-            var = cov.rx2(intercept_name, intercept_name)
-            se = np.full(n, np.sqrt(var).item())
-        return PredictionResult(intercept, se)
+        return np.full(n, to_py(coef.rx2[intercept_name]).item())
+
+    def _partial_effect_with_se(
+        self,
+        *,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
+        rgam: Any,
+        formula_idx: int,
+    ) -> FitAndSE[np.ndarray]:
+        intercept = self._partial_effect(data=data, rgam=rgam, formula_idx=formula_idx)
+        intercept_name = self.mgcv_identifier(formula_idx)
+        cov = rgam.rx2("Vp")
+        names = rstats.coef(rgam).names
+        cov.rownames, cov.colnames = names, names
+        var = cov.rx2(intercept_name, intercept_name)
+        se = np.full_like(intercept, np.sqrt(var).item())
+        return FitAndSE(intercept, se)
 
 
 @dataclass
-class _RandomWigglyToByInterface(_AddMixin, TermLike):
-    """This wraps a term using a RandomWigglyCurve basis to a term with a by variable.
+class _FactorSmoothToByInterface(AbstractTerm):
+    """This wraps a term using a FactorSmooth basis to a term with a by variable.
 
     This isn't a real usable term, but provides a consistent interface for plotting
     between categorical by variables and random wiggly curve terms.
     """
 
-    random_wiggly_term: S | T
+    factor_smooth_term: S | T
     by: str | None
 
-    def __init__(self, random_wiggly_term: S | T):
+    def __init__(self, factor_smooth_term: S | T):
         # TODO edge case of by being set and "fs" basis being used!
-        self.random_wiggly_term = random_wiggly_term
-        self.by = random_wiggly_term.varnames[-1]
-        self.varnames = random_wiggly_term.varnames[:-1]
+        self.factor_smooth_term = factor_smooth_term
+        self.by = factor_smooth_term.varnames[-1]
+        self.varnames = factor_smooth_term.varnames[:-1]
 
     def __str__(self) -> str:
         """Return variable name for mgcv formula."""
         raise NotImplementedError()
 
     def label(self) -> str:
-        return self.random_wiggly_term.label()
+        return self.factor_smooth_term.label()
 
     def mgcv_identifier(self, formula_idx: int = 0) -> str:
         raise NotImplementedError()
@@ -686,108 +789,22 @@ class _RandomWigglyToByInterface(_AddMixin, TermLike):
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
         rgam: Any,
         formula_idx: int,
-        compute_se: bool,
-    ) -> PredictionResult:
-        return self.random_wiggly_term._partial_effect(
+    ) -> np.ndarray:
+        return self.factor_smooth_term._partial_effect(
             data=data,
             rgam=rgam,
             formula_idx=formula_idx,
-            compute_se=compute_se,
         )
 
-
-def _parameteric_partial_effect(
-    term: L | Interaction,
-    data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
-    rgam: Any,
-    *,
-    formula_idx: int,
-    compute_se: bool,
-) -> PredictionResult:
-    """Compute partial effects for parametric terms.
-
-    Creates the (naive) design matrix then intersects this with the
-    parameters present in mgcv, as mgcv may drop columns of the
-    design matrix, e.g. to avoid indeterminacy.
-    """
-    if isinstance(data, pd.DataFrame):
-        data = pd.DataFrame(data[list(term.varnames)])
-    else:
-        data = {k: v for k, v in data.items() if k in term.varnames}
-    predict_mat = rstats.model_matrix(
-        ro.Formula(f"~{str(term)}-1"),
-        data=data_to_rdf(data),
-    )
-    post_fix = "" if formula_idx == 0 else f".{formula_idx}"
-    predict_mat.colnames = rbase.paste0(predict_mat.colnames, post_fix)
-    coef_names = rbase.intersect(predict_mat.colnames, rstats.coef(rgam).names)
-    predict_mat = rbase.as_matrix(predict_mat.rx(True, coef_names))
-    coefs = rstats.coef(rgam).rx(coef_names)
-    fitted_vals = predict_mat @ coefs
-
-    if compute_se:
-        cov = rgam.rx2["Vp"]
-        cov.rownames = rstats.coef(rgam).names
-        cov.colnames = rstats.coef(rgam).names
-        subcov = cov.rx(coef_names, coef_names)
-        se = rbase.sqrt(rbase.rowSums((predict_mat @ subcov).ro * predict_mat))
-        se = to_py(se)
-    else:
-        se = None
-
-    return PredictionResult(to_py(fitted_vals).squeeze(axis=-1), se)
-
-
-def _smooth_partial_effect(
-    *,
-    formula_idx: int,
-    term: T | S,
-    rgam: Any,
-    data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
-    compute_se: bool,
-):
-    """Predict (partial effect) and standard error for a S or T term."""
-    data = deepcopy(data)
-    required_cols = list(term.varnames)
-
-    if term.by is not None:
-        required_cols.append(term.by)
-
-    if isinstance(data, pd.DataFrame):
-        data = pd.DataFrame(data[required_cols])
-    else:
-        data = {k: v for k, v in data.items() if k in required_cols}
-
-    smooth_name = term.mgcv_identifier(formula_idx)
-    smooths = {s.rx2["label"][0]: s for s in rgam.rx2["smooth"]}
-
-    if term.by is not None and data[term.by].dtype == "category":
-        levels = data[term.by].cat.categories
-
-        fit_vals = np.empty(data_len(data))
-        se = np.empty(data_len(data))
-
-        for lev in levels:
-            is_lev = data[term.by] == lev
-            data_lev = data[is_lev]
-            if len(data_lev) == 0:
-                continue
-            smooth = smooths[smooth_name + lev]
-            level_prediction = _mgcv_smooth_prediction(
-                mgcv_smooth=smooth,
-                data=data_lev,
-                rgam=rgam,
-                compute_se=compute_se,
-            )
-            fit_vals[is_lev] = level_prediction.fit
-            if compute_se:
-                assert level_prediction.se is not None
-                se[is_lev] = level_prediction.se
-        return PredictionResult(fit_vals, se)
-
-    return _mgcv_smooth_prediction(
-        mgcv_smooth=smooths[smooth_name],
-        data=data,
-        rgam=rgam,
-        compute_se=compute_se,
-    )
+    def _partial_effect_with_se(
+        self,
+        *,
+        data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray],
+        rgam: Any,
+        formula_idx: int,
+    ) -> FitAndSE[np.ndarray]:
+        return self.factor_smooth_term._partial_effect_with_se(
+            data=data,
+            rgam=rgam,
+            formula_idx=formula_idx,
+        )

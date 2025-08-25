@@ -3,7 +3,10 @@ import pandas as pd
 import pytest
 import rpy2.robjects as ro
 
+from pymgcv.gam import GAM
 from pymgcv.rpy_utils import to_py
+from pymgcv.terms import L
+from pymgcv.utils import data_len
 
 from .gam_test_cases import GAMTestCase, get_test_cases
 
@@ -47,7 +50,7 @@ def test_partial_effects_colsum_matches_predict(test_case: GAMTestCase):
 
     for target, pred in predictions.items():
         term_fit = term_predictions[target].fit
-        assert pytest.approx(pred.fit) == term_fit.sum(axis=1)
+        assert pytest.approx(pred) == term_fit.sum(axis=1)
 
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
@@ -79,6 +82,19 @@ def test_partial_effect_against_partial_effects(test_case: GAMTestCase):
             assert expected_se == effect.se
 
 
+def test_invalid_type():
+    rng = np.random.default_rng(1)
+    gam = GAM({"y": L("x")})
+    data = pd.DataFrame({"y": rng.normal(size=100), "x": rng.normal(size=100)})
+    data["x"] = data["x"].astype(str)
+    with pytest.raises(TypeError, match="is of unsupported type"):
+        gam = gam.fit(data)
+
+    data = {"x": np.asarray(data["x"]), "y": data["y"]}
+    with pytest.raises(TypeError, match="is of unsupported type"):
+        gam = gam.fit(data)
+
+
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_with_se_matches_without(test_case: GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
@@ -89,7 +105,7 @@ def test_with_se_matches_without(test_case: GAMTestCase):
     for target in gam.all_predictors.keys():
         assert (
             pytest.approx(partial_effects_with_se[target].fit)
-            == partial_effects_without[target].fit
+            == partial_effects_without[target]
         )
 
 
@@ -117,12 +133,14 @@ def test_abstract_methods(test_case: GAMTestCase):
     assert isinstance(fit.aic(), float)
 
     residuals = fit.residuals()
-    assert residuals.shape[0] == test_case.data.shape[0]
 
+    assert residuals.shape[0] == data_len(test_case.data)
+    assert fit.fit_state is not None
+    mgcv_gam = fit.fit_state.rgam
     resid_from_y_and_fit = fit.residuals_from_y_and_fit(
-        y=to_py(fit.fit_state.rgam.rx2["y"]),
-        fit=to_py(fit.fit_state.rgam.rx2["fitted.values"]),
-        weights=to_py(fit.fit_state.rgam.rx2["prior.weights"]),
+        y=to_py(mgcv_gam.rx2["y"]),
+        fit=to_py(mgcv_gam.rx2["fitted.values"]),
+        weights=to_py(mgcv_gam.rx2["prior.weights"]),
     )
     assert np.all(residuals == resid_from_y_and_fit)
     assert isinstance(fit.edf(), pd.Series)
