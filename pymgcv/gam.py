@@ -21,7 +21,7 @@ from rpy2.robjects.packages import importr
 from pymgcv.custom_types import FitAndSE
 from pymgcv.families import AbstractFamily, Gaussian
 from pymgcv.rpy_utils import data_to_rdf, to_py, to_rpy
-from pymgcv.terms import Intercept, TermLike
+from pymgcv.terms import AbstractTerm, Intercept
 from pymgcv.utils import data_len
 
 mgcv = importr("mgcv")
@@ -79,15 +79,16 @@ class AbstractGAM(ABC):
     predicting GAM models.
     """
 
-    predictors: dict[str, list[TermLike]]
-    family_predictors: dict[str, list[TermLike]]
+    predictors: dict[str, list[AbstractTerm]]
+    family_predictors: dict[str, list[AbstractTerm]]
     family: AbstractFamily
     fit_state: FitState | None
 
     def __init__(
         self,
-        predictors: Mapping[str, Iterable[TermLike] | TermLike],
-        family_predictors: Mapping[str, Iterable[TermLike] | TermLike] | None = None,
+        predictors: Mapping[str, Iterable[AbstractTerm] | AbstractTerm],
+        family_predictors: Mapping[str, Iterable[AbstractTerm] | AbstractTerm]
+        | None = None,
         *,
         family: AbstractFamily | None = None,
         add_intercepts: bool = True,
@@ -96,7 +97,7 @@ class AbstractGAM(ABC):
 
         Args:
             predictors: Dictionary mapping response variable names to an iterable of
-                [`TermLike`][pymgcv.terms.TermLike] objects used to predict
+                [`AbstractTerm`][pymgcv.terms.AbstractTerm] objects used to predict
                 $g([\mathbb{E}[Y])$. For single response models, use a single key-value
                 pair. For multivariate models, include multiple response variables.
             family_predictors: Dictionary mapping family parameter names to an iterable
@@ -114,7 +115,7 @@ class AbstractGAM(ABC):
 
         def _ensure_list_of_terms(d):
             return {
-                k: [v] if isinstance(v, TermLike) else list(v) for k, v in d.items()
+                k: [v] if isinstance(v, AbstractTerm) else list(v) for k, v in d.items()
             }
 
         self.predictors = _ensure_list_of_terms(predictors)
@@ -182,8 +183,8 @@ class AbstractGAM(ABC):
         self,
         data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
         *args,
-        type: Literal["response", "link"] = "link",
         compute_se: Literal[False] = False,
+        type: Literal["response", "link"] = "link",
         **kwargs,
     ) -> dict[str, np.ndarray]:
         pass
@@ -193,8 +194,8 @@ class AbstractGAM(ABC):
         self,
         data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
         *args,
-        type: Literal["response", "link"] = "link",
         compute_se: Literal[True],
+        type: Literal["response", "link"] = "link",
         **kwargs,
     ) -> dict[str, FitAndSE[np.ndarray]]:
         pass
@@ -204,8 +205,8 @@ class AbstractGAM(ABC):
         self,
         data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
         *args,
-        type: Literal["response", "link"] = "link",
         compute_se: bool = False,
+        type: Literal["response", "link"] = "link",
         **kwargs,
     ) -> dict[str, np.ndarray] | dict[str, FitAndSE[np.ndarray]]:
         """Predict the response variable(s) (link scale) for the given data."""
@@ -243,7 +244,7 @@ class AbstractGAM(ABC):
         pass
 
     @property
-    def all_predictors(self) -> dict[str, list[TermLike]]:
+    def all_predictors(self) -> dict[str, list[AbstractTerm]]:
         """All predictors (response and for family parameters)."""
         return self.predictors | self.family_predictors
 
@@ -261,6 +262,8 @@ class AbstractGAM(ABC):
     def _check_valid_data(
         self,
         data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
+        *,
+        require_response: bool,
     ) -> None:
         """Validate that data contains all variables required by the model.
 
@@ -270,8 +273,15 @@ class AbstractGAM(ABC):
         Args:
             data: A dictionary or DataFrame containing all variables referenced in the
                 model.
+            require_response: Whether the response variable is required.
         """
-        for var in self.referenced_variables:
+        if require_response:
+            required = self.referenced_variables
+        else:
+            required = [
+                v for v in self.referenced_variables if v not in self.predictors
+            ]
+        for var in required:
             if var not in data:
                 raise ValueError(
                     f"Variable {var} referenced in model not present in data.",
@@ -374,7 +384,7 @@ class AbstractGAM(ABC):
     @overload
     def partial_effect(
         self,
-        term: TermLike,
+        term: AbstractTerm,
         target: str | None = None,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
@@ -384,7 +394,7 @@ class AbstractGAM(ABC):
     @overload
     def partial_effect(
         self,
-        term: TermLike,
+        term: AbstractTerm,
         target: str | None = None,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
@@ -393,7 +403,7 @@ class AbstractGAM(ABC):
 
     def partial_effect(
         self,
-        term: TermLike,
+        term: AbstractTerm,
         target: str | None = None,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
@@ -468,7 +478,7 @@ class AbstractGAM(ABC):
 
     def partial_residuals(
         self,
-        term: TermLike,
+        term: AbstractTerm,
         target: str | None = None,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
@@ -722,8 +732,8 @@ class AbstractGAM(ABC):
 class GAM(AbstractGAM):
     """Standard GAM Model."""
 
-    predictors: dict[str, list[TermLike]]
-    family_predictors: dict[str, list[TermLike]]
+    predictors: dict[str, list[AbstractTerm]]
+    family_predictors: dict[str, list[AbstractTerm]]
     family: AbstractFamily
     fit_state: FitState | None
 
@@ -795,7 +805,7 @@ class GAM(AbstractGAM):
             n_threads: Number of threads to use for fitting the GAM.
         """
         # TODO some missing options: control, sp, min.sp etc
-        self._check_valid_data(data)
+        self._check_valid_data(data, require_response=True)
         if isinstance(data, pd.DataFrame):
             data = pd.DataFrame(data[self.referenced_variables])
         else:
@@ -830,10 +840,9 @@ class GAM(AbstractGAM):
     @overload
     def predict(
         self,
-        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
         *,
+        compute_se: Literal[False] = False,
         type: Literal["response", "link"] = "link",
-        compute_se: Literal[False],
         block_size: int | None = None,
     ) -> dict[str, np.ndarray]: ...
 
@@ -842,17 +851,17 @@ class GAM(AbstractGAM):
         self,
         data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
         *,
+        compute_se: Literal[True],
         type: Literal["response", "link"] = "link",
-        compute_se: Literal[True] = True,
         block_size: int | None = None,
-    ) -> dict[str, FitAndSE[pd.DataFrame]]: ...
+    ) -> dict[str, FitAndSE[np.ndarray]]: ...
 
     def predict(
         self,
         data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
         *,
-        type: Literal["response", "link"] = "link",
         compute_se: bool = False,
+        type: Literal["response", "link"] = "link",
         block_size: int | None = None,
     ) -> dict[str, np.ndarray] | dict[str, FitAndSE[np.ndarray]]:
         """Compute model predictions with (optionally) uncertainty estimates.
@@ -877,7 +886,7 @@ class GAM(AbstractGAM):
             containing the predictions and standard errors if `se` is True.
         """
         if data is not None:
-            self._check_valid_data(data)
+            self._check_valid_data(data, require_response=False)
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call predict before fitting.")
@@ -912,7 +921,7 @@ class GAM(AbstractGAM):
         *,
         compute_se: Literal[True],
         block_size: int | None = None,
-    ) -> dict[str, FitAndSE[np.ndarray]]: ...
+    ) -> dict[str, FitAndSE[pd.DataFrame]]: ...
 
     def partial_effects(
         self,
@@ -935,7 +944,7 @@ class GAM(AbstractGAM):
                 otherwise.
         """
         if data is not None:
-            self._check_valid_data(data)
+            self._check_valid_data(data, require_response=False)
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call partial_effects before fitting.")
@@ -961,8 +970,8 @@ class GAM(AbstractGAM):
 class BAM(AbstractGAM):
     """A big-data GAM (BAM) model."""
 
-    predictors: dict[str, list[TermLike]]
-    family_predictors: dict[str, list[TermLike]]
+    predictors: dict[str, list[AbstractTerm]]
+    family_predictors: dict[str, list[AbstractTerm]]
     family: AbstractFamily
     fit_state: FitState | None
 
@@ -1038,7 +1047,7 @@ class BAM(AbstractGAM):
                 memory requirements.
         """
         # TODO some missing options: control, sp, min.sp, nthreads
-        self._check_valid_data(data)
+        self._check_valid_data(data, require_response=True)
         if isinstance(data, pd.DataFrame):
             data = pd.DataFrame(data[self.referenced_variables])
         else:
@@ -1130,7 +1139,7 @@ class BAM(AbstractGAM):
                 memory requirements.
         """
         if data is not None:
-            self._check_valid_data(data)
+            self._check_valid_data(data, require_response=False)
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call predict before fitting.")
@@ -1152,6 +1161,30 @@ class BAM(AbstractGAM):
             predictions,
             compute_se=compute_se,
         )
+
+    @overload
+    def partial_effects(
+        self,
+        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
+        *,
+        compute_se: Literal[False] = False,
+        block_size: int = 50000,
+        n_threads: int = 1,
+        discrete: bool = True,
+        gc_level: Literal[0, 1, 2] = 0,
+    ) -> dict[str, pd.DataFrame]: ...
+
+    @overload
+    def partial_effects(
+        self,
+        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
+        *,
+        compute_se: Literal[True],
+        block_size: int = 50000,
+        n_threads: int = 1,
+        discrete: bool = True,
+        gc_level: Literal[0, 1, 2] = 0,
+    ) -> dict[str, FitAndSE[pd.DataFrame]]: ...
 
     def partial_effects(
         self,
@@ -1185,7 +1218,7 @@ class BAM(AbstractGAM):
                 memory requirements.
         """
         if data is not None:
-            self._check_valid_data(data)
+            self._check_valid_data(data, require_response=False)
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call partial_effects before fitting.")

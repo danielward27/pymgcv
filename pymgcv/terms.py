@@ -25,13 +25,8 @@ rstats = importr("stats")
 # TODO: Not supporting 'sp' or 'pc' basis types.
 
 
-class TermLike(ABC):
-    """Protocol defining the interface for GAM model terms.
-
-    All term types in pymgcv must implement this protocol. It defines the basic
-    interface for model terms including variable references, string representations,
-    and the ability to compute partial effects. See the source code of this class
-    for more details.
+class AbstractTerm(ABC):
+    """Abstract class defining the interface for GAM model terms.
 
     Attributes:
         varnames: Tuple of variable names used by this term. For univariate terms,
@@ -116,7 +111,7 @@ class TermLike(ABC):
         """Allow adding of terms to terms and lists."""
         if isinstance(other, list):
             return [self] + other
-        if isinstance(other, TermLike):
+        if isinstance(other, AbstractTerm):
             return [self, other]
         return NotImplemented
 
@@ -124,12 +119,12 @@ class TermLike(ABC):
         """Allow adding of terms to terms and lists."""
         if isinstance(other, list):
             return other + [self]
-        if isinstance(other, TermLike):
+        if isinstance(other, AbstractTerm):
             return [other, self]
         return NotImplemented
 
 
-class AbstractParametric(TermLike):
+class AbstractParametric(AbstractTerm):
     """Abstract class for parametric terms e.g. Linear and Interaction."""
 
     def _partial_effect(
@@ -183,7 +178,7 @@ class AbstractParametric(TermLike):
         post_fix = "" if formula_idx == 0 else f".{formula_idx}"
         predict_mat.colnames = rbase.paste0(predict_mat.colnames, post_fix)
         coef_names = rbase.intersect(predict_mat.colnames, rstats.coef(rgam).names)
-        predict_mat = rbase.as_matrix(predict_mat.rx(True, coef_names))
+        predict_mat = rbase.as_matrix(predict_mat.rx(True, coef_names))  # noqa: FBT003
         coefs = rstats.coef(rgam).rx(coef_names)
         return predict_mat, coefs
 
@@ -284,7 +279,7 @@ class Interaction(AbstractParametric):
         return ":".join(self.varnames) + idx
 
 
-class AbstractSmooth(TermLike):
+class AbstractSmooth(AbstractTerm):
     """Abstract class for smooth terms (including tensor smooths)."""
 
     def _partial_effect(
@@ -335,7 +330,7 @@ class AbstractSmooth(TermLike):
                 compute_se=compute_se,
             )
 
-        levels = data[self.by].cat.categories
+        levels = data[self.by].cat.categories  # type: ignore
         n = data_len(data)
 
         if compute_se:
@@ -344,6 +339,7 @@ class AbstractSmooth(TermLike):
             result = np.empty(n)
 
         for lev in levels:
+            assert self.by is not None
             is_lev = data[self.by] == lev
             if isinstance(data, pd.DataFrame):
                 data_lev = pd.DataFrame(data[is_lev])
@@ -474,6 +470,7 @@ class S(AbstractSmooth):
         return f"s({','.join(varnames)}{kwarg_string})"
 
     def label(self) -> str:
+        """The label for the term, e.g. S(x,y,by=group)."""
         by = f",by={self.by}" if self.by else ""
         return f"S({','.join(self.varnames)}{by})"
 
@@ -634,7 +631,7 @@ class T(AbstractSmooth):
 
 
 @dataclass
-class Offset(TermLike):
+class Offset(AbstractTerm):
     """Offset term, added to the linear predictor as is.
 
     This means:
@@ -702,7 +699,7 @@ class Offset(TermLike):
 
 
 @dataclass
-class Intercept(TermLike):
+class Intercept(AbstractTerm):
     """Intercept term.
 
     By default, this is added to all formulas in the model. If you want to control
@@ -760,7 +757,7 @@ class Intercept(TermLike):
 
 
 @dataclass
-class _FactorSmoothToByInterface(TermLike):
+class _FactorSmoothToByInterface(AbstractTerm):
     """This wraps a term using a FactorSmooth basis to a term with a by variable.
 
     This isn't a real usable term, but provides a consistent interface for plotting

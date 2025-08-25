@@ -3,13 +3,13 @@ from dataclasses import dataclass
 import pytest
 
 from pymgcv.basis_functions import CubicSpline, ThinPlateSpline
-from pymgcv.terms import Interaction, Offset, S, T, TermLike
+from pymgcv.terms import AbstractTerm, Interaction, Offset, S, T
 from pymgcv.terms import L as L
 
 
 @dataclass
 class TermTestCase:
-    term: TermLike
+    term: AbstractTerm
     expected_str: str
     expected_simple: str
     expected_simple_with_idx: str

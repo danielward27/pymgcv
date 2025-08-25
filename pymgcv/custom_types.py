@@ -1,10 +1,12 @@
+"""Custom types for pymgcv."""
+
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 import numpy as np
 import pandas as pd
 
-S = TypeVar("S", np.ndarray, pd.DataFrame)  # only allow ndarray or DataFrame
+S = TypeVar("S", np.ndarray, pd.DataFrame)
 
 
 @dataclass

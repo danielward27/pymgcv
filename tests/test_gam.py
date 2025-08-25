@@ -6,6 +6,7 @@ import rpy2.robjects as ro
 from pymgcv.gam import GAM
 from pymgcv.rpy_utils import to_py
 from pymgcv.terms import L
+from pymgcv.utils import data_len
 
 from .gam_test_cases import GAMTestCase, get_test_cases
 
@@ -132,12 +133,14 @@ def test_abstract_methods(test_case: GAMTestCase):
     assert isinstance(fit.aic(), float)
 
     residuals = fit.residuals()
-    assert residuals.shape[0] == test_case.data.shape[0]
 
+    assert residuals.shape[0] == data_len(test_case.data)
+    assert fit.fit_state is not None
+    mgcv_gam = fit.fit_state.rgam
     resid_from_y_and_fit = fit.residuals_from_y_and_fit(
-        y=to_py(fit.fit_state.rgam.rx2["y"]),
-        fit=to_py(fit.fit_state.rgam.rx2["fitted.values"]),
-        weights=to_py(fit.fit_state.rgam.rx2["prior.weights"]),
+        y=to_py(mgcv_gam.rx2["y"]),
+        fit=to_py(mgcv_gam.rx2["fitted.values"]),
+        weights=to_py(mgcv_gam.rx2["prior.weights"]),
     )
     assert np.all(residuals == resid_from_y_and_fit)
     assert isinstance(fit.edf(), pd.Series)

@@ -21,10 +21,10 @@ from pymgcv.basis_functions import FactorSmooth
 from pymgcv.gam import AbstractGAM
 from pymgcv.qq import QQResult, qq_simulate
 from pymgcv.terms import (
+    AbstractTerm,
     L,
     S,
     T,
-    TermLike,
     _FactorSmoothToByInterface,
 )
 from pymgcv.utils import data_len
@@ -38,9 +38,9 @@ def plot_gam(
     *,
     ncols: int = 2,
     scatter: bool = False,
-    to_plot: type | types.UnionType | dict[str, list[TermLike]] = TermLike,
+    to_plot: type | types.UnionType | dict[str, list[AbstractTerm]] = AbstractTerm,
     kwargs_mapper: dict[Callable, dict[str, Any]] | None = None,
-) -> tuple[Figure, plt.Axes | np.ndarray]:
+) -> tuple[Figure, Axes | np.ndarray]:
     """Plot a gam model.
 
     Args:
@@ -125,7 +125,7 @@ class _TermPlotter:
 
 
 def get_term_plotter(
-    term: TermLike,
+    term: AbstractTerm,
     gam: AbstractGAM,
     target: str,
     data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
@@ -147,9 +147,11 @@ def get_term_plotter(
 
     dtypes = {k: data[k].dtype for k in term.varnames}
     by_dtype = data[term.by].dtype if term.by is not None else None
+    if isinstance(by_dtype, CategoricalDtype):
+        levels = by_dtype.categories
+    else:
+        levels = [None]
     dim = len(term.varnames)
-    is_categorical_by = term.by is not None and isinstance(by_dtype, CategoricalDtype)
-    levels = by_dtype.categories if is_categorical_by else [None]
 
     def _all_numeric(dtypes: dict):
         return all(is_numeric_dtype(dtype) for dtype in dtypes.values())
@@ -172,7 +174,7 @@ def get_term_plotter(
 
         # TODO "re" basis?
 
-        case (1, TermLike()) if _all_numeric(dtypes):
+        case (1, AbstractTerm()) if _all_numeric(dtypes):
 
             def _plot_wrapper(axes, **kwargs):
                 for level in levels:
@@ -186,13 +188,13 @@ def get_term_plotter(
                         plot_kwargs={"label": level},
                         **kwargs,
                     )
-                if is_categorical_by:
+                if isinstance(by_dtype, CategoricalDtype):
                     axes[0].legend()
                 return axes
 
             return _TermPlotter(_plot_wrapper, plot_continuous_1d)
 
-        case (2, TermLike()) if _all_numeric(dtypes):
+        case (2, AbstractTerm()) if _all_numeric(dtypes):
 
             def _plot_wrapper(axes, **kwargs):
                 for i, level in enumerate(levels):
@@ -205,7 +207,7 @@ def get_term_plotter(
                         ax=axes[i],
                         **kwargs,
                     )
-                    if is_categorical_by:
+                    if isinstance(by_dtype, CategoricalDtype):
                         axes[i].set_title(f"Level={level}")
                 return axes
 
@@ -221,7 +223,7 @@ def get_term_plotter(
 
 def plot_continuous_1d(
     *,
-    term: TermLike,
+    term: AbstractTerm,
     gam: AbstractGAM,
     target: str | None = None,
     data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
@@ -325,7 +327,7 @@ def plot_continuous_1d(
     scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
 
     # Matching color, particularly nice for plotting categorical by smooths on same ax
-    current_color = ax._get_lines.get_next_color()
+    current_color = ax._get_lines.get_next_color()  # type: ignore Can't find reasonable alternative for now
     for kwargs in (plot_kwargs, fill_between_kwargs, scatter_kwargs):
         if "c" not in kwargs and "color" not in kwargs:
             kwargs["color"] = current_color
@@ -333,7 +335,7 @@ def plot_continuous_1d(
     pred = gam.partial_effect(term, target, spaced_data, compute_se=True)
 
     # Add partial residuals
-    if residuals and target in data and not _is_linear_functional(term, data):
+    if residuals and target in data and not _is_linear_functional(term, data):  # type: ignore
         partial_residuals = gam.partial_residuals(
             term,
             target=target,
@@ -360,7 +362,7 @@ def plot_continuous_1d(
 
 def plot_continuous_2d(
     *,
-    term: TermLike,
+    term: AbstractTerm,
     gam: AbstractGAM,
     target: str | None = None,
     data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
@@ -526,7 +528,8 @@ def plot_categorical(
             parameter name from the model specification). If set to None, an error
             is raised when multiple predictors are present; otherwise, the sole
             available target is used.
-        data: DataFrame (or dictionary) containing the categorical variable and response.
+        data: DataFrame (or dictionary) containing the categorical variable and
+            response variable.
         residuals: Whether to plot partial residuals (jittered on x-axis).
         n_standard_errors: Number of standard errors for confidence intervals.
         errorbar_kwargs: Keyword arguments passed to `matplotlib.pyplot.errorbar`.
@@ -777,14 +780,14 @@ def _with_disable(plot_func):
     return wrapper
 
 
-def _is_random_wiggly(term: TermLike) -> TypeGuard[T | S]:
+def _is_random_wiggly(term: AbstractTerm) -> TypeGuard[T | S]:
     if isinstance(term, S | T):
         return isinstance(term.bs, FactorSmooth)
     return False
 
 
 def _is_linear_functional(
-    term: TermLike,
+    term: AbstractTerm,
     data: pd.DataFrame | dict[str, pd.Series | np.ndarray],
 ) -> bool:
     return any(np.asarray(data[k]).ndim > 1 for k in term.varnames) and isinstance(

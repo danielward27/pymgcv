@@ -9,13 +9,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
-from rpy2.robjects.packages import importr
 
 from pymgcv import terms
 from pymgcv.basis_functions import (
     CubicSpline,
     FactorSmooth,
-    MarkovRandomField,
     RandomEffect,
     ThinPlateSpline,
 )
@@ -83,13 +81,18 @@ class GAMTestCase:  # GAM/BAM test cases
     )
     fit_kwargs: dict[str, Any] = field(default_factory=dict)
 
-    def mgcv_gam(self, data: pd.DataFrame):
+    def mgcv_gam(
+        self,
+        data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
+    ) -> ro.ListVector:
         """Returns the mgcv gam object."""
         with ro.local_context() as env:
             env["data"] = data_to_rdf(data, include=self.gam_model.referenced_variables)
             for k, v in self.add_to_r_env.items():
                 env[k] = v
-            return ro.r(self.mgcv_call)
+            result = ro.r(self.mgcv_call)
+            assert isinstance(result, ro.ListVector)
+            return result
 
     @property
     def mgcv_call(self):
@@ -151,7 +154,7 @@ def smooth_2d_gam_pass_to_s(gam_type: type[AbstractGAM]) -> GAMTestCase:
     method = get_method_default(gam_type)
     basis = ThinPlateSpline(max_knots=3, m=2)
     return GAMTestCase(
-        mgcv_args=f"y~s(x, x1, m=2, xt=list(max.knots=3)), data=data, method='{method}'",
+        mgcv_args=f"y~s(x,x1,m=2, xt=list(max.knots=3)), data=data, method='{method}'",
         gam_model=gam_type({"y": S("x", "x1", bs=basis)}),
         expected_predict_terms_structure={"y": ["S(x,x1)", "Intercept"]},
     )
@@ -202,7 +205,7 @@ def categorical_interaction_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
 def multivariate_normal_gam(gam_type: type[AbstractGAM]):
     method = get_method_default(gam_type)
     return GAMTestCase(
-        mgcv_args=f"list(y ~ s(x, k=5), y1 ~ x), data=data, family=mvn(d=2), method='{method}'",
+        mgcv_args=f"list(y~s(x,k=5),y1~x),data=data,family=mvn(d=2),method='{method}'",
         gam_model=gam_type({"y": S("x", k=5), "y1": L("x")}, family=MVN(d=2)),
         expected_predict_terms_structure={
             "y": ["S(x)", "Intercept"],
@@ -214,7 +217,7 @@ def multivariate_normal_gam(gam_type: type[AbstractGAM]):
 def gaulss_gam(gam_type: type[AbstractGAM]):
     method = get_method_default(gam_type)
     return GAMTestCase(
-        mgcv_args=f"list(y ~ s(x), ~ s(x1)), data=data, family=gaulss(), method='{method}'",
+        mgcv_args=f"list(y~s(x),~s(x1)),data=data,family=gaulss(),method='{method}'",
         gam_model=gam_type(
             {"y": S("x")},
             family_predictors={"scale": S("x1")},
@@ -311,22 +314,25 @@ def poisson_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
     )
 
 
-def markov_random_field_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
-    mgcv = importr("mgcv")
-    polys = ro.packages.data(mgcv).fetch("columb.polys")["columb.polys"]
-    data = ro.packages.data(mgcv).fetch("columb")["columb"]
-    data = to_py(data)
-    polys_list = list([to_py(x) for x in polys.values()])
-    method = get_method_default(gam_type)
-    return GAMTestCase(
-        mgcv_args=f"crime ~ s(district,bs='mrf',xt=list(polys=polys)),data=columb,method='REML', method='{method}'",
-        gam_model=gam_type(
-            {"y": S("district", bs=MarkovRandomField(polys=polys_list))},
-        ),
-        data=data,
-        expected_predict_terms_structure={"crime": ["S(district)", "Intercept"]},
-        add_to_r_env={"polys": polys},
-    )
+# def markov_random_field_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
+#     mgcv = importr("mgcv")
+#     polys = ro.packages.data(mgcv).fetch("columb.polys")["columb.polys"]
+#     data = ro.packages.data(mgcv).fetch("columb")["columb"]
+#     data = to_py(data)
+#     polys_list = list([to_py(x) for x in polys.values()])
+#     method = get_method_default(gam_type)
+#     return GAMTestCase(
+#         mgcv_args=(
+#             "crime ~ s(district,bs='mrf',xt=list(polys=polys)), "
+#             f"data=columb,method='REML', method='{method}'"
+#         ),
+#         gam_model=gam_type(
+#             {"y": S("district", bs=MarkovRandomField(polys=polys_list))},
+#         ),
+#         data=data,
+#         expected_predict_terms_structure={"crime": ["S(district)", "Intercept"]},
+#         add_to_r_env={"polys": polys},
+#     )
 
 
 def linear_functional_smooth_1d_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
@@ -370,55 +376,6 @@ def linear_functional_tensor_2d_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
         data=data,
         expected_predict_terms_structure={"y": ["T(x0,x1)", "Intercept"]},
     )
-
-
-# def many_term_types_gam() -> GAMTestCase:
-# rng = np.random.default_rng(seed=42)
-# n = 400
-# group1 = pd.Series(rng.choice(["a", "b"], n), dtype="category")
-# group2 = pd.Series(rng.choice(["a", "b"], n), dtype="category")
-# x0 = rng.standard_normal(n)
-# x1 = rng.standard_normal(n)
-# y = rng.normal(size=n, scale=0.2) + group1.cat.codes * group2.cat.codes * np.sin(
-#     (x0 + x1) * 2,
-# )
-# data = pd.DataFrame(
-#     {
-#         "x0": x0,
-#         "x1": x1,
-#         "x2": rng.standard_normal(n),
-#         "group1": group1,
-#         "group2": group2,
-#         "y": y,
-#     },
-# )
-# return GAMTestCase(
-#     mgcv_args=f"y~ti(x0,x1,by=group1) + s(x0, by=group1) + s(x1, by=group1) + group1 + group1:x0 + group1:group2, data=data",
-#     gam_model=gam_type(
-#         {
-#             "y": (
-#                 T("x0", "x1", by="group1", interaction_only=True)
-#                 + S("x0", by="group1")
-#                 + S("x1", by="group1")
-#                 + L("group1")
-#                 + Interaction("group1", "x0")
-#                 + Interaction("group1", "group2")
-#             ),
-#         },
-#     ),
-#     data=data,
-#     expected_predict_terms_structure={
-#         "y": [
-#             "T(x0,x1,by=group1)",
-#             "S(x0,by=group1)",
-#             "S(x1,by=group1)",
-#             "L(group1)",
-#             "Interaction(group1,x0)",
-#             "Interaction(group1,group2)",
-#             "Intercept",
-#         ],
-#     },
-# )
 
 
 def get_test_cases() -> dict[str, GAMTestCase]:
