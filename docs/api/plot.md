@@ -13,4 +13,4 @@
 ::: pymgcv.plot.plot_continuous_2d
 ::: pymgcv.plot.plot_categorical
 ::: pymgcv.plot.plot_qq
-::: pymgcv.plot.plot_qq.plot_residuals_vs_linear_predictor
+::: pymgcv.plot.plot_residuals_vs_linear_predictor
