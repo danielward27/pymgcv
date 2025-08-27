@@ -598,7 +598,7 @@ def plot_categorical(
         **errorbar_kwargs,
     )
     ax.set_xlabel(term.varnames[0])
-    ax.set_ylabel(f"partial effect: {term.label()}")
+    ax.set_ylabel(f"{target}~{term.label()}")
     return ax
 
 
@@ -766,6 +766,71 @@ def plot_residuals_vs_linear_predictor(
     ax.scatter(predictions, residuals, **scatter_kwargs)
     ax.set_xlabel("Linear predictor")
     ax.set_ylabel("Residuals")
+    return ax
+
+
+def hexbin_residuals(
+    residuals: np.ndarray,
+    var1: str,
+    var2: str,
+    data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
+    *,
+    gridsize: int = 25,
+    max_val: int | float | None = None,
+    ax: Axes | None = None,
+    **kwargs,
+):
+    """Hexbin plot for visualising residuals as function of two variables.
+
+    Useful e.g. for assessing if interactions are might be required. This
+    is a thin wrapper around `matplotlib.pyplot.hexbin`, with better defaults
+    for plotting residuals (e.g. uses a symmetric color scale).
+
+    The default reduction function is `np.sum(res) / np.sqrt(len(res))`,
+    which has constant variance w.r.t. the number of points.
+
+    !!! example
+
+        ```python
+        import numpy as np
+        from pymgcv.plot import hexbin_residuals
+        rng = np.random.default_rng(1)
+
+        fig, ax = plt.subplots()
+        residuals = rng.normal(size=500)  # or gam.residuals()
+        data = {
+            "x0": rng.normal(size=residuals.shape),
+            "x1": rng.normal(size=residuals.shape),
+            }
+
+        hexbin_residuals(residuals, "x0", "x1", data=data, ax=ax)
+        ```
+
+    Args:
+        residuals: Residuals to plot.
+        var1: Name of the first variable.
+        var2: Name of the second variable.
+        data: The data (containing ``var1`` and ``var2``).
+        max_val: Maximum and minimum value for the symmetric color scale. Defaults to
+            the maximum absolute value of the residuals.
+        ax: Axes to plot on. If None, the current axes are used.
+        **kwargs: Additional keyword arguments passed to matplotlib hexbin.
+    """
+    max_color = np.max(np.abs(residuals)) if max_val is None else max_val
+    kwargs.setdefault("cmap", "coolwarm")
+    kwargs.setdefault("reduce_C_function", lambda x: np.sum(x) / np.sqrt(len(x)))
+    kwargs.setdefault("vmin", -max_color)
+    kwargs.setdefault("vmax", max_color)
+    ax = plt.gca() if ax is None else ax
+    ax.hexbin(
+        data[var1],
+        data[var2],
+        gridsize=gridsize,
+        C=residuals,
+        **kwargs,
+    )
+    ax.set_xlabel(var1)
+    ax.set_ylabel(var2)
     return ax
 
 

@@ -49,9 +49,11 @@ nav:
       - GAMLSS: examples/gamlss.ipynb
       - Smooth-by-categorical: examples/smooth_by_categorical.ipynb
       - Linear functional: examples/linear_functional.ipynb
-      - Cyclical components: examples/cyclical_components.ipynb
+  - Applied Examples:
       - Ozone: examples/ozone.ipynb
-      - Spatial interactions: examples/spatial_interactions.ipynb
+      - Cyclical CO2: examples/cyclical_components.ipynb
+      - Spatial fish eggs: examples/spatial_interactions.ipynb
+      - Electricity BAM: examples/electricity_bam.ipynb
   - API Reference:
       - api/gam.md
       - api/terms.md
