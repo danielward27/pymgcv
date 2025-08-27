@@ -794,6 +794,8 @@ def hexbin_residuals(
         ```python
         import numpy as np
         from pymgcv.plot import hexbin_residuals
+        import matplotlib.pyplot as plt
+
         rng = np.random.default_rng(1)
 
         fig, ax = plt.subplots()
