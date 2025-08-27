@@ -1,14 +1,17 @@
+from copy import deepcopy
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import pytest
 import rpy2.robjects as ro
 
-from pymgcv.gam import GAM
+from pymgcv.gam import BAM, GAM, AbstractGAM
 from pymgcv.rpy_utils import to_py
 from pymgcv.terms import L
 from pymgcv.utils import data_len
 
-from .gam_test_cases import GAMTestCase, get_test_cases
+from .gam_test_cases import GAMTestCase, get_test_cases, smooth_1d_by_numeric_gam
 
 mgcv = ro.packages.importr("mgcv")  # type: ignore
 
@@ -150,3 +153,34 @@ def test_abstract_methods(test_case: GAMTestCase):
     assert isinstance(k_check, pd.DataFrame)
     expected_columns = ["term", "max_edf", "edf", "k_index", "p_value"]
     assert k_check.columns.to_list() == expected_columns
+
+
+@pytest.mark.parametrize("gam_type", [GAM, BAM])
+@pytest.mark.parametrize("add_nan_to", ["y", "x", "x1"])  # Response, predictor, by
+@pytest.mark.parametrize("nan", [np.nan, pd.NA])
+def test_errors_on_nans(gam_type: type[AbstractGAM], add_nan_to: str, nan: Any):
+    # Erroring on nans seems a sensible default. Strict but avoids
+    # possible issues (e.g. length mismatch if unexpectedly dropped).
+    test_case: GAMTestCase = smooth_1d_by_numeric_gam(gam_type)
+
+    data = deepcopy(test_case.data)
+    gam = test_case.gam_model
+    gam.fit(data)
+    assert isinstance(data, pd.DataFrame)
+    data[add_nan_to] = (
+        (data[add_nan_to] * 100).round().astype(pd.Int64Dtype())
+    )  # nullable int
+    data.at[2, add_nan_to] = nan
+
+    with pytest.raises(ValueError, match="NaN"):
+        gam.fit(data)
+
+    if add_nan_to != "y":
+        with pytest.raises(ValueError, match="NaN"):
+            gam.predict(data)
+
+        with pytest.raises(ValueError, match="NaN"):
+            gam.partial_effects(data)
+
+        with pytest.raises(ValueError, match="NaN"):
+            gam.partial_effect(gam.predictors["y"][0], data=data)

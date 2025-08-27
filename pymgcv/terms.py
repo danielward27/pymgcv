@@ -36,7 +36,7 @@ class AbstractTerm(ABC):
     """
 
     varnames: tuple[str, ...]
-    by: str | None
+    by: str | None  # TODO move to AbstractSmooth?
 
     @abstractmethod
     def __str__(self) -> str:
@@ -554,10 +554,8 @@ class T(AbstractSmooth):
             raise ValueError("mc can only be specified when interaction_only is True.")
 
         self.varnames = varnames
-        self.k = k if isinstance(k, int) else (None if k is None else tuple(k))
-        self.bs = (
-            None if bs is None else (bs if isinstance(bs, AbstractBasis) else tuple(bs))
-        )
+        self.k = tuple(k) if isinstance(k, Iterable) else k
+        self.bs = tuple(bs) if isinstance(bs, Iterable) else bs
         self.d = tuple(d) if d is not None else d
         self.by = by
         self.id = id
@@ -594,7 +592,7 @@ class T(AbstractSmooth):
         bs, m, xt = _handle_bs(self.bs)
         kwargs = {
             "by": _Var(self.by) if self.by is not None else None,
-            "k": self.k,
+            "k": ro.IntVector(self.k) if isinstance(self.k, tuple) else self.k,
             "bs": bs,
             "m": m,
             "d": ro.IntVector(self.d) if self.d is not None else None,

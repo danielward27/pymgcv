@@ -250,7 +250,7 @@ class AbstractGAM(ABC):
 
     @property
     def referenced_variables(self) -> list[str]:
-        """Set of variables referenced by the model required to be present in data."""
+        """List of variables referenced by the model required to be present in data."""
         vars = set(self.predictors.keys())
         for predictor in self.all_predictors.values():
             for term in predictor:
@@ -259,29 +259,39 @@ class AbstractGAM(ABC):
                     vars.add(term.by)
         return list(vars)
 
-    def _check_valid_data(
+    def _check_data(
         self,
         data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
         *,
-        require_response: bool,
+        requires: Literal["all", "covariates"] | AbstractTerm,
     ) -> None:
         """Validate that data contains all variables required by the model.
 
         Checks that all variables required exist in the data, and are not
-        strings/objects.
+        strings/objects, and do not contain NaNs.
 
         Args:
             data: A dictionary or DataFrame containing all variables referenced in the
                 model.
-            require_response: Whether the response variable is required.
+            requires: If "all", checks that all response variables and covariates are
+               present and valid (e.g. as required for fitting). If "covariates",
+               then the response variable does not have to be present (e.g. as
+               required for prediction). If a term, only variables required for
+               that term are required (i.e. for computing a partial effect).
         """
-        if require_response:
-            required = self.referenced_variables
-        else:
-            required = [
-                v for v in self.referenced_variables if v not in self.predictors
-            ]
-        for var in required:
+        match requires:
+            case "all":
+                required_vars = self.referenced_variables
+            case "covariates":
+                required_vars = [
+                    v for v in self.referenced_variables if v not in self.predictors
+                ]
+            case AbstractTerm():
+                required_vars = requires.varnames
+                if requires.by is not None:
+                    required_vars += (requires.by,)
+
+        for var in required_vars:
             if var not in data:
                 raise ValueError(
                     f"Variable {var} referenced in model not present in data.",
@@ -291,6 +301,11 @@ class AbstractGAM(ABC):
             if is_object_dtype(dtype) or is_string_dtype(dtype) and not is_cat:
                 raise TypeError(
                     f"Variable {var} is of unsupported type {data[var].dtype}.",
+                )
+            if pd.isna(data[var]).any():  # type: ignore
+                raise ValueError(
+                    f"NaNs present in required variable {var}. "
+                    "Either impute or drop rows containing NaNs.",
                 )
 
     def _to_r_formulae(self) -> ro.Formula | list[ro.Formula]:
@@ -475,6 +490,8 @@ class AbstractGAM(ABC):
             raise ValueError(
                 "Cannot compute partial effect before fitting the model.",
             )
+        if data is not None:
+            self._check_data(data, requires=term)
 
         if target is None:
             if len(self.all_predictors) > 1:
@@ -567,7 +584,7 @@ class AbstractGAM(ABC):
 
         data = data if data is not None else self.fit_state.data
         data = deepcopy(data)
-        link_fit = self.predict(data)[target]
+        link_fit = self.predict(data)[target]  # _check_data called within predict
 
         if (
             term.by is not None
@@ -851,7 +868,7 @@ class GAM(AbstractGAM):
             n_threads: Number of threads to use for fitting the GAM.
         """
         # TODO some missing options: control, sp, min.sp etc
-        self._check_valid_data(data, require_response=True)
+        self._check_data(data, requires="all")
         if isinstance(data, pd.DataFrame):
             data = pd.DataFrame(data[self.referenced_variables])
         else:
@@ -932,7 +949,7 @@ class GAM(AbstractGAM):
             containing the predictions and standard errors if `se` is True.
         """
         if data is not None:
-            self._check_valid_data(data, require_response=False)
+            self._check_data(data, requires="covariates")
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call predict before fitting.")
@@ -990,7 +1007,7 @@ class GAM(AbstractGAM):
                 otherwise.
         """
         if data is not None:
-            self._check_valid_data(data, require_response=False)
+            self._check_data(data, requires="covariates")
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call partial_effects before fitting.")
@@ -1093,7 +1110,7 @@ class BAM(AbstractGAM):
                 memory requirements.
         """
         # TODO some missing options: control, sp, min.sp, nthreads
-        self._check_valid_data(data, require_response=True)
+        self._check_data(data, requires="all")
         if isinstance(data, pd.DataFrame):
             data = pd.DataFrame(data[self.referenced_variables])
         else:
@@ -1185,7 +1202,7 @@ class BAM(AbstractGAM):
                 memory requirements.
         """
         if data is not None:
-            self._check_valid_data(data, require_response=False)
+            self._check_data(data, requires="covariates")
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call predict before fitting.")
@@ -1264,7 +1281,7 @@ class BAM(AbstractGAM):
                 memory requirements.
         """
         if data is not None:
-            self._check_valid_data(data, require_response=False)
+            self._check_data(data, requires="covariates")
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call partial_effects before fitting.")
