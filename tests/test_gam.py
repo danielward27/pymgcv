@@ -145,3 +145,8 @@ def test_abstract_methods(test_case: GAMTestCase):
     assert np.all(residuals == resid_from_y_and_fit)
     assert isinstance(fit.edf(), pd.Series)
     assert isinstance(fit.penalty_edf(), pd.Series)
+
+    k_check = fit.check_k()
+    assert isinstance(k_check, pd.DataFrame)
+    expected_columns = ["term", "max_edf", "edf", "k_index", "p_value"]
+    assert k_check.columns.to_list() == expected_columns

@@ -326,6 +326,52 @@ class AbstractGAM(ABC):
         strvec = rutils.capture_output(rbase.summary(self.fit_state.rgam))
         return "\n".join(tuple(strvec))
 
+    def check_k(self, subsample: int = 5000, n_rep: int = 400) -> pd.DataFrame:
+        """Checking basis dimension choices (k).
+
+        The default choices for ``k`` are relatively arbitrary. This function aids in
+        assessing whether the chosen basis dimensions are appropriate. A low p-value can
+        indicate that the chosen basis dimension is too low.
+
+        The function works by constrasting a residual variance estimate based on near
+        neighbour points (based on the covariates of a term), to the overall residual
+        variance. The ``k_index`` is the ratio of the near neighbour estimate to the
+        overall variance. The further below 1 the ``k_index`` is, the more likely it is
+        that there exists missed patterns in the residuals. The p-value is generated
+        using a randomization test to obtain the null distribution.
+
+        For details, see section 5.9 of:
+
+            Wood S.N. (2017) Generalized Additive Models: An Introduction with R (2nd
+            edition). Chapman and Hall/CRC Press.
+
+        Args:
+            subsample: The maximum number of points to use, above which a random subsample
+               is used.
+            n_rep: The number of re-shuffles to do to get the p-value.
+
+        Returns:
+            A dataframe with the following columns:
+
+                - `term`: The mgcv-style name of the smooth term.
+                - `max_edf`: The maximum possible edf (often ``k-1``).
+                - `k_index`: The ratio between the nearest neighbour variance
+                   residual variance estimate and the overall variance.
+                - `p_value`: The p-value of the randomization test.
+                - `max_edf`: The maximum effective degrees of freedom.
+        """
+        if self.fit_state is None:
+            raise ValueError("Cannot run check_k on an unfitted model.")
+
+        rgam = self.fit_state.rgam
+        result = mgcv.k_check(rgam, subsample=subsample, n_rep=n_rep)
+        rownames, colnames = result.rownames, result.colnames
+        df = pd.DataFrame(to_py(result), columns=colnames)
+        df.insert(0, "term", rownames)
+        return df.rename(
+            columns={"k'": "max_edf", "p-value": "p_value", "k-index": "k_index"},
+        )
+
     def coefficients(self) -> pd.Series:  # TODO consider returning as dict?
         """Extract model coefficients from the fitted GAM.
 

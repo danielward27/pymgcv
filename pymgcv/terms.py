@@ -411,7 +411,7 @@ class S(AbstractSmooth):
             isotropic multi-dimensional smooth.
         k: The dimension of the basis used to represent the smooth term. The
             default depends on the basis and number of variables that the smooth is a
-            function of.
+            function of. For choosing k, see [`check_k`][pymgcv.gam.AbstractGAM.check_k].
         bs: Basis function. For available options see
             [Basis Functions](./basis_functions.md). If left to none, uses
             [`ThinPlateSpline`][pymgcv.basis_functions.ThinPlateSpline].
@@ -500,6 +500,7 @@ class T(AbstractSmooth):
         *varnames: Names of variables for the tensor smooth.
         k: The basis dimension for each marginal smooth. If an integer, all
             marginal smooths will have the same basis dimension.
+            For choosing k, see [`check_k`][pymgcv.gam.AbstractGAM.check_k]
         bs: basis type to use, or an iterable of basis types for each marginal
             smooth. Defaults to [`CubicSpline`][pymgcv.basis_functions.CubicSpline]
         d: Sequence specifying the dimension of each variable's smooth. For example,
