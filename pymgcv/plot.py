@@ -38,6 +38,7 @@ def plot_gam(
     *,
     ncols: int = 2,
     scatter: bool = False,
+    data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
     to_plot: type | types.UnionType | dict[str, list[AbstractTerm]] = AbstractTerm,
     kwargs_mapper: dict[Callable, dict[str, Any]] | None = None,
 ) -> tuple[Figure, Axes | np.ndarray]:
@@ -49,6 +50,9 @@ def plot_gam(
         scatter: Whether to plot the residuals (where possible), and the overlayed
             datapoints on 2D plots. For more fine control, see `kwargs_mapper`. Defaults
             to False.
+        data: The data to use for plotting partial residuals and scatter points.
+            Will default to using the data used for fitting. Only relevant if
+            `scatter=True`.
         to_plot: Which terms to plot. If a type, only plots terms
             of that type (e.g. ``to_plot = S | T`` to plot smooths).
             If a dictionary, it should map the target names to
@@ -73,13 +77,13 @@ def plot_gam(
         {},
     ).setdefault("disable", not scatter)
 
+
     if isinstance(to_plot, type | types.UnionType):
         to_plot = {
             k: [v for v in terms if isinstance(v, to_plot)]
             for k, terms in gam.all_predictors.items()
         }
 
-    data = gam.fit_state.data
     plotters = []
     for target, terms in to_plot.items():
         for term in terms:
@@ -324,7 +328,7 @@ def plot_continuous_1d(
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
     fill_between_kwargs = {} if fill_between_kwargs is None else fill_between_kwargs
     fill_between_kwargs.setdefault("alpha", 0.2)
-    scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
+    scatter_kwargs.setdefault("s", 0.05 * rcParams["lines.markersize"] ** 2)
 
     # Matching color, particularly nice for plotting categorical by smooths on same ax
     current_color = ax._get_lines.get_next_color()  # type: ignore Can't find reasonable alternative for now
@@ -467,7 +471,7 @@ def plot_continuous_2d(
     contourf_kwargs.setdefault("levels", 14)
     contourf_kwargs.setdefault("alpha", 0.8)
     scatter_kwargs.setdefault("color", "black")
-    scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
+    scatter_kwargs.setdefault("s", 0.05 * rcParams["lines.markersize"] ** 2)
     scatter_kwargs.setdefault("zorder", 2)  # Ensures above contours
 
     pred = gam.partial_effect(
@@ -551,7 +555,7 @@ def plot_categorical(
 
     errorbar_kwargs = {} if errorbar_kwargs is None else errorbar_kwargs
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
-    scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
+    scatter_kwargs.setdefault("s", 0.05 * rcParams["lines.markersize"] ** 2)
     errorbar_kwargs.setdefault("capsize", 10)
     errorbar_kwargs.setdefault("fmt", ".")
 
@@ -752,7 +756,7 @@ def plot_residuals_vs_linear_predictor(
             "plot_residuals_vs_linear_predictor.",
         )
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
-    scatter_kwargs.setdefault("s", 0.1 * rcParams["lines.markersize"] ** 2)
+    scatter_kwargs.setdefault("s", 0.05 * rcParams["lines.markersize"] ** 2)
 
     ax = plt.gca() if ax is None else ax
     residuals = gam.residuals(type)
