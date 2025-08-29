@@ -12,7 +12,6 @@ rutils = importr("utils")
 rbase = importr("base")
 
 
-
 def load_rdata_dataframe_from_url(url: str) -> pd.DataFrame:
     """Load an RData (.rda) file from URL expecting a single dataframe, without R console output."""
     # Backup the original R console print callback
@@ -48,7 +47,6 @@ def load_rdata_dataframe_from_url(url: str) -> pd.DataFrame:
         rcb.consolewrite_warnerror = rcb.consolewrite_print
 
 
-
 def get_data(name: str):
     """Get built-in R dataset.
 
@@ -59,7 +57,7 @@ def get_data(name: str):
         return to_py(lc[name])
 
 
-def data_len(data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray]):
+def data_len(data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray]) -> int:
     """Get the length of the data.
 
     If the data is a dictionary, returns the maximum value of the shape along axis 0.

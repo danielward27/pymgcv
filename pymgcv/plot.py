@@ -17,9 +17,10 @@ from pandas import CategoricalDtype
 from pandas.api.types import is_numeric_dtype
 from rpy2.robjects.packages import importr
 
-from pymgcv.basis_functions import FactorSmooth
+from pymgcv.basis_functions import FactorSmooth, RandomEffect
 from pymgcv.gam import AbstractGAM
 from pymgcv.qq import QQResult, qq_simulate
+from pymgcv.rpy_utils import to_py
 from pymgcv.terms import (
     AbstractTerm,
     L,
@@ -76,7 +77,6 @@ def plot_gam(
         "scatter_kwargs",
         {},
     ).setdefault("disable", not scatter)
-
 
     if isinstance(to_plot, type | types.UnionType):
         to_plot = {
@@ -175,6 +175,21 @@ def get_term_plotter(
                 return axes
 
             return _TermPlotter(_plot_wrapper, plot_categorical)
+
+        case (1, S()) if isinstance(term.bs, RandomEffect):
+
+            def _plot_wrapper(axes, **kwargs):
+                axes[0] = plot_random_effect(
+                    term=term,
+                    gam=gam,
+                    target=target,
+                    data=data,
+                    ax=axes[0],
+                    **kwargs,
+                )
+                return axes
+
+            return _TermPlotter(_plot_wrapper, plot_random_effect)
 
         # TODO "re" basis?
 
@@ -603,6 +618,94 @@ def plot_categorical(
     )
     ax.set_xlabel(term.varnames[0])
     ax.set_ylabel(f"{target}~{term.label()}")
+    return ax
+
+
+def plot_random_effect(
+    *,
+    term: S,
+    gam: AbstractGAM,
+    target: str | None = None,
+    confidence_interval_level: float = 0.95,
+    axline_kwargs: dict[str, Any] | None = None,
+    scatter_kwargs: dict[str, Any] | None = None,
+    fill_between_kwargs: dict[str, Any] | None = None,
+    ax: Axes | None = None,
+):
+    if gam.fit_state is None:
+        raise RuntimeError("The model must be fitted before plotting.")
+
+    if not isinstance(term.bs, RandomEffect):
+        raise TypeError("Term is not a random effect term.")
+
+    if target is None:
+        if len(gam.all_predictors) > 1:
+            raise ValueError(
+                "Target must be specified when multiple predictors are present.",
+            )
+        target = list(gam.all_predictors.keys())[0]
+
+    scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
+    scatter_kwargs.setdefault("s", 0.05 * rcParams["lines.markersize"] ** 2)
+
+    fill_between_kwargs = {} if fill_between_kwargs is None else fill_between_kwargs
+    current_color = ax._get_lines.get_next_color()  # type: ignore Can't find reasonable alternative for now
+    for kwargs in (scatter_kwargs, fill_between_kwargs):
+        if "c" not in kwargs and "color" not in kwargs:
+            kwargs["color"] = current_color
+
+    axline_kwargs = {} if axline_kwargs is None else axline_kwargs
+
+    if "c" not in axline_kwargs and "color" not in axline_kwargs:
+        axline_kwargs["color"] = "gray"
+
+    axline_kwargs.setdefault("linestyle", "--")
+    ax = plt.gca() if ax is None else ax
+
+    # TODO remove data argument?
+    levels = np.unique(gam.fit_state.data[term.varnames[0]])
+    pred = gam.partial_effect(
+        term=term,
+        target=target,
+        data=pd.DataFrame(pd.Series(levels, name=term.varnames[0], dtype="category")),
+    )
+    order = np.argsort(pred)
+    x = rstats.qnorm(rstats.ppoints(len(levels)))  # Gaussian quantiles
+    ax.scatter(
+        x,
+        pred[order],
+        **scatter_kwargs,
+    )
+
+    # Add CI lines. Confidence interval based on formula in
+    # "Worm plot: a simple diagnostic device for modelling growth reference curves"
+    # page 6. We need to multiply them by sd(.dat$y) because we are not normalizing the
+    # random effects.
+    alpha = (1 - confidence_interval_level) / 2
+    n = len(levels)
+    p = to_py(rstats.ppoints(n))
+    interval = (
+        np.std(pred)
+        * to_py(rstats.qnorm(alpha))  # e.g. 1.96
+        * np.sqrt(p * (1 - p) / n)
+        / to_py(rstats.dnorm(x))
+    )
+    ref_y = x * np.std(pred)
+    _with_disable(ax.fill_between)(
+        x,
+        ref_y - interval,
+        ref_y + interval,
+        alpha=0.2,
+        **fill_between_kwargs,
+    )
+    # RE constrained to be centered, so plot reference through (0, 0)
+    _with_disable(ax.axline)(
+        (0, 0),
+        slope=np.std(pred).item(),
+        **axline_kwargs,
+    )  # TODO use axline in qq too?
+    ax.set_xlabel("Gaussian Quantiles")
+    ax.set_ylabel(f"{term.varnames[0]} effect")  # TODO target?
     return ax
 
 
