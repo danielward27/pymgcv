@@ -66,6 +66,7 @@ class AbstractBasis(ABC):
         ...
 
 
+@dataclass
 class RandomEffect(AbstractBasis):
     """Random effect basis for correlated grouped data.
 
@@ -73,6 +74,12 @@ class RandomEffect(AbstractBasis):
     similarly to an [`Interaction`][pymgcv.terms.Interaction] but penalizes
     the corresponding coefficients with a multiple of the identity matrix (i.e. a ridge
     penalty), corresponding to an assumption of i.i.d. normality of the parameters.
+
+    !!! warning
+
+        As in mgcv, the variable should usually be a categorical variable. If it is
+        numeric, it will be treated as a penalized linear term with a shared slope
+        parameter.
 
     """
 
