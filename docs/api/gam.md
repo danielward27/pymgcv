@@ -10,18 +10,18 @@ GAM model types from ``pymgcv.gam``.
           - "!fit"
           - "!predict"
           - "!partial_effects"
-          - "all_predictors"
 
 ::: pymgcv.gam.GAM
     options:
+        inherited_members:
+          - __init__
         heading_level: 2
-        inherited_members: __init__
 
 ::: pymgcv.gam.BAM
     options:
         heading_level: 2
-        inherited_members: __init__
-
+        inherited_members:
+          - __init__
 
 ::: pymgcv.gam.FitState
     options:

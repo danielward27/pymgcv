@@ -88,7 +88,7 @@ class AbstractGAM(ABC):
         family: AbstractFamily | None = None,
         add_intercepts: bool = True,
     ):
-        r"""Initialize a GAM/BAM model.
+        r"""Initialize the model.
 
         Args:
             predictors: Dictionary mapping response variable names to an iterable of

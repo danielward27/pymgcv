@@ -35,11 +35,6 @@ class AbstractBasis(ABC):
     All basis function classes must implement this protocol to be usable
     with smooth terms. The protocol ensures basis functions can be converted
     to appropriate mgcv R syntax and provide any additional parameters needed.
-
-    !!! Example:
-
-        For an example, see the
-            [supplement vs placebo example](/examples/supplement_vs_placebo.ipynb).
     """
 
     @abstractmethod
@@ -87,6 +82,12 @@ class RandomEffect(AbstractBasis):
         Numeric variables (int/float), will be treated as a linear term with a single
         penalized slope parameter. Do not use an integer variable to encode
         categorical groups!
+
+    !!! example
+
+        For an example, see the
+        [supplement vs placebo example](../../examples/supplement_vs_placebo).
+
     """
 
     def __str__(self) -> str:

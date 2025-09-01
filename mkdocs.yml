@@ -51,9 +51,10 @@ nav:
       - Linear functional: examples/linear_functional.ipynb
   - Applied Examples:
       - Ozone: examples/ozone.ipynb
-      - Cyclical CO2: examples/cyclical_components.ipynb
-      - Spatial fish eggs: examples/spatial_interactions.ipynb
-      - Electricity BAM: examples/electricity_bam.ipynb
+      - Seasonal CO2: examples/seasonal_co2.ipynb
+      - Spatial fish eggs: examples/spatial_fish_eggs.ipynb
+      - Electricity demand BAM: examples/electricity_bam.ipynb
+      - Supplement vs placebo: examples/supplement_vs_placebo.ipynb
   - API Reference:
       - api/gam.md
       - api/terms.md
@@ -92,5 +93,9 @@ plugins:
             heading_level: 3
             members_order: source
             show_signature_annotations: true
+            extensions:
+              - griffe_inherited_docstrings
+            merge_init_into_class: true
+
 extra_css:
   - stylesheets/extra.css

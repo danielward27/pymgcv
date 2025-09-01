@@ -35,4 +35,3 @@ Basis functions control how smooth terms behave in your GAM models -- different 
 ::: pymgcv.basis_functions.AbstractBasis
     options:
       members: __str__
-      merge_init_into_class: false

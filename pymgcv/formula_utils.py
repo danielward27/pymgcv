@@ -1,6 +1,5 @@
 """Formula utilities."""
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -34,6 +33,5 @@ def _to_r_constructor_string(arg: Any) -> str:
     rbase.dput(arg, file=connection)
     rbase.close(connection)
     result = ro.r["__r_obj_str"]
-    assert isinstance(result, Iterable)
-    assert len(result) == 1
-    return result[0]
+    assert len(result) == 1  # type: ignore
+    return result[0]  # type: ignore

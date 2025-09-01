@@ -19,6 +19,7 @@ from pandas.api.types import is_numeric_dtype
 from pymgcv.basis_functions import FactorSmooth, RandomEffect
 from pymgcv.gam import AbstractGAM
 from pymgcv.qq import QQResult, qq_simulate
+from pymgcv.rlibs import rstats
 from pymgcv.rpy_utils import to_py
 from pymgcv.terms import (
     AbstractTerm,
@@ -40,6 +41,8 @@ def plot_gam(
     kwargs_mapper: dict[Callable, dict[str, Any]] | None = None,
 ) -> tuple[Figure, Axes | np.ndarray]:
     """Plot a gam model.
+
+    Except for some specialised cases, this plots the partial effects of the terms.
 
     Args:
         gam: The fitted gam object to plot.
@@ -935,6 +938,18 @@ def hexbin_residuals(
     The default reduction function is `np.sum(res) / np.sqrt(len(res))`,
     which has constant variance w.r.t. the number of points.
 
+    Args:
+        residuals: Residuals to plot.
+        var1: Name of the first variable.
+        var2: Name of the second variable.
+        data: The data (containing ``var1`` and ``var2``).
+        gridsize: The number of hexagons in the x-direction. The y direction is chosen
+            such that the hexagons are approximately regular.
+        max_val: Maximum and minimum value for the symmetric color scale. Defaults to
+            the maximum absolute value of the residuals.
+        ax: Axes to plot on. If None, the current axes are used.
+        **kwargs: Additional keyword arguments passed to matplotlib hexbin.
+
     !!! example
 
         ```python
@@ -953,16 +968,6 @@ def hexbin_residuals(
 
         hexbin_residuals(residuals, "x0", "x1", data=data, ax=ax)
         ```
-
-    Args:
-        residuals: Residuals to plot.
-        var1: Name of the first variable.
-        var2: Name of the second variable.
-        data: The data (containing ``var1`` and ``var2``).
-        max_val: Maximum and minimum value for the symmetric color scale. Defaults to
-            the maximum absolute value of the residuals.
-        ax: Axes to plot on. If None, the current axes are used.
-        **kwargs: Additional keyword arguments passed to matplotlib hexbin.
     """
     max_color = np.max(np.abs(residuals)) if max_val is None else max_val
     kwargs.setdefault("cmap", "coolwarm")
