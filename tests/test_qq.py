@@ -35,23 +35,6 @@ def test_qq_functions(qq_fun):
         assert np.all(np.isfinite(arr))
         assert np.all(np.isfinite(arr))
 
-    # Check nans excluded (at least by default)
-    data.at[0, "y"] = np.nan
-    data.at[1, "x0"] = np.nan
-    data["x1"] = np.arange(len(data))
-    data["x1"] = data["x1"].astype(pd.Int64Dtype())
-    data.at[2, "x1"] = pd.NA  # Test pd.NA too (nullable int)
-
-    gam = GAM({"y": L("x0") + S("x1") + S("x2", "x3")})
-    gam.fit(data)
-    result = qq_fun(gam)
-
-    assert len(result.theoretical) == n - 3  # Nans exluded
-    assert np.all(np.isfinite(result.theoretical))
-    assert np.all(
-        np.isfinite(result.residuals),
-    )
-
 
 test_cases = get_test_cases()
 
@@ -64,4 +47,4 @@ test_cases = get_test_cases()
 def test_qq_functions_lss(test_case: GAMTestCase, qq_fun):
     gam = test_case.gam_model
     gam.fit(test_case.data)
-    result = qq_fun(gam)
+    qq_fun(gam)

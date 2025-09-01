@@ -6,13 +6,9 @@ from typing import Literal
 
 import numpy as np
 import rpy2.robjects as ro
-from rpy2.robjects.packages import importr
 
+from pymgcv.rlibs import rbase, rmgcv, rstats
 from pymgcv.rpy_utils import is_null, to_py, to_rpy
-
-rbase = importr("base")
-rstats = importr("stats")
-rmgcv = importr("mgcv")
 
 # For qq_simulate we need sample, and for qq_cdf we need cdf implemented.
 

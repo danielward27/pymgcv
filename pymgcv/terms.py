@@ -9,18 +9,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
-from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import AbstractBasis
 from pymgcv.custom_types import FitAndSE
 from pymgcv.formula_utils import _to_r_constructor_string, _Var
+from pymgcv.rlibs import rbase, rmgcv, rstats
 from pymgcv.rpy_utils import data_to_rdf, to_py
 from pymgcv.utils import data_len
-
-mgcv = importr("mgcv")
-rbase = importr("base")
-rstats = importr("stats")
-
 
 # TODO: Not supporting 'sp' or 'pc' basis types.
 
@@ -36,7 +31,7 @@ class AbstractTerm(ABC):
     """
 
     varnames: tuple[str, ...]
-    by: str | None
+    by: str | None  # TODO move to AbstractSmooth?
 
     @abstractmethod
     def __str__(self) -> str:
@@ -378,7 +373,7 @@ class AbstractSmooth(AbstractTerm):
         if self.by is not None:
             include.append(self.by)
 
-        predict_mat = mgcv.PredictMat(mgcv_smooth, data_to_rdf(data, include=include))
+        predict_mat = rmgcv.PredictMat(mgcv_smooth, data_to_rdf(data, include=include))
         first = round(mgcv_smooth.rx2["first.para"][0])
         last = round(mgcv_smooth.rx2["last.para"][0])
         coefs = rstats.coef(rgam)[(first - 1) : last]
@@ -411,7 +406,7 @@ class S(AbstractSmooth):
             isotropic multi-dimensional smooth.
         k: The dimension of the basis used to represent the smooth term. The
             default depends on the basis and number of variables that the smooth is a
-            function of.
+            function of. For choosing k, see [`check_k`][pymgcv.gam.AbstractGAM.check_k].
         bs: Basis function. For available options see
             [Basis Functions](./basis_functions.md). If left to none, uses
             [`ThinPlateSpline`][pymgcv.basis_functions.ThinPlateSpline].
@@ -500,6 +495,7 @@ class T(AbstractSmooth):
         *varnames: Names of variables for the tensor smooth.
         k: The basis dimension for each marginal smooth. If an integer, all
             marginal smooths will have the same basis dimension.
+            For choosing k, see [`check_k`][pymgcv.gam.AbstractGAM.check_k]
         bs: basis type to use, or an iterable of basis types for each marginal
             smooth. Defaults to [`CubicSpline`][pymgcv.basis_functions.CubicSpline]
         d: Sequence specifying the dimension of each variable's smooth. For example,
@@ -553,10 +549,8 @@ class T(AbstractSmooth):
             raise ValueError("mc can only be specified when interaction_only is True.")
 
         self.varnames = varnames
-        self.k = k if isinstance(k, int) else (None if k is None else tuple(k))
-        self.bs = (
-            None if bs is None else (bs if isinstance(bs, AbstractBasis) else tuple(bs))
-        )
+        self.k = tuple(k) if isinstance(k, Iterable) else k
+        self.bs = tuple(bs) if isinstance(bs, Iterable) else bs
         self.d = tuple(d) if d is not None else d
         self.by = by
         self.id = id
@@ -593,7 +587,7 @@ class T(AbstractSmooth):
         bs, m, xt = _handle_bs(self.bs)
         kwargs = {
             "by": _Var(self.by) if self.by is not None else None,
-            "k": self.k,
+            "k": ro.IntVector(self.k) if isinstance(self.k, tuple) else self.k,
             "bs": bs,
             "m": m,
             "d": ro.IntVector(self.d) if self.d is not None else None,

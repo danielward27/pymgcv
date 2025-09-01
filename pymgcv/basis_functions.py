@@ -26,7 +26,7 @@ import rpy2.robjects as ro
 
 class _PassToS(TypedDict, total=False):
     xt: ro.ListVector
-    m: int | float | tuple[int | float, ...]
+    m: int | float | ro.IntVector | ro.FloatVector
 
 
 class AbstractBasis(ABC):
@@ -59,6 +59,8 @@ class AbstractBasis(ABC):
         passing of these arguments to `mgcv.s`. Note the string should
         include the leading comma if it is not empty.
 
+
+
         Returns:
             A dictionary, mapping a keyword (e.g. xt or m) to a dictionary of
             variable values.
@@ -66,6 +68,7 @@ class AbstractBasis(ABC):
         ...
 
 
+@dataclass
 class RandomEffect(AbstractBasis):
     """Random effect basis for correlated grouped data.
 
@@ -73,6 +76,17 @@ class RandomEffect(AbstractBasis):
     similarly to an [`Interaction`][pymgcv.terms.Interaction] but penalizes
     the corresponding coefficients with a multiple of the identity matrix (i.e. a ridge
     penalty), corresponding to an assumption of i.i.d. normality of the parameters.
+
+    !!! warning
+
+        Numeric variables (int/float), will be treated as a linear term with a single
+        penalized slope parameter. Do not use an integer variable to encode
+        categorical groups!
+
+    !!! example
+
+        For an example, see the
+        [supplement vs placebo example](../../examples/supplement_vs_placebo).
 
     """
 
@@ -235,7 +249,7 @@ class DuchonSpline(AbstractBasis):
         return "ds"
 
     def _pass_to_s(self) -> _PassToS:
-        return {"m": (self.m, self.s)}
+        return {"m": ro.FloatVector([self.m, self.s])}
 
 
 @dataclass(kw_only=True)
@@ -292,7 +306,7 @@ class BSpline(AbstractBasis):
         return "bs"
 
     def _pass_to_s(self) -> _PassToS:
-        return {"m": [self.degree] + self.penalty_orders}
+        return {"m": ro.IntVector([self.degree] + self.penalty_orders)}
 
 
 @dataclass(kw_only=True)
@@ -326,7 +340,7 @@ class PSpline(AbstractBasis):
 
     def _pass_to_s(self) -> _PassToS:
         # Note (unlike b-splines) seems mgcv uses m[1] for the penalty order, not degree so subtract 1
-        return {"m": (self.degree - 1, self.penalty_order)}
+        return {"m": ro.IntVector([self.degree - 1, self.penalty_order])}
 
 
 @dataclass(kw_only=True)

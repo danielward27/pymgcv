@@ -14,3 +14,4 @@
 ::: pymgcv.plot.plot_categorical
 ::: pymgcv.plot.plot_qq
 ::: pymgcv.plot.plot_residuals_vs_linear_predictor
+::: pymgcv.plot.hexbin_residuals

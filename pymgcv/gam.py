@@ -16,18 +16,13 @@ from pandas.api.types import (
     is_object_dtype,
     is_string_dtype,
 )
-from rpy2.robjects.packages import importr
 
 from pymgcv.custom_types import FitAndSE
 from pymgcv.families import AbstractFamily, Gaussian
+from pymgcv.rlibs import rbase, rmgcv, rstats, rutils
 from pymgcv.rpy_utils import data_to_rdf, to_py, to_rpy
 from pymgcv.terms import AbstractTerm, Intercept
 from pymgcv.utils import data_len
-
-mgcv = importr("mgcv")
-rbase = importr("base")
-rutils = importr("utils")
-rstats = importr("stats")
 
 GAMFitMethods = Literal[
     "GCV.Cp",
@@ -93,7 +88,7 @@ class AbstractGAM(ABC):
         family: AbstractFamily | None = None,
         add_intercepts: bool = True,
     ):
-        r"""Initialize a GAM/BAM model.
+        r"""Initialize the model.
 
         Args:
             predictors: Dictionary mapping response variable names to an iterable of
@@ -250,7 +245,7 @@ class AbstractGAM(ABC):
 
     @property
     def referenced_variables(self) -> list[str]:
-        """Set of variables referenced by the model required to be present in data."""
+        """List of variables referenced by the model required to be present in data."""
         vars = set(self.predictors.keys())
         for predictor in self.all_predictors.values():
             for term in predictor:
@@ -259,29 +254,39 @@ class AbstractGAM(ABC):
                     vars.add(term.by)
         return list(vars)
 
-    def _check_valid_data(
+    def _check_data(
         self,
         data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series],
         *,
-        require_response: bool,
+        requires: Literal["all", "covariates"] | AbstractTerm,
     ) -> None:
         """Validate that data contains all variables required by the model.
 
         Checks that all variables required exist in the data, and are not
-        strings/objects.
+        strings/objects, and do not contain NaNs.
 
         Args:
             data: A dictionary or DataFrame containing all variables referenced in the
                 model.
-            require_response: Whether the response variable is required.
+            requires: If "all", checks that all response variables and covariates are
+               present and valid (e.g. as required for fitting). If "covariates",
+               then the response variable does not have to be present (e.g. as
+               required for prediction). If a term, only variables required for
+               that term are required (i.e. for computing a partial effect).
         """
-        if require_response:
-            required = self.referenced_variables
-        else:
-            required = [
-                v for v in self.referenced_variables if v not in self.predictors
-            ]
-        for var in required:
+        match requires:
+            case "all":
+                required_vars = self.referenced_variables
+            case "covariates":
+                required_vars = [
+                    v for v in self.referenced_variables if v not in self.predictors
+                ]
+            case AbstractTerm():
+                required_vars = requires.varnames
+                if requires.by is not None:
+                    required_vars += (requires.by,)
+
+        for var in required_vars:
             if var not in data:
                 raise ValueError(
                     f"Variable {var} referenced in model not present in data.",
@@ -292,19 +297,18 @@ class AbstractGAM(ABC):
                 raise TypeError(
                     f"Variable {var} is of unsupported type {data[var].dtype}.",
                 )
+            if pd.isna(data[var]).any():  # type: ignore
+                raise ValueError(
+                    f"NaNs present in required variable {var}. "
+                    "Either impute or drop rows containing NaNs.",
+                )
 
-    def _to_r_formulae(self) -> ro.Formula | list[ro.Formula]:
-        """Convert the model specification to R formula objects.
-
-        Creates mgcv-compatible formula objects from the Python specification.
-        For single-formula models, returns a single Formula object. For
-        multi-formula models (multiple responses or family parameters),
-        returns a list of Formula objects.
+    def _to_r_formula_strings(self) -> list[str] | str:
+        """Convert the gam model formula into an mgcv-style formula string.
 
         Returns:
-            Single Formula object for simple models, or list of Formula objects
-            for multi-formula models. The order matches mgcv's expectations:
-            response formulae first, then family parameter formulae.
+            A string for single-formula models, or a list of strings for
+                multi-formula models.
         """
         formulae = []
         for target, terms in self.all_predictors.items():
@@ -314,10 +318,20 @@ class AbstractGAM(ABC):
             formula_str = f"{target}~{'+'.join(map(str, terms))}"
             if not any(isinstance(term, Intercept) for term in terms):
                 formula_str += "-1"
-
-            formulae.append(ro.Formula(formula_str))
-
+            formulae.append(formula_str)
         return formulae if len(formulae) > 1 else formulae[0]
+
+    def _to_r_formulae(self) -> ro.Formula | list[ro.Formula]:
+        """Convert the model specification to R formula objects.
+
+        Returns:
+            Single Formula object for simple models, or list of Formula objects
+            for multi-formula models.
+        """
+        formulae = self._to_r_formula_strings()
+        if isinstance(formulae, str):
+            return ro.Formula(formulae)
+        return [ro.Formula(f) for f in formulae]
 
     def summary(self) -> str:
         """Generate an mgcv-style summary of the fitted GAM model."""
@@ -325,6 +339,52 @@ class AbstractGAM(ABC):
             raise RuntimeError("Cannot print summary of an unfitted model.")
         strvec = rutils.capture_output(rbase.summary(self.fit_state.rgam))
         return "\n".join(tuple(strvec))
+
+    def check_k(self, subsample: int = 5000, n_rep: int = 400) -> pd.DataFrame:
+        """Checking basis dimension choices (k).
+
+        The default choices for ``k`` are relatively arbitrary. This function aids in
+        assessing whether the chosen basis dimensions are appropriate. A low p-value can
+        indicate that the chosen basis dimension is too low.
+
+        The function works by constrasting a residual variance estimate based on near
+        neighbour points (based on the covariates of a term), to the overall residual
+        variance. The ``k_index`` is the ratio of the near neighbour estimate to the
+        overall variance. The further below 1 the ``k_index`` is, the more likely it is
+        that there exists missed patterns in the residuals. The p-value is generated
+        using a randomization test to obtain the null distribution.
+
+        For details, see section 5.9 of:
+
+            Wood S.N. (2017) Generalized Additive Models: An Introduction with R (2nd
+            edition). Chapman and Hall/CRC Press.
+
+        Args:
+            subsample: The maximum number of points to use, above which a random
+                subsample is used.
+            n_rep: The number of re-shuffles to do to get the p-value.
+
+        Returns:
+            A dataframe with the following columns:
+
+                - `term`: The mgcv-style name of the smooth term.
+                - `max_edf`: The maximum possible edf (often ``k-1``).
+                - `k_index`: The ratio between the nearest neighbour variance
+                   residual variance estimate and the overall variance.
+                - `p_value`: The p-value of the randomization test.
+                - `max_edf`: The maximum effective degrees of freedom.
+        """
+        if self.fit_state is None:
+            raise ValueError("Cannot run check_k on an unfitted model.")
+
+        rgam = self.fit_state.rgam
+        result = rmgcv.k_check(rgam, subsample=subsample, n_rep=n_rep)
+        rownames, colnames = result.rownames, result.colnames
+        df = pd.DataFrame(to_py(result), columns=colnames)
+        df.insert(0, "term", rownames)
+        return df.rename(
+            columns={"k'": "max_edf", "p-value": "p_value", "k-index": "k_index"},
+        )
 
     def coefficients(self) -> pd.Series:  # TODO consider returning as dict?
         """Extract model coefficients from the fitted GAM.
@@ -429,6 +489,8 @@ class AbstractGAM(ABC):
             raise ValueError(
                 "Cannot compute partial effect before fitting the model.",
             )
+        if data is not None:
+            self._check_data(data, requires=term)
 
         if target is None:
             if len(self.all_predictors) > 1:
@@ -473,7 +535,7 @@ class AbstractGAM(ABC):
         """
         if self.fit_state is None:
             raise ValueError("Model must be fit before computing penalty EDFs.")
-        edf = mgcv.pen_edf(self.fit_state.rgam)
+        edf = rmgcv.pen_edf(self.fit_state.rgam)
         return pd.Series(to_py(edf), index=to_py(edf.names))
 
     def partial_residuals(
@@ -521,7 +583,7 @@ class AbstractGAM(ABC):
 
         data = data if data is not None else self.fit_state.data
         data = deepcopy(data)
-        link_fit = self.predict(data)[target]
+        link_fit = self.predict(data)[target]  # _check_data called within predict
 
         if (
             term.by is not None
@@ -805,7 +867,7 @@ class GAM(AbstractGAM):
             n_threads: Number of threads to use for fitting the GAM.
         """
         # TODO some missing options: control, sp, min.sp etc
-        self._check_valid_data(data, require_response=True)
+        self._check_data(data, requires="all")
         if isinstance(data, pd.DataFrame):
             data = pd.DataFrame(data[self.referenced_variables])
         else:
@@ -818,7 +880,7 @@ class GAM(AbstractGAM):
             if knots is None
             else ro.ListVector({k: to_rpy(pos) for k, pos in knots.items()})
         )
-        rgam = mgcv.gam(
+        rgam = rmgcv.gam(
             self._to_r_formulae(),
             data=data_to_rdf(data, include=self.referenced_variables),
             family=self.family.rfamily,
@@ -886,7 +948,7 @@ class GAM(AbstractGAM):
             containing the predictions and standard errors if `se` is True.
         """
         if data is not None:
-            self._check_valid_data(data, require_response=False)
+            self._check_data(data, requires="covariates")
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call predict before fitting.")
@@ -944,7 +1006,7 @@ class GAM(AbstractGAM):
                 otherwise.
         """
         if data is not None:
-            self._check_valid_data(data, require_response=False)
+            self._check_data(data, requires="covariates")
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call partial_effects before fitting.")
@@ -988,6 +1050,7 @@ class BAM(AbstractGAM):
         chunk_size: int = 10000,
         discrete: bool = False,
         samfrac: float | int = 1,
+        n_threads: int = 1,
         gc_level: Literal[0, 1, 2] = 0,
     ) -> Self:
         """Fit the GAM.
@@ -1042,12 +1105,13 @@ class BAM(AbstractGAM):
                 storage and efficiency reasons.
             samfrac: If ``0<samfrac<1``, performs a fast preliminary fitting step using
                 a subsample of the data to improve convergence speed.
+            n_threads: Number of threads to use for fitting the GAM.
             gc_level: 0 uses R's garbage collector, 1 and 2 use progressively
                 more frequent garbage collection, which takes time but reduces
                 memory requirements.
         """
         # TODO some missing options: control, sp, min.sp, nthreads
-        self._check_valid_data(data, require_response=True)
+        self._check_data(data, requires="all")
         if isinstance(data, pd.DataFrame):
             data = pd.DataFrame(data[self.referenced_variables])
         else:
@@ -1060,7 +1124,7 @@ class BAM(AbstractGAM):
             else ro.ListVector({k: to_rpy(pos) for k, pos in knots.items()})
         )
         self.fit_state = FitState(
-            rgam=mgcv.bam(
+            rgam=rmgcv.bam(
                 self._to_r_formulae(),
                 data=data_to_rdf(data, include=self.referenced_variables),
                 family=self.family.rfamily,
@@ -1073,6 +1137,7 @@ class BAM(AbstractGAM):
                 chunk_size=chunk_size,
                 discrete=discrete,
                 samfrac=samfrac,
+                nthreads=n_threads,
                 gc_level=gc_level,
             ),
             data=data,
@@ -1139,7 +1204,7 @@ class BAM(AbstractGAM):
                 memory requirements.
         """
         if data is not None:
-            self._check_valid_data(data, require_response=False)
+            self._check_data(data, requires="covariates")
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call predict before fitting.")
@@ -1218,7 +1283,7 @@ class BAM(AbstractGAM):
                 memory requirements.
         """
         if data is not None:
-            self._check_valid_data(data, require_response=False)
+            self._check_data(data, requires="covariates")
 
         if self.fit_state is None:
             raise RuntimeError("Cannot call partial_effects before fitting.")

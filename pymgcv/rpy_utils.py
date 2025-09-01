@@ -17,9 +17,8 @@ import pandas as pd
 import rpy2.robjects as ro
 from pandas.api.types import is_integer_dtype
 from rpy2.robjects import numpy2ri, pandas2ri
-from rpy2.robjects.packages import importr
 
-rbase = importr("base")
+from pymgcv.rlibs import rbase
 
 
 def to_rpy(x):

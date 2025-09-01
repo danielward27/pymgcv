@@ -4,12 +4,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from rpy2 import robjects as ro
-from rpy2.robjects.packages import importr
 
+from pymgcv.rlibs import rbase
 from pymgcv.rpy_utils import to_rpy
-
-rbase = importr("base")
-rutils = importr("utils")
 
 
 @dataclass
@@ -35,5 +32,6 @@ def _to_r_constructor_string(arg: Any) -> str:
     connection = rbase.textConnection("__r_obj_str", "w")
     rbase.dput(arg, file=connection)
     rbase.close(connection)
-    assert len(ro.r["__r_obj_str"]) == 1
-    return ro.r["__r_obj_str"][0]
+    result = ro.r["__r_obj_str"]
+    assert len(result) == 1  # type: ignore
+    return result[0]  # type: ignore

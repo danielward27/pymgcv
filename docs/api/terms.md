@@ -35,7 +35,6 @@ assert L("x0") + S("x1") == [L("x0"), S("x1")]
         - "__init__"
 ::: pymgcv.terms.AbstractTerm
     options:
-        merge_init_into_class: false
         members:
           - label
           - mgcv_identifier

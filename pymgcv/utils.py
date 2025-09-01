@@ -4,13 +4,9 @@ import numpy as np
 import pandas as pd
 import rpy2.rinterface_lib.callbacks as rcb
 import rpy2.robjects as ro
-from rpy2.robjects.packages import importr
 
+from pymgcv.rlibs import rbase, rutils
 from pymgcv.rpy_utils import to_py
-
-rutils = importr("utils")
-rbase = importr("base")
-
 
 
 def load_rdata_dataframe_from_url(url: str) -> pd.DataFrame:
@@ -48,7 +44,6 @@ def load_rdata_dataframe_from_url(url: str) -> pd.DataFrame:
         rcb.consolewrite_warnerror = rcb.consolewrite_print
 
 
-
 def get_data(name: str):
     """Get built-in R dataset.
 
@@ -59,7 +54,7 @@ def get_data(name: str):
         return to_py(lc[name])
 
 
-def data_len(data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray]):
+def data_len(data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray]) -> int:
     """Get the length of the data.
 
     If the data is a dictionary, returns the maximum value of the shape along axis 0.
