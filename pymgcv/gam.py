@@ -1050,6 +1050,7 @@ class BAM(AbstractGAM):
         chunk_size: int = 10000,
         discrete: bool = False,
         samfrac: float | int = 1,
+        n_threads: int = 1,
         gc_level: Literal[0, 1, 2] = 0,
     ) -> Self:
         """Fit the GAM.
@@ -1104,6 +1105,7 @@ class BAM(AbstractGAM):
                 storage and efficiency reasons.
             samfrac: If ``0<samfrac<1``, performs a fast preliminary fitting step using
                 a subsample of the data to improve convergence speed.
+            n_threads: Number of threads to use for fitting the GAM.
             gc_level: 0 uses R's garbage collector, 1 and 2 use progressively
                 more frequent garbage collection, which takes time but reduces
                 memory requirements.
@@ -1135,6 +1137,7 @@ class BAM(AbstractGAM):
                 chunk_size=chunk_size,
                 discrete=discrete,
                 samfrac=samfrac,
+                nthreads=n_threads,
                 gc_level=gc_level,
             ),
             data=data,
