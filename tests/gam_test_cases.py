@@ -10,13 +10,8 @@ import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
 
+import pymgcv.basis_functions as bs
 from pymgcv import terms
-from pymgcv.basis_functions import (
-    CubicSpline,
-    FactorSmooth,
-    RandomEffect,
-    ThinPlateSpline,
-)
 from pymgcv.families import MVN, GauLSS, Poisson
 from pymgcv.gam import BAM, GAM, AbstractGAM
 from pymgcv.rpy_utils import data_to_rdf, to_py
@@ -152,7 +147,7 @@ def smooth_2d_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
 
 def smooth_2d_gam_pass_to_s(gam_type: type[AbstractGAM]) -> GAMTestCase:
     method = get_method_default(gam_type)
-    basis = ThinPlateSpline(max_knots=3, m=2)
+    basis = bs.ThinPlateSpline(max_knots=3, m=2)
     return GAMTestCase(
         mgcv_args=f"y~s(x,x1,m=2, xt=list(max.knots=3)), data=data, method='{method}'",
         gam_model=gam_type({"y": S("x", "x1", bs=basis)}),
@@ -184,7 +179,7 @@ def random_effect_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
     method = get_method_default(gam_type)
     return GAMTestCase(
         mgcv_args=f"y~s(x) + s(group, bs='re'), data=data, method='{method}'",
-        gam_model=gam_type({"y": S("x") + S("group", bs=RandomEffect())}),
+        gam_model=gam_type({"y": S("x") + S("group", bs=bs.RandomEffect())}),
         expected_predict_terms_structure={
             "y": ["S(x)", "S(group)", "Intercept"],
         },
@@ -282,11 +277,12 @@ def tensor_2d_by_numeric_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
 def smooth_1d_random_wiggly_curve_gam(
     gam_type: type[AbstractGAM] = GAM,
 ) -> GAMTestCase:
-    bs = FactorSmooth(CubicSpline())
     method = get_method_default(gam_type)
     return GAMTestCase(
         mgcv_args=f"y~s(x,group,bs='fs',xt=list(bs='cr')),data=data, method='{method}'",
-        gam_model=gam_type({"y": S("x", "group", bs=bs)}),
+        gam_model=gam_type(
+            {"y": S("x", "group", bs=bs.FactorSmooth(bs.CubicSpline()))},
+        ),
         expected_predict_terms_structure={"y": ["S(x,group)", "Intercept"]},
     )
 
@@ -294,11 +290,10 @@ def smooth_1d_random_wiggly_curve_gam(
 def tensor_2d_random_wiggly_curve_gam(
     gam_type: type[AbstractGAM] = GAM,
 ) -> GAMTestCase:
-    bs = FactorSmooth()
     method = get_method_default(gam_type)
     return GAMTestCase(
         mgcv_args=f"y~t(x,x1,group,bs='fs'),data=data, method='{method}'",
-        gam_model=gam_type({"y": T("x", "x1", "group", bs=bs)}),
+        gam_model=gam_type({"y": T("x", "x1", "group", bs=bs.FactorSmooth())}),
         expected_predict_terms_structure={
             "y": ["T(x,x1,group)", "Intercept"],
         },
@@ -378,6 +373,25 @@ def linear_functional_tensor_2d_gam(gam_type: type[AbstractGAM]) -> GAMTestCase:
     )
 
 
+def spline_test_cases() -> dict[str, GAMTestCase]:  # TODO maybe add other basis types
+    bases = {
+        "bs='tp'": bs.ThinPlateSpline(),
+        "bs='cr'": bs.CubicSpline(),
+        "bs='ds', m=c(1,0)": bs.DuchonSpline(m=1),
+        "bs='bs'": bs.BSpline(),
+        "bs='bs', m=c(3,2,1)": bs.BSpline(degree=3, penalty_orders=[2, 1]),
+        "bs='ps', m=c(2,2)": bs.PSpline(degree=3, penalty_order=2),
+    }
+    test_cases = {}
+    for k, v in bases.items():
+        test_cases[k] = GAMTestCase(
+            mgcv_args=f"y ~ s(x, {k}), data=data, method='REML'",
+            gam_model=GAM({"y": S("x", bs=v)}),
+            expected_predict_terms_structure={"y": ["S(x)", "Intercept"]},
+        )
+    return test_cases
+
+
 def get_test_cases() -> dict[str, GAMTestCase]:
     supported_types_and_cases = [
         (
@@ -420,4 +434,4 @@ def get_test_cases() -> dict[str, GAMTestCase]:
             for case in cases:
                 test_cases[f"{gam_type.__name__} - {case.__name__}"] = case(gam_type)
 
-    return test_cases
+    return test_cases | spline_test_cases()

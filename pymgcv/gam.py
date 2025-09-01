@@ -303,18 +303,12 @@ class AbstractGAM(ABC):
                     "Either impute or drop rows containing NaNs.",
                 )
 
-    def _to_r_formulae(self) -> ro.Formula | list[ro.Formula]:
-        """Convert the model specification to R formula objects.
-
-        Creates mgcv-compatible formula objects from the Python specification.
-        For single-formula models, returns a single Formula object. For
-        multi-formula models (multiple responses or family parameters),
-        returns a list of Formula objects.
+    def _to_r_formula_strings(self) -> list[str] | str:
+        """Convert the gam model formula into an mgcv-style formula string.
 
         Returns:
-            Single Formula object for simple models, or list of Formula objects
-            for multi-formula models. The order matches mgcv's expectations:
-            response formulae first, then family parameter formulae.
+            A string for single-formula models, or a list of strings for
+                multi-formula models.
         """
         formulae = []
         for target, terms in self.all_predictors.items():
@@ -324,10 +318,20 @@ class AbstractGAM(ABC):
             formula_str = f"{target}~{'+'.join(map(str, terms))}"
             if not any(isinstance(term, Intercept) for term in terms):
                 formula_str += "-1"
-
-            formulae.append(ro.Formula(formula_str))
-
+            formulae.append(formula_str)
         return formulae if len(formulae) > 1 else formulae[0]
+
+    def _to_r_formulae(self) -> ro.Formula | list[ro.Formula]:
+        """Convert the model specification to R formula objects.
+
+        Returns:
+            Single Formula object for simple models, or list of Formula objects
+            for multi-formula models.
+        """
+        formulae = self._to_r_formula_strings()
+        if isinstance(formulae, str):
+            return ro.Formula(formulae)
+        return [ro.Formula(f) for f in formulae]
 
     def summary(self) -> str:
         """Generate an mgcv-style summary of the fitted GAM model."""
@@ -356,8 +360,8 @@ class AbstractGAM(ABC):
             edition). Chapman and Hall/CRC Press.
 
         Args:
-            subsample: The maximum number of points to use, above which a random subsample
-               is used.
+            subsample: The maximum number of points to use, above which a random
+                subsample is used.
             n_rep: The number of re-shuffles to do to get the p-value.
 
         Returns:

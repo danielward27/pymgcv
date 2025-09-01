@@ -26,7 +26,7 @@ import rpy2.robjects as ro
 
 class _PassToS(TypedDict, total=False):
     xt: ro.ListVector
-    m: int | float | tuple[int | float, ...]
+    m: int | float | ro.IntVector | ro.FloatVector
 
 
 class AbstractBasis(ABC):
@@ -248,7 +248,7 @@ class DuchonSpline(AbstractBasis):
         return "ds"
 
     def _pass_to_s(self) -> _PassToS:
-        return {"m": (self.m, self.s)}
+        return {"m": ro.FloatVector([self.m, self.s])}
 
 
 @dataclass(kw_only=True)
@@ -305,7 +305,7 @@ class BSpline(AbstractBasis):
         return "bs"
 
     def _pass_to_s(self) -> _PassToS:
-        return {"m": [self.degree] + self.penalty_orders}
+        return {"m": ro.IntVector([self.degree] + self.penalty_orders)}
 
 
 @dataclass(kw_only=True)
@@ -339,7 +339,7 @@ class PSpline(AbstractBasis):
 
     def _pass_to_s(self) -> _PassToS:
         # Note (unlike b-splines) seems mgcv uses m[1] for the penalty order, not degree so subtract 1
-        return {"m": (self.degree - 1, self.penalty_order)}
+        return {"m": ro.IntVector([self.degree - 1, self.penalty_order])}
 
 
 @dataclass(kw_only=True)
