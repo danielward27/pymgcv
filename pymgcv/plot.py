@@ -15,7 +15,6 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from pandas import CategoricalDtype
 from pandas.api.types import is_numeric_dtype
-from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import FactorSmooth, RandomEffect
 from pymgcv.gam import AbstractGAM
@@ -29,9 +28,6 @@ from pymgcv.terms import (
     _FactorSmoothToByInterface,
 )
 from pymgcv.utils import data_len
-
-rbase = importr("base")
-rstats = importr("stats")
 
 
 def plot_gam(
@@ -116,7 +112,17 @@ def plot_gam(
     for plotter in plotters:
         kwargs = kwargs_mapper.get(plotter.underlying_function, {})
         plotter.make_plot(axes[idx : (idx + plotter.required_axes)], **kwargs)
+
+        # If multiple targets in the model, add target variable as title.
+        if len(gam.all_predictors) > 1:
+            for ax in axes[idx : (idx + plotter.required_axes)]:
+                ax.set_title(plotter.target_variable)
+
         idx += plotter.required_axes
+
+    # Hide unused axes
+    for ax in axes[idx:]:
+        ax.set_axis_off()
 
     return fig, axes
 
@@ -125,6 +131,7 @@ def plot_gam(
 class _TermPlotter:
     make_plot: Callable
     underlying_function: Callable
+    target_variable: str
     required_axes: int = 1
 
 
@@ -174,7 +181,7 @@ def get_term_plotter(
                 )
                 return axes
 
-            return _TermPlotter(_plot_wrapper, plot_categorical)
+            return _TermPlotter(_plot_wrapper, plot_categorical, target)
 
         case (1, S()) if isinstance(term.bs, RandomEffect):
 
@@ -183,13 +190,12 @@ def get_term_plotter(
                     term=term,
                     gam=gam,
                     target=target,
-                    data=data,
                     ax=axes[0],
                     **kwargs,
                 )
                 return axes
 
-            return _TermPlotter(_plot_wrapper, plot_random_effect)
+            return _TermPlotter(_plot_wrapper, plot_random_effect, target)
 
         # TODO "re" basis?
 
@@ -211,7 +217,7 @@ def get_term_plotter(
                     axes[0].legend()
                 return axes
 
-            return _TermPlotter(_plot_wrapper, plot_continuous_1d)
+            return _TermPlotter(_plot_wrapper, plot_continuous_1d, target)
 
         case (2, AbstractTerm()) if _all_numeric(dtypes):
 
@@ -233,6 +239,7 @@ def get_term_plotter(
             return _TermPlotter(
                 _plot_wrapper,
                 plot_continuous_2d,
+                target,
                 required_axes=len(levels),
             )
 
@@ -375,7 +382,7 @@ def plot_continuous_1d(
 
     ax.plot(x0_linspace, pred.fit, **plot_kwargs)
     ax.set_xlabel(term.varnames[0])
-    ax.set_ylabel(f"{target}~{term.label()}")
+    ax.set_ylabel(term.label())
     return ax
 
 
@@ -508,7 +515,7 @@ def plot_continuous_2d(
         **contour_kwargs,
     )
     color_bar = ax.figure.colorbar(mesh, ax=ax, pad=0)
-    color_bar.set_label(f"{target}~{term.label()}")
+    color_bar.set_label(term.label())
     _with_disable(ax.scatter)(
         np.asarray(data[term.varnames[0]]).ravel(),  # Ravel for linear functional terms
         np.asarray(data[term.varnames[1]]).ravel(),
@@ -617,7 +624,7 @@ def plot_categorical(
         **errorbar_kwargs,
     )
     ax.set_xlabel(term.varnames[0])
-    ax.set_ylabel(f"{target}~{term.label()}")
+    ax.set_ylabel(term.label())
     return ax
 
 
@@ -631,7 +638,39 @@ def plot_random_effect(
     scatter_kwargs: dict[str, Any] | None = None,
     fill_between_kwargs: dict[str, Any] | None = None,
     ax: Axes | None = None,
-):
+) -> Axes:
+    """A QQ-like-plot for random effect terms.
+
+    This function plots the estimated random effects against Gaussian quantiles and
+    includes a confidence envelope to assess whether the random effects follow a
+    normal distribution, as assumed by the model.
+
+    Args:
+        term: The random effect term to plot. Must be a smooth term with a
+            [`RandomEffect`][pymgcv.basis_functions.RandomEffect] basis function.
+        gam: The fitted GAM model containing the random effect.
+        target: The target variable to plot when multiple predictors are present.
+            If None and only one predictor exists, that predictor is used.
+        confidence_interval_level: The confidence level for the confidence envelope.
+        axline_kwargs: Keyword arguments passed to `matplotlib.axes.Axes.axline` for
+            the reference line.
+        scatter_kwargs: Keyword arguments passed to `matplotlib.axes.Axes.scatter` for
+            the random effect points.
+        fill_between_kwargs: Keyword arguments passed to
+            `matplotlib.axes.Axes.fill_between` for the confidence envelope.
+        ax: Matplotlib axes to use for the plot. If None, uses the current axes.
+
+    Returns:
+        The matplotlib axes object.
+
+    !!! note
+        The confidence interval calculation is based on the formula from:
+        "Worm plot: a simple diagnostic device for modelling growth reference curves"
+        (page 6). The random effects are constrained to be centered, so the reference
+        line passes through (0, 0).
+
+
+    """
     if gam.fit_state is None:
         raise RuntimeError("The model must be fitted before plotting.")
 

@@ -2,15 +2,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
-from rpy2.robjects.packages import importr
 
 from pymgcv.families import SupportsCDF
 from pymgcv.gam import AbstractGAM
+from pymgcv.rlibs import rbase, rstats
 from pymgcv.rpy_utils import is_null, to_py, to_rpy
-
-rbase = importr("base")
-rstats = importr("stats")
-rmgcv = importr("mgcv")
 
 
 @dataclass

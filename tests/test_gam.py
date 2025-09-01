@@ -4,7 +4,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pytest
-import rpy2.robjects as ro
 
 from pymgcv.gam import BAM, GAM, AbstractGAM
 from pymgcv.rpy_utils import to_py
@@ -12,9 +11,6 @@ from pymgcv.terms import L
 from pymgcv.utils import data_len
 
 from .gam_test_cases import GAMTestCase, get_test_cases, smooth_1d_by_numeric_gam
-
-mgcv = ro.packages.importr("mgcv")  # type: ignore
-
 
 test_cases = get_test_cases()
 

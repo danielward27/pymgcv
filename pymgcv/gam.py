@@ -16,18 +16,13 @@ from pandas.api.types import (
     is_object_dtype,
     is_string_dtype,
 )
-from rpy2.robjects.packages import importr
 
 from pymgcv.custom_types import FitAndSE
 from pymgcv.families import AbstractFamily, Gaussian
+from pymgcv.rlibs import rbase, rmgcv, rstats, rutils
 from pymgcv.rpy_utils import data_to_rdf, to_py, to_rpy
 from pymgcv.terms import AbstractTerm, Intercept
 from pymgcv.utils import data_len
-
-mgcv = importr("mgcv")
-rbase = importr("base")
-rutils = importr("utils")
-rstats = importr("stats")
 
 GAMFitMethods = Literal[
     "GCV.Cp",
@@ -379,7 +374,7 @@ class AbstractGAM(ABC):
             raise ValueError("Cannot run check_k on an unfitted model.")
 
         rgam = self.fit_state.rgam
-        result = mgcv.k_check(rgam, subsample=subsample, n_rep=n_rep)
+        result = rmgcv.k_check(rgam, subsample=subsample, n_rep=n_rep)
         rownames, colnames = result.rownames, result.colnames
         df = pd.DataFrame(to_py(result), columns=colnames)
         df.insert(0, "term", rownames)
@@ -536,7 +531,7 @@ class AbstractGAM(ABC):
         """
         if self.fit_state is None:
             raise ValueError("Model must be fit before computing penalty EDFs.")
-        edf = mgcv.pen_edf(self.fit_state.rgam)
+        edf = rmgcv.pen_edf(self.fit_state.rgam)
         return pd.Series(to_py(edf), index=to_py(edf.names))
 
     def partial_residuals(
@@ -881,7 +876,7 @@ class GAM(AbstractGAM):
             if knots is None
             else ro.ListVector({k: to_rpy(pos) for k, pos in knots.items()})
         )
-        rgam = mgcv.gam(
+        rgam = rmgcv.gam(
             self._to_r_formulae(),
             data=data_to_rdf(data, include=self.referenced_variables),
             family=self.family.rfamily,
@@ -1123,7 +1118,7 @@ class BAM(AbstractGAM):
             else ro.ListVector({k: to_rpy(pos) for k, pos in knots.items()})
         )
         self.fit_state = FitState(
-            rgam=mgcv.bam(
+            rgam=rmgcv.bam(
                 self._to_r_formulae(),
                 data=data_to_rdf(data, include=self.referenced_variables),
                 family=self.family.rfamily,

@@ -9,18 +9,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import rpy2.robjects as ro
-from rpy2.robjects.packages import importr
 
 from pymgcv.basis_functions import AbstractBasis
 from pymgcv.custom_types import FitAndSE
 from pymgcv.formula_utils import _to_r_constructor_string, _Var
+from pymgcv.rlibs import rbase, rmgcv, rstats
 from pymgcv.rpy_utils import data_to_rdf, to_py
 from pymgcv.utils import data_len
-
-mgcv = importr("mgcv")
-rbase = importr("base")
-rstats = importr("stats")
-
 
 # TODO: Not supporting 'sp' or 'pc' basis types.
 
@@ -378,7 +373,7 @@ class AbstractSmooth(AbstractTerm):
         if self.by is not None:
             include.append(self.by)
 
-        predict_mat = mgcv.PredictMat(mgcv_smooth, data_to_rdf(data, include=include))
+        predict_mat = rmgcv.PredictMat(mgcv_smooth, data_to_rdf(data, include=include))
         first = round(mgcv_smooth.rx2["first.para"][0])
         last = round(mgcv_smooth.rx2["last.para"][0])
         coefs = rstats.coef(rgam)[(first - 1) : last]

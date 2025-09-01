@@ -4,12 +4,9 @@ import numpy as np
 import pandas as pd
 import rpy2.rinterface_lib.callbacks as rcb
 import rpy2.robjects as ro
-from rpy2.robjects.packages import importr
 
+from pymgcv.rlibs import rbase, rutils
 from pymgcv.rpy_utils import to_py
-
-rutils = importr("utils")
-rbase = importr("base")
 
 
 def load_rdata_dataframe_from_url(url: str) -> pd.DataFrame:
