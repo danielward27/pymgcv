@@ -918,7 +918,7 @@ def residuals_vs_linear_predictor(
     return ax
 
 
-def hexbin(
+def hexbin_residuals(
     residuals: np.ndarray,
     var1: str,
     var2: str,
