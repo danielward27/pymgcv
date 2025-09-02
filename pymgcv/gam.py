@@ -1323,8 +1323,8 @@ class BAM(AbstractGAM):
         )
 
 
-def _add_intercepts(predictors):
-    result = {k: v for k, v in predictors.items()}
+def _add_intercepts(predictors: dict[str, list[AbstractTerm]]):
+    result = predictors.copy()
     for target, terms in predictors.items():
         if not any(isinstance(t, Intercept) for t in terms):
             result[target].append(Intercept())

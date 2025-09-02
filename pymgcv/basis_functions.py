@@ -86,7 +86,7 @@ class RandomEffect(AbstractBasis):
     !!! example
 
         For an example, see the
-        [supplement vs placebo example](../../examples/supplement_vs_placebo).
+        [supplement vs placebo example](../examples/supplement_vs_placebo.ipynb).
 
     """
 

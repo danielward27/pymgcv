@@ -62,8 +62,8 @@ def plot(
             example, to disable the confidence intervals on the 1d plots, set
             ``kwargs_mapper`` to
             ```python
-            from pymgcv.plot import continuous_1d
-            {continuous_1d: {"fill_between_kwargs": {"disable": True}}}
+            import pymgcv.plot as gplt
+            {gplt.continuous_1d: {"fill_between_kwargs": {"disable": True}}}
             ```
     """
     if gam.fit_state is None:
@@ -813,7 +813,7 @@ def qq(
 
         from pymgcv.families import Gaussian, Scat
         from pymgcv.gam import GAM
-    from pymgcv.plot import qq
+        import pymgcv.plot as gplt
         from pymgcv.terms import S
 
         rng = np.random.default_rng(1)
@@ -927,7 +927,7 @@ def hexbin_residuals(
     gridsize: int = 25,
     max_val: int | float | None = None,
     ax: Axes | None = None,
-    **kwargs,
+    **kwargs: Any,
 ):
     """Hexbin plot for visualising residuals as function of two variables.
 
@@ -948,13 +948,13 @@ def hexbin_residuals(
         max_val: Maximum and minimum value for the symmetric color scale. Defaults to
             the maximum absolute value of the residuals.
         ax: Axes to plot on. If None, the current axes are used.
-        **kwargs: Additional keyword arguments passed to matplotlib hexbin.
+        **kwargs: Additional keyword arguments passed to `matplotlib.hexbin`.
 
     !!! example
 
         ```python
         import numpy as np
-    from pymgcv.plot import hexbin
+        from pymgcv.plot import hexbin_residuals
         import matplotlib.pyplot as plt
 
         rng = np.random.default_rng(1)
@@ -965,8 +965,7 @@ def hexbin_residuals(
             "x0": rng.normal(size=residuals.shape),
             "x1": rng.normal(size=residuals.shape),
             }
-
-    gplt.hexbin(residuals, "x0", "x1", data=data, ax=ax)
+        gplt.hexbin_residuals(residuals, "x0", "x1", data=data, ax=ax)
         ```
     """
     max_color = np.max(np.abs(residuals)) if max_val is None else max_val
