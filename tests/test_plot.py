@@ -6,15 +6,9 @@ To see the plots created during testing, replace plt.close("all") with plt.show(
 import matplotlib.pyplot as plt
 import pytest
 
+import pymgcv.plot as gplt
 from pymgcv.gam import BAM, GAM, AbstractGAM
-from pymgcv.plot import (
-    plot_categorical,
-    plot_continuous_1d,
-    plot_continuous_2d,
-    plot_gam,
-    plot_qq,
-    plot_residuals_vs_linear_predictor,
-)
+from pymgcv.terms import L
 
 from . import gam_test_cases as tc
 
@@ -42,10 +36,10 @@ cases_1d_continuous = get_cases_1d_continuous(GAM) | get_cases_1d_continuous(BAM
     cases_1d_continuous.values(),
     ids=cases_1d_continuous.keys(),
 )
-def test_plot_continuous_1d(test_case: tc.GAMTestCase, kwargs: dict):
+def test_continuous_1d(test_case: tc.GAMTestCase, kwargs: dict):
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     term = list(gam.all_predictors.values())[0][0]
-    plot_continuous_1d(**kwargs, gam=gam, term=term, data=test_case.data)
+    gplt.continuous_1d(**kwargs, gam=gam, term=term, data=test_case.data)
     plt.close("all")
 
 
@@ -72,10 +66,10 @@ cases_2d_continuous = get_cases_2d_continuous(GAM) | get_cases_2d_continuous(BAM
     cases_2d_continuous.values(),
     ids=cases_2d_continuous.keys(),
 )
-def test_plot_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
+def test_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     term = list(gam.all_predictors.values())[0][0]
-    plot_continuous_2d(**kwargs, gam=gam, term=term, data=test_case.data)
+    gplt.continuous_2d(**kwargs, gam=gam, term=term, data=test_case.data)
     plt.close("all")
 
 
@@ -83,11 +77,12 @@ def test_plot_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
     "gam_type",
     [GAM, BAM],
 )
-def test_plot_categorical(gam_type: type[AbstractGAM]):
+def test_categorical(gam_type: type[AbstractGAM]):
     test_case = tc.categorical_linear_gam(gam_type)
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     term = list(gam.all_predictors.values())[0][0]
-    plot_categorical(target="y", gam=gam, term=term, data=test_case.data)
+    assert isinstance(term, L)
+    gplt.categorical(target="y", gam=gam, term=term, data=test_case.data)
     plt.close("all")
 
 
@@ -105,10 +100,10 @@ all_gam_test_cases = tc.get_test_cases()
     all_gam_test_cases.values(),
     ids=all_gam_test_cases.keys(),
 )
-def test_plot_gam(test_case: tc.GAMTestCase):
+def test_plot(test_case: tc.GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     try:
-        plot_gam(gam=gam, ncols=1)  # scatter=True fails for mvn + gaulss
+        gplt.plot(gam=gam, ncols=1)  # scatter=True fails for mvn + gaulss
     except (ValueError, NotImplementedError) as e:
         if "plot any" in str(e):
             pass
@@ -122,10 +117,10 @@ def test_plot_gam(test_case: tc.GAMTestCase):
     all_gam_test_cases.values(),
     ids=all_gam_test_cases.keys(),
 )
-def test_plot_qq(test_case: tc.GAMTestCase):
+def test_qq(test_case: tc.GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     try:
-        plot_qq(gam=gam)
+        gplt.qq(gam=gam)
     except NotImplementedError as e:
         if "Multivariate response" in str(e):  # e.g. mvn and gaulss
             pass
@@ -145,11 +140,11 @@ def test_plot_qq(test_case: tc.GAMTestCase):
     all_gam_test_cases.values(),
     ids=all_gam_test_cases.keys(),
 )
-def test_plot_residuals_vs_linear_predictor(test_case: tc.GAMTestCase):
+def test_residuals_vs_linear_predictor(test_case: tc.GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     target = list(gam.all_predictors.keys())[0]
     try:
-        plot_residuals_vs_linear_predictor(gam, target=target)
+        gplt.residuals_vs_linear_predictor(gam, target=target)
     except NotImplementedError as e:
         if "Multivariate response" in str(e):  # e.g. mvn and gaulss
             pass
