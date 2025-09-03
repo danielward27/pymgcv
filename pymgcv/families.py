@@ -575,7 +575,7 @@ class Multinom(AbstractFamily):
     Categories must be coded as integers from 0 to K. This family can only be used with
     [`GAM`][pymgcv.gam.GAM]. k predictors should be specified, one in ``predictors``,
     and the rest in ``family_predictors``. For the 0-th index, i.e. y=0, the likelihood
-    is $ 1 / [1+\sum_j \exp(\eta_j)$, where $\eta_j$ is the j-th linear predictor. For
+    is $1 / [1+\sum_j \exp(\eta_j)$, where $\eta_j$ is the j-th linear predictor. For
     y>0, it is given by $\exp(\eta_{y})/(1+\sum_j \exp(\eta_j))$.
 
     Args:
