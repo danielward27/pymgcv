@@ -50,7 +50,7 @@ class AbstractFamily(ABC):
         sample_fn = rmgcv.fix_family_rd(self.rfamily).rx2["rd"]
         if is_null(sample_fn):
             raise NotImplementedError(
-                f"Sample function not available for family {self.__name__}.",
+                f"Sample function not available for family {self.__class__.__name__}.",
             )
 
         kwargs = {"mu": mu, "wt": wt, "scale": scale}
@@ -104,11 +104,13 @@ class Gaussian(AbstractFamily, SupportsCDF):
         return to_py(rstats.pnorm(x, mean=mu, sd=sd))
 
 
-# TODO another case where matrix inputs need to be supported.
-# TODO document response form
 @dataclass
 class Binomial(AbstractFamily, SupportsCDF):
     """Binomial family with specified link function.
+
+    The response can be integers of zeros and ones (for binary data), proportions
+    between zero and one (in which case the count can be incorporated as a weight), or a
+    two-column matrix with the success and failure counts.
 
     Args:
         link: The link function. "logit", "probit" and "cauchit", correspond to
@@ -135,6 +137,7 @@ class Binomial(AbstractFamily, SupportsCDF):
         return to_py(rstats.pbinom(x * (wt + rbase.as_numeric(wt == 0)), wt, mu))
 
 
+@dataclass
 class Gamma(AbstractFamily, SupportsCDF):
     """Gamma family with specified link function.
 
@@ -160,6 +163,7 @@ class Gamma(AbstractFamily, SupportsCDF):
         )
 
 
+@dataclass
 class InverseGaussian(AbstractFamily):
     """Inverse Gaussian family with specified link function.
 
@@ -174,6 +178,7 @@ class InverseGaussian(AbstractFamily):
         self.rfamily = rstats.inverse_gaussian(link=link)
 
 
+@dataclass
 class Poisson(AbstractFamily, SupportsCDF):
     """Poisson family with specified link function.
 
@@ -196,12 +201,12 @@ class Poisson(AbstractFamily, SupportsCDF):
         return to_py(rstats.ppois(to_rpy(x), to_rpy(mu)))
 
 
-# TODO These won't support sampling
+@dataclass
 class Quasi(AbstractFamily):
     """Quasi family with specified link and variance functions.
 
     Args:
-        link: The link function for the quasi family. Valid options are:
+        link: The link function for the quasi family.
         variance: The variance function for the quasi family.
     """
 
@@ -222,6 +227,7 @@ class Quasi(AbstractFamily):
         self.rfamily = rstats.quasi(link=link, variance=variance)
 
 
+@dataclass
 class QuasiBinomial(AbstractFamily):
     """Quasi-binomial family with specified link function.
 
@@ -236,6 +242,7 @@ class QuasiBinomial(AbstractFamily):
         self.rfamily = rstats.quasibinomial(link=link)
 
 
+@dataclass
 class QuasiPoisson(AbstractFamily):
     """Quasi-Poisson family with specified link function.
 
@@ -247,26 +254,28 @@ class QuasiPoisson(AbstractFamily):
         self.rfamily = rstats.quasipoisson(link=link)
 
 
+@dataclass
 class Betar(AbstractFamily):
-    def __init__(self):
-        raise NotImplementedError()
+    r"""Beta regression family for use with GAM/BAM.
+
+    The linear predictor controls the mean $\mu$, and the variance is given by
+    $\mu(1-\mu)/(1+\phi)$. The respoin
+
+    Args:
+        phi: The parameter $\phi$, influencing the variance.
+
+    """
+
+    def __init__(
+        self,
+        phi: float | int,
+        link: Literal["logit", "probit", "cauchit", "cloglog"] = "logit",
+        eps: float = 1e-10,
+    ):
+        self.rfamily = rmgcv.betar(theta=phi, link=link, eps=eps)
 
 
-class CNorm(AbstractFamily):
-    def __init__(self):
-        raise NotImplementedError()
-
-
-class CLog(AbstractFamily):
-    def __init__(self):
-        raise NotImplementedError()
-
-
-class CPois(AbstractFamily):
-    def __init__(self):
-        raise NotImplementedError()
-
-
+@dataclass
 class NegBin(AbstractFamily):
     r"""Negative binomial family.
 
@@ -295,10 +304,12 @@ class NegBin(AbstractFamily):
         self.rfamily = rmgcv.nb(theta=ro.NULL if theta is None else theta, link=link)
 
 
+@dataclass
 class OCat(AbstractFamily):
     """Ordered categorical family.
 
-    For performing regression with ordered categorical data.
+    The response should be integer class labels, indexed from 1 (not a pandas
+    ordered Categorical)!
 
     Args:
         num_categories: The number of categories.
@@ -308,6 +319,7 @@ class OCat(AbstractFamily):
         self.rfamily = rmgcv.ocat(R=num_categories)
 
 
+@dataclass
 class Scat(AbstractFamily):
     r"""Scaled t family for heavy tailed data.
 
@@ -337,28 +349,31 @@ class Scat(AbstractFamily):
         self.rfamily = rmgcv.scat(link=link, min_df=min_df)
 
 
+@dataclass
 class Tweedie(AbstractFamily):
     r"""Tweedie family with fixed power.
 
     Args:
-        p: The variance of an observation is proportional to its mean to the power p. p must
-            be greater than 1 and less than or equal to 2. 1 would be Poisson, 2 is gamma.
+        p: The variance of an observation is proportional to its mean to the power p.
+            p must be greater than 1 and less than or equal to 2. 1 would be Poisson, 2
+            is gamma.
         link: If a float/int, treated as $\lambda$ in a link function based on
-            $\eta = \mu^ \lambda$, meaning 0 gives the log link and 1 gives the
+            $\eta = \mu^\lambda$, meaning 0 gives the log link and 1 gives the
             identity link (i.e. R stats package `power`). Can also be one of "log",
             "identity", "inverse", "sqrt".
     """
 
     def __init__(
         self,
-        p: float | int = 1,
+        p: float | int,
         link: Literal["log", "identity", "inverse", "sqrt"] | int | float = 0,
     ):
         if isinstance(link, int | float):
-            link = rstats.power(link)
+            link = ro.rl(f"power({link})")  # type: ignore
         self.rfamily = rmgcv.Tweedie(p, link)
 
 
+@dataclass
 class Tw(AbstractFamily):
     r"""Tweedie family with estimated power.
 
@@ -399,6 +414,7 @@ class Tw(AbstractFamily):
         )
 
 
+@dataclass
 class ZIP(AbstractFamily):
     r"""Zero-inflated Poisson family.
 
@@ -440,25 +456,7 @@ class ZIP(AbstractFamily):
         self.rfamily = rmgcv.ziP(theta=ro.NULL if theta is None else theta, b=b)
 
 
-# TODO support stratification? There is a lot of small details missing in the docs.
-# TODO cox.pht
-class CoxPH(AbstractFamily):
-    """Additive Cox Proportional Hazard Model.
-
-    Cox Proportional Hazards model with Peto's correction for ties, optional
-    stratification, and estimation by penalized partial likelihood maximization, for use
-    with [`GAM`][pymgcv.gam.GAM]. In the model formula, event time is the response.
-
-    Under stratification the response has two columns: time and a numeric index for
-    stratum. The weights vector provides the censoring information (0 for censoring, 1
-    for event). CoxPH deals with the case in which each subject has one event/censoring
-    time and one row of covariate values.
-    """
-
-    def __init__(self):
-        self.rfamily = rmgcv.cov_ph()
-
-
+@dataclass
 class GammaLS(AbstractFamily):
     r"""Gamma location-scale model family.
 
@@ -473,10 +471,11 @@ class GammaLS(AbstractFamily):
         self,
         min_log_scale: float | int = -7,
     ):
-        self.family = rmgcv.gammals(b=min_log_scale)
+        self.rfamily = rmgcv.gammals(b=min_log_scale)
 
 
 # TODO when e.g. qq plotting finalized check works correctly with GauLSS
+@dataclass
 class GauLSS(AbstractFamily):
     r"""Gaussian location-scale model family for GAMs.
 
@@ -506,6 +505,7 @@ class GauLSS(AbstractFamily):
         self.rfamily = rmgcv.gaulss(link=ro.StrVector([link, "logb"]), b=min_std)
 
 
+@dataclass
 class GevLSS(AbstractFamily):
     r"""Generalized extreme value location, scale and shape family.
 
@@ -514,22 +514,79 @@ class GevLSS(AbstractFamily):
     Uses the p.d.f. $t(y)^{\xi+1} e^{-t(y)} / \sigma$, where:
     $t(x) = [1 + \xi(y-\mu)/\sigma]^{-1/\xi}$ if $\xi \neq 0$
     and $\exp[-(y-\mu)/\sigma]$ otherwise.
+
+    Args:
+        location_link: The link function to use for $\mu$.
+        shape_link: The link function to use for $\xi$.
     """
 
-    def __init__(self, link: Literal["identity", "log"]):
-        self.rfamily = rmgcv.gevlss(link=link)
+    def __init__(
+        self,
+        location_link: Literal["identity", "log"] = "identity",
+        shape_link: Literal["identity", "logit"] = "logit",
+    ):
+        link = [location_link, "identity", shape_link]
+        self.rfamily = rmgcv.gevlss(ro.StrVector(link))
 
 
+@dataclass
 class GumbLS(AbstractFamily):
-    def __init__(self):
-        raise NotImplementedError()
+    r"""Gumbel location scale additive model.
+
+    `gumbls` fits Gumbel location–scale models with a location parameter $\mu$ and a
+    log scale parameter $\beta$.
+
+    For $z = (y - \mu) e^{-\beta}$, the log Gumbel density is $\ell = -\beta - z - e^{-z}$.
+    The mean is $\mu + \gamma e^{\beta}$, and the variance is $\pi^2 e^{2\beta}/6$.
+
+    Note predictions on the response scale will return the log scale $\beta$
+
+    !!! warning
+
+        Read the documentation for the ``scale_link`` parameter, which is potentially
+        confusing (inherited from mgcv).
+
+    Args:
+        scale_link: The link for the log scale parameter $\beta$, defined as followed:
+
+            - `scale_link="identity"`: linear predictor directly gives β.
+            - `scale_link="log"`: ensures $\beta > b$ using
+                $\beta = b + log(1 + exp(η))$.
+
+        min_log_scale: The minimum value for the log scale parameter (`b` above)
+            if using the log link.
+    """
+
+    def __init__(
+        self,
+        scale_link: Literal["identity", "log"] = "log",
+        min_log_scale: float = -7,
+    ):
+        self.rfamily = rmgcv.gumbls(
+            link=ro.StrVector(["identity", scale_link]),
+            b=min_log_scale,
+        )
 
 
+@dataclass
 class Multinom(AbstractFamily):
-    def __init__(self):
-        raise NotImplementedError()
+    r"""Multinomial family.
+
+    Categories must be coded as integers from 0 to K. This family can only be used with
+    [`GAM`][pymgcv.gam.GAM]. k predictors should be specified, one in ``predictors``,
+    and the rest in ``family_predictors``. For the 0-th index, i.e. y=0, the likelihood
+    is $ 1 / [1+\sum_j \exp(\eta_j)$, where $\eta_j$ is the j-th linear predictor. For
+    y>0, it is given by $\exp(\eta_{y})/(1+\sum_j \exp(\eta_j))$.
+
+    Args:
+        k: There are k+1 categories, and k linear predictors.
+    """
+
+    def __init__(self, k: int = 1):
+        self.rfamily = rmgcv.multinom(K=k)
 
 
+@dataclass
 class MVN(AbstractFamily):
     """Multivariate normal family.
 
@@ -543,16 +600,101 @@ class MVN(AbstractFamily):
         self.rfamily = rmgcv.mvn(d=d)
 
 
+@dataclass
 class Shash(AbstractFamily):
-    def __init__(self):
-        raise NotImplementedError()
+    r"""Sinh-arcsinh location scale and shape model family.
+
+    Implements the four-parameter sinh-arcsinh (shash) distribution of Jones and Pewsey
+    (2009). The location, scale, skewness and kurtosis of the density can depend on
+    additive smooth predictors. Requires one ``predictors``, and three
+    ``family_predictors`` when constructing the GAM.
+
+    The density function is:
+    $$
+    p(y|\mu,\sigma,\epsilon,\delta)=C(z) \exp\{-S(z)^2/2\} \{2\pi(1+z^2)\}^{-1/2}/\sigma
+    $$
+
+    where $C(z) = \{1+S(z)^2\}^{1/2}$, $S(z) = \sinh\{\delta \sinh^{-1}(z) - \epsilon\}$
+    and $z = (y - \mu)/(\sigma \delta)$. $\mu$ controls the location, $\sigma$ controls
+    the scale, $\epsilon$ controls the skewness, and $\delta$ the tail weight.
+    For fitting purposes, we use $\tau = \log(\sigma)$ and $\phi = \log(\delta)$.
+
+    The link functions are fixed at identity for all parameters except the scale $\tau$,
+    which uses logeb, defined as $\eta = \log [\exp(\tau) - b]$, such that the inverse
+    is $\tau = \log(\sigma) = \log\{\exp(\eta)+b\}$.
+
+    Args:
+        b: Positive parameter for the minimum scale of the logeb link function for the
+            scale parameter.
+        phi_pen: Positive multiplier of a ridge penalty on kurtosis parameter, shrinking
+            towards zero.
+    """
+
+    def __init__(
+        self,
+        b: float = 1e-2,
+        phi_pen: float = 1e-3,
+    ):
+        self.rfamily = rmgcv.shash(b=b, phiPen=phi_pen)
 
 
+@dataclass
 class TwLSS(AbstractFamily):
+    """Not yet implemented."""
+
     def __init__(self):
         raise NotImplementedError()
 
 
+@dataclass
 class ZipLSS(AbstractFamily):
+    """Not yet implemented."""
+
+    def __init__(self):
+        raise NotImplementedError()
+
+
+@dataclass
+class CNorm(AbstractFamily):
+    """Not yet implemented."""
+
+    def __init__(self):
+        raise NotImplementedError()
+
+
+@dataclass
+class CLog(AbstractFamily):
+    """Not yet implemented."""
+
+    def __init__(self):
+        raise NotImplementedError()
+
+
+@dataclass
+class CPois(AbstractFamily):
+    """Not yet implemented."""
+
+    def __init__(self):
+        raise NotImplementedError()
+
+
+# TODO support stratification? There is a lot of small details missing in the docs.
+# TODO cox.pht
+@dataclass
+class CoxPH(AbstractFamily):
+    """Not yet implmented.
+
+    Additive Cox Proportional Hazard Model.
+
+    Cox Proportional Hazards model with Peto's correction for ties, optional
+    stratification, and estimation by penalized partial likelihood maximization, for use
+    with [`GAM`][pymgcv.gam.GAM]. In the model formula, event time is the response.
+
+    Under stratification the response has two columns: time and a numeric index for
+    stratum. The weights vector provides the censoring information (0 for censoring, 1
+    for event). CoxPH deals with the case in which each subject has one event/censoring
+    time and one row of covariate values.
+    """
+
     def __init__(self):
         raise NotImplementedError()

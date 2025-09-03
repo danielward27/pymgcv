@@ -1,7 +1,7 @@
 """Plotting utilities for visualizing GAM models."""
 
 import types
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from math import ceil
@@ -173,7 +173,7 @@ def _get_term_plotter(
     match (dim, term):
         case (1, L()) if isinstance(dtypes[term.varnames[0]], CategoricalDtype):
 
-            def _plot_wrapper(axes, **kwargs):
+            def _plot_wrapper(axes: Iterable[Axes], **kwargs: Any):
                 axes[0] = categorical(
                     term=term,
                     gam=gam,
@@ -188,7 +188,7 @@ def _get_term_plotter(
 
         case (1, S()) if isinstance(term.bs, RandomEffect):
 
-            def _plot_wrapper(axes, **kwargs):
+            def _plot_wrapper(axes: Iterable[Axes], **kwargs: Any):
                 axes[0] = random_effect(
                     term=term,
                     gam=gam,
@@ -204,7 +204,7 @@ def _get_term_plotter(
 
         case (1, AbstractTerm()) if _all_numeric(dtypes):
 
-            def _plot_wrapper(axes, **kwargs):
+            def _plot_wrapper(axes: Iterable[Axes], **kwargs: Any):
                 for level in levels:
                     axes[0] = continuous_1d(
                         term=term,
@@ -224,7 +224,7 @@ def _get_term_plotter(
 
         case (2, AbstractTerm()) if _all_numeric(dtypes):
 
-            def _plot_wrapper(axes, **kwargs):
+            def _plot_wrapper(axes: Iterable[Axes], **kwargs: Any):
                 for i, level in enumerate(levels):
                     axes[i] = continuous_2d(
                         term=term,
@@ -954,7 +954,7 @@ def hexbin_residuals(
 
         ```python
         import numpy as np
-        from pymgcv.plot import hexbin_residuals
+        import pymgcv.plot as gplt
         import matplotlib.pyplot as plt
 
         rng = np.random.default_rng(1)
@@ -989,7 +989,7 @@ def hexbin_residuals(
 def _with_disable(plot_func):
     """Wraps a plot function to easily disable with disable=True."""
 
-    def wrapper(*args, disable=False, **kwargs):
+    def wrapper(*args: Any, disable: bool = False, **kwargs: Any):
         if disable:
             return None
         return plot_func(*args, **kwargs)

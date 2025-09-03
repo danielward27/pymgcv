@@ -326,7 +326,7 @@ class AbstractGAM(ABC):
             if not any(isinstance(term, Intercept) for term in terms):
                 formula_str += "-1"
             formulae.append(formula_str)
-        return formulae if len(formulae) > 1 else formulae[0]
+        return formulae if len(formulae) > 1 else formulae[0]  # type: ignore[return-value]
 
     def _to_r_formulae(self) -> ro.Formula | list[ro.Formula]:
         """Convert the model specification to R formula objects.
@@ -588,9 +588,16 @@ class AbstractGAM(ABC):
                 )
             target = list(self.all_predictors.keys())[0]
 
+        link_fit = self.predict(data)[target]  # _check_data called within predict
         data = data if data is not None else self.fit_state.data
         data = deepcopy(data)
-        link_fit = self.predict(data)[target]  # _check_data called within predict
+
+        if np.shape(link_fit) != np.shape(data[target]):
+            # e.g. Binomial family with matrix of counts as input.
+            raise ValueError(
+                "Cannot compute partial residuals if the target variable shape does "
+                "not match the shape of the fitted values.",
+            )
 
         if (
             term.by is not None
@@ -739,7 +746,7 @@ class AbstractGAM(ABC):
         if self.fit_state is None:
             raise ValueError("Cannot compute AIC before fitting.")
         res = rstats.AIC(self.fit_state.rgam, k=k)
-        return res[0]
+        return res[0]  # type: ignore[index]
 
     def residuals(
         self,

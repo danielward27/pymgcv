@@ -122,10 +122,15 @@ def test_qq(test_case: tc.GAMTestCase):
     try:
         gplt.qq(gam=gam)
     except NotImplementedError as e:
-        if "Multivariate response" in str(e):  # e.g. mvn and gaulss
+        accept_strs = [
+            "Multivariate response",  # e.g. mvn and gaulss
+            "Sample function not available",  # Quasi families
+        ]
+        if any(s in str(e) for s in accept_strs):
             pass
         else:
             raise
+
     except TypeError as e:
         if "Family must support CDF method" in str(e):
             pass
@@ -147,6 +152,7 @@ def test_residuals_vs_linear_predictor(test_case: tc.GAMTestCase):
         gplt.residuals_vs_linear_predictor(gam, target=target)
     except NotImplementedError as e:
         if "Multivariate response" in str(e):  # e.g. mvn and gaulss
+            print(gam.family.__class__.__name__)
             pass
         else:
             raise
