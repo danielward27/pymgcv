@@ -77,6 +77,7 @@ class AbstractGAM(ABC):
     predictors: dict[str, list[AbstractTerm]]
     family_predictors: dict[str, list[AbstractTerm]]
     family: AbstractFamily
+    add_intercepts: bool
     fit_state: FitState | None
 
     def __init__(
@@ -100,9 +101,11 @@ class AbstractGAM(ABC):
                 prediction and should match the order expected by the mgcv family.
             family: Family for the error distribution. See [Families](./families.md)
                 for available options.
-            add_intercepts: If True, adds an intercept term to each formula.
-                If false, we assume that any [`Intercept`][pymgcv.terms.Intercept]
-                terms desired are manually added to the formulae.
+            add_intercepts: If False, intercept terms must be manually added to the
+                formulae using [`Intercept`][pymgcv.terms.Intercept]. If True,
+                automatically adds an intercept term to each formula. Intercepts are
+                added as needed by methods, such that ``gam.predictors`` and
+                ``gam.family_predictors`` reflect the model as constructed.
         """
         predictors, family_predictors = deepcopy((predictors, family_predictors))
         family_predictors = {} if family_predictors is None else family_predictors
@@ -117,10 +120,7 @@ class AbstractGAM(ABC):
         self.family_predictors = _ensure_list_of_terms(family_predictors)
         self.family = family
         self.fit_state = None
-
-        if add_intercepts:
-            for v in self.all_predictors.values():
-                v.append(Intercept())
+        self.add_intercepts = add_intercepts
         self._check_init()
 
     def _check_init(self):
@@ -311,7 +311,14 @@ class AbstractGAM(ABC):
                 multi-formula models.
         """
         formulae = []
-        for target, terms in self.all_predictors.items():
+
+        all_predictors = (
+            self.all_predictors
+            if not self.add_intercepts
+            else _add_intercepts(self.all_predictors)
+        )
+
+        for target, terms in all_predictors.items():
             if target in self.family_predictors:
                 target = ""  # no left hand side
 
@@ -319,7 +326,7 @@ class AbstractGAM(ABC):
             if not any(isinstance(term, Intercept) for term in terms):
                 formula_str += "-1"
             formulae.append(formula_str)
-        return formulae if len(formulae) > 1 else formulae[0]
+        return formulae if len(formulae) > 1 else formulae[0]  # type: ignore[return-value]
 
     def _to_r_formulae(self) -> ro.Formula | list[ro.Formula]:
         """Convert the model specification to R formula objects.
@@ -581,9 +588,16 @@ class AbstractGAM(ABC):
                 )
             target = list(self.all_predictors.keys())[0]
 
+        link_fit = self.predict(data)[target]  # _check_data called within predict
         data = data if data is not None else self.fit_state.data
         data = deepcopy(data)
-        link_fit = self.predict(data)[target]  # _check_data called within predict
+
+        if np.shape(link_fit) != np.shape(data[target]):
+            # e.g. Binomial family with matrix of counts as input.
+            raise ValueError(
+                "Cannot compute partial residuals if the target variable shape does "
+                "not match the shape of the fitted values.",
+            )
 
         if (
             term.by is not None
@@ -668,7 +682,13 @@ class AbstractGAM(ABC):
 
         # Partition results based on formulas
         results = {}
-        for i, (target, terms) in enumerate(self.all_predictors.items()):
+        all_predictors = (
+            self.all_predictors
+            if not self.add_intercepts
+            else _add_intercepts(self.all_predictors)
+        )
+
+        for i, (target, terms) in enumerate(all_predictors.items()):
             fit = {}
             se = {}
 
@@ -726,7 +746,7 @@ class AbstractGAM(ABC):
         if self.fit_state is None:
             raise ValueError("Cannot compute AIC before fitting.")
         res = rstats.AIC(self.fit_state.rgam, k=k)
-        return res[0]
+        return res[0]  # type: ignore[index]
 
     def residuals(
         self,
@@ -797,6 +817,7 @@ class GAM(AbstractGAM):
     predictors: dict[str, list[AbstractTerm]]
     family_predictors: dict[str, list[AbstractTerm]]
     family: AbstractFamily
+    add_intercepts: bool
     fit_state: FitState | None
 
     def fit(
@@ -1035,6 +1056,7 @@ class BAM(AbstractGAM):
     predictors: dict[str, list[AbstractTerm]]
     family_predictors: dict[str, list[AbstractTerm]]
     family: AbstractFamily
+    add_intercepts: bool
     fit_state: FitState | None
 
     def fit(
@@ -1306,3 +1328,11 @@ class BAM(AbstractGAM):
             data=self.fit_state.data if data is None else data,
             compute_se=compute_se,
         )
+
+
+def _add_intercepts(predictors: dict[str, list[AbstractTerm]]):
+    result = predictors.copy()
+    for target, terms in predictors.items():
+        if not any(isinstance(t, Intercept) for t in terms):
+            result[target].append(Intercept())
+    return result

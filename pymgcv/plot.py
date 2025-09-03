@@ -1,7 +1,7 @@
 """Plotting utilities for visualizing GAM models."""
 
 import types
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from math import ceil
@@ -31,7 +31,7 @@ from pymgcv.terms import (
 from pymgcv.utils import data_len
 
 
-def plot_gam(
+def plot(
     gam: AbstractGAM,
     *,
     ncols: int = 2,
@@ -62,17 +62,17 @@ def plot_gam(
             example, to disable the confidence intervals on the 1d plots, set
             ``kwargs_mapper`` to
             ```python
-            from pymgcv.plot import plot_continuous_1d
-            {plot_continuous_1d: {"fill_between_kwargs": {"disable": True}}}
+            import pymgcv.plot as gplt
+            {gplt.continuous_1d: {"fill_between_kwargs": {"disable": True}}}
             ```
     """
     if gam.fit_state is None:
         raise ValueError("Cannot plot before fitting the model.")
 
     kwargs_mapper = {} if kwargs_mapper is None else kwargs_mapper
-    kwargs_mapper.setdefault(plot_categorical, {}).setdefault("residuals", scatter)
-    kwargs_mapper.setdefault(plot_continuous_1d, {}).setdefault("residuals", scatter)
-    kwargs_mapper.setdefault(plot_continuous_2d, {}).setdefault(
+    kwargs_mapper.setdefault(categorical, {}).setdefault("residuals", scatter)
+    kwargs_mapper.setdefault(continuous_1d, {}).setdefault("residuals", scatter)
+    kwargs_mapper.setdefault(continuous_2d, {}).setdefault(
         "scatter_kwargs",
         {},
     ).setdefault("disable", not scatter)
@@ -87,7 +87,7 @@ def plot_gam(
     for target, terms in to_plot.items():
         for term in terms:
             try:
-                plotter = get_term_plotter(
+                plotter = _get_term_plotter(
                     term=term,
                     gam=gam,
                     target=target,
@@ -138,7 +138,7 @@ class _TermPlotter:
     required_axes: int = 1
 
 
-def get_term_plotter(
+def _get_term_plotter(
     term: AbstractTerm,
     gam: AbstractGAM,
     target: str,
@@ -173,8 +173,8 @@ def get_term_plotter(
     match (dim, term):
         case (1, L()) if isinstance(dtypes[term.varnames[0]], CategoricalDtype):
 
-            def _plot_wrapper(axes, **kwargs):
-                axes[0] = plot_categorical(
+            def _plot_wrapper(axes: Iterable[Axes], **kwargs: Any):
+                axes[0] = categorical(
                     term=term,
                     gam=gam,
                     target=target,
@@ -184,12 +184,12 @@ def get_term_plotter(
                 )
                 return axes
 
-            return _TermPlotter(_plot_wrapper, plot_categorical, target)
+            return _TermPlotter(_plot_wrapper, categorical, target)
 
         case (1, S()) if isinstance(term.bs, RandomEffect):
 
-            def _plot_wrapper(axes, **kwargs):
-                axes[0] = plot_random_effect(
+            def _plot_wrapper(axes: Iterable[Axes], **kwargs: Any):
+                axes[0] = random_effect(
                     term=term,
                     gam=gam,
                     target=target,
@@ -198,15 +198,15 @@ def get_term_plotter(
                 )
                 return axes
 
-            return _TermPlotter(_plot_wrapper, plot_random_effect, target)
+            return _TermPlotter(_plot_wrapper, random_effect, target)
 
         # TODO "re" basis?
 
         case (1, AbstractTerm()) if _all_numeric(dtypes):
 
-            def _plot_wrapper(axes, **kwargs):
+            def _plot_wrapper(axes: Iterable[Axes], **kwargs: Any):
                 for level in levels:
-                    axes[0] = plot_continuous_1d(
+                    axes[0] = continuous_1d(
                         term=term,
                         gam=gam,
                         target=target,
@@ -220,13 +220,13 @@ def get_term_plotter(
                     axes[0].legend()
                 return axes
 
-            return _TermPlotter(_plot_wrapper, plot_continuous_1d, target)
+            return _TermPlotter(_plot_wrapper, continuous_1d, target)
 
         case (2, AbstractTerm()) if _all_numeric(dtypes):
 
-            def _plot_wrapper(axes, **kwargs):
+            def _plot_wrapper(axes: Iterable[Axes], **kwargs: Any):
                 for i, level in enumerate(levels):
-                    axes[i] = plot_continuous_2d(
+                    axes[i] = continuous_2d(
                         term=term,
                         gam=gam,
                         target=target,
@@ -241,7 +241,7 @@ def get_term_plotter(
 
             return _TermPlotter(
                 _plot_wrapper,
-                plot_continuous_2d,
+                continuous_2d,
                 target,
                 required_axes=len(levels),
             )
@@ -250,7 +250,7 @@ def get_term_plotter(
             raise NotImplementedError(f"Did not know how to plot term {term}.")
 
 
-def plot_continuous_1d(
+def continuous_1d(
     *,
     term: AbstractTerm,
     gam: AbstractGAM,
@@ -389,7 +389,7 @@ def plot_continuous_1d(
     return ax
 
 
-def plot_continuous_2d(
+def continuous_2d(
     *,
     term: AbstractTerm,
     gam: AbstractGAM,
@@ -529,7 +529,7 @@ def plot_continuous_2d(
     return ax
 
 
-def plot_categorical(
+def categorical(
     *,
     term: L,
     gam: AbstractGAM,
@@ -631,7 +631,7 @@ def plot_categorical(
     return ax
 
 
-def plot_random_effect(
+def random_effect(
     *,
     term: S,
     gam: AbstractGAM,
@@ -751,7 +751,7 @@ def plot_random_effect(
     return ax
 
 
-def plot_qq(
+def qq(
     gam: AbstractGAM,
     *,
     qq_fun: Callable[[AbstractGAM], QQResult] = qq_simulate,
@@ -794,7 +794,7 @@ def plot_qq(
         from functools import partial
 
         qq_fun = partial(qq_simulate, level=0.95, n_sim=10)
-        # plot_qq(..., qq_fun=qq_fun)
+        # qq(..., qq_fun=qq_fun)
         ```
 
     Returns:
@@ -813,7 +813,7 @@ def plot_qq(
 
         from pymgcv.families import Gaussian, Scat
         from pymgcv.gam import GAM
-        from pymgcv.plot import plot_qq
+        import pymgcv.plot as gplt
         from pymgcv.terms import S
 
         rng = np.random.default_rng(1)
@@ -831,7 +831,7 @@ def plot_qq(
 
         for model, ax in zip(models, axes, strict=False):
             model.fit(data)
-            plot_qq(model, ax=ax)
+            gplt.qq(model, ax=ax)
             ax.set_title(model.family.__class__.__name__)
             ax.set_box_aspect(1)
 
@@ -873,7 +873,7 @@ def plot_qq(
     return ax
 
 
-def plot_residuals_vs_linear_predictor(
+def residuals_vs_linear_predictor(
     gam: AbstractGAM,
     type: Literal[
         "deviance",
@@ -898,7 +898,7 @@ def plot_residuals_vs_linear_predictor(
     if len(gam.predictors) > 1:
         raise NotImplementedError(
             "Multivariate response families are not supported for "
-            "plot_residuals_vs_linear_predictor.",
+            "residuals_vs_linear_predictor.",
         )
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
     scatter_kwargs.setdefault("s", 0.05 * rcParams["lines.markersize"] ** 2)
@@ -927,7 +927,7 @@ def hexbin_residuals(
     gridsize: int = 25,
     max_val: int | float | None = None,
     ax: Axes | None = None,
-    **kwargs,
+    **kwargs: Any,
 ):
     """Hexbin plot for visualising residuals as function of two variables.
 
@@ -948,13 +948,13 @@ def hexbin_residuals(
         max_val: Maximum and minimum value for the symmetric color scale. Defaults to
             the maximum absolute value of the residuals.
         ax: Axes to plot on. If None, the current axes are used.
-        **kwargs: Additional keyword arguments passed to matplotlib hexbin.
+        **kwargs: Additional keyword arguments passed to `matplotlib.hexbin`.
 
     !!! example
 
         ```python
         import numpy as np
-        from pymgcv.plot import hexbin_residuals
+        import pymgcv.plot as gplt
         import matplotlib.pyplot as plt
 
         rng = np.random.default_rng(1)
@@ -965,8 +965,7 @@ def hexbin_residuals(
             "x0": rng.normal(size=residuals.shape),
             "x1": rng.normal(size=residuals.shape),
             }
-
-        hexbin_residuals(residuals, "x0", "x1", data=data, ax=ax)
+        gplt.hexbin_residuals(residuals, "x0", "x1", data=data, ax=ax)
         ```
     """
     max_color = np.max(np.abs(residuals)) if max_val is None else max_val
@@ -990,7 +989,7 @@ def hexbin_residuals(
 def _with_disable(plot_func):
     """Wraps a plot function to easily disable with disable=True."""
 
-    def wrapper(*args, disable=False, **kwargs):
+    def wrapper(*args: Any, disable: bool = False, **kwargs: Any):
         if disable:
             return None
         return plot_func(*args, **kwargs)

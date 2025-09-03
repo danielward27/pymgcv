@@ -28,20 +28,6 @@ def test_pymgcv_mgcv_equivilance(test_case: GAMTestCase):
 
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
-def test_predict_terms_structure(test_case: GAMTestCase):
-    gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
-    all_terms_with_se = gam.partial_effects(test_case.data, compute_se=True)
-    expected = test_case.expected_predict_terms_structure
-
-    assert sorted(all_terms_with_se.keys()) == sorted(expected.keys())
-
-    for term_name, fit_and_se in all_terms_with_se.items():
-        for fit_or_se in (fit_and_se.fit, fit_and_se.se):
-            actual = fit_or_se.columns.values.tolist()
-            assert sorted(expected[term_name]) == sorted(actual)
-
-
-@pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
 def test_partial_effects_colsum_matches_predict(test_case: GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     predictions = gam.predict(test_case.data)
@@ -53,26 +39,21 @@ def test_partial_effects_colsum_matches_predict(test_case: GAMTestCase):
 
 
 @pytest.mark.parametrize("test_case", test_cases.values(), ids=test_cases.keys())
-def test_partial_effect_against_partial_effects(test_case: GAMTestCase):
+def test_partial_effects(test_case: GAMTestCase):
+    """Consistency check between partial_effect and partial_effects."""
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
-
     partial_effects = gam.partial_effects(test_case.data, compute_se=True)
 
     all_predictors = gam.all_predictors
+
     for target, terms in all_predictors.items():
         for term in terms:
-            try:
-                effect = gam.partial_effect(
-                    term,
-                    target,
-                    test_case.data,
-                    compute_se=True,
-                )
-            except NotImplementedError as e:
-                if str(e) != "":
-                    raise e
-                continue
-
+            effect = gam.partial_effect(
+                term,
+                target,
+                test_case.data,
+                compute_se=True,
+            )
             name = term.label()
             expected_fit = pytest.approx(partial_effects[target].fit[name], abs=1e-6)
             expected_se = pytest.approx(partial_effects[target].se[name], abs=1e-6)
