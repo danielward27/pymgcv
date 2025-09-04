@@ -1,9 +1,11 @@
+from functools import partial
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from pymgcv.gam import GAM
-from pymgcv.qq import qq_cdf, qq_simulate
+from pymgcv.qq import qq_simulate, qq_transform
 from pymgcv.terms import L, S
 
 from .gam_test_cases import GAMTestCase, get_test_cases
@@ -11,7 +13,11 @@ from .gam_test_cases import GAMTestCase, get_test_cases
 
 @pytest.mark.parametrize(
     "qq_fun",
-    [qq_cdf, qq_simulate],
+    [
+        partial(qq_transform, transform_to="uniform"),
+        partial(qq_transform, transform_to="normal"),
+        qq_simulate,
+    ],
 )
 def test_qq_functions(qq_fun):
     """Test that qq_uniform runs without error and returns expected structure."""
