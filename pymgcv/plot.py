@@ -15,12 +15,11 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from pandas import CategoricalDtype
 from pandas.api.types import is_numeric_dtype
+from scipy.stats import norm
 
 from pymgcv.basis_functions import FactorSmooth, RandomEffect
 from pymgcv.gam import AbstractGAM
 from pymgcv.qq import QQResult, qq_simulate
-from pymgcv.rlibs import rstats
-from pymgcv.rpy_utils import to_py
 from pymgcv.terms import (
     AbstractTerm,
     L,
@@ -712,7 +711,11 @@ def random_effect(
         data=pd.DataFrame(pd.Series(levels, name=term.varnames[0], dtype="category")),
     )
     order = np.argsort(pred)
-    x = rstats.qnorm(rstats.ppoints(len(levels)))  # Gaussian quantiles
+
+    n = len(levels)
+    probs = (np.arange(n) + 0.5) / n
+    x = norm.ppf(probs)
+
     ax.scatter(
         x,
         pred[order],
@@ -724,14 +727,10 @@ def random_effect(
     # page 6. We need to multiply them by sd(.dat$y) because we are not normalizing the
     # random effects.
     alpha = (1 - confidence_interval_level) / 2
-    n = len(levels)
-    p = to_py(rstats.ppoints(n))
     interval = (
-        np.std(pred)
-        * to_py(rstats.qnorm(alpha))  # e.g. 1.96
-        * np.sqrt(p * (1 - p) / n)
-        / to_py(rstats.dnorm(x))
+        np.std(pred) * norm.ppf(alpha) * np.sqrt(probs * (1 - probs) / n) / norm.pdf(x)
     )
+
     ref_y = x * np.std(pred)
     _with_disable(ax.fill_between)(
         x,
@@ -768,15 +767,9 @@ def qq(
             object storing the theoretical residuals, residuals, and the confidence
             interval. Defaults to [`qq_simulate`][pymgcv.qq.qq_simulate], which is the
             most widely supported method only requiring the family to provide a
-            sampling function. [`qq_cdf`][pymgcv.qq.qq_cdf] can be used for families
-            providing a cdf method, which transforms the data to a uniform
-            distribution
-
-            !!! warning
-
-                `qq_cdf` transforms all data to [0, 1] uniform. This may make it hard to
-                spot deviations in tail behaviour, e.g. due to a few extreme outliers.
-
+            sampling function. [`qq_transform`][pymgcv.qq.qq_transform] can be used for
+            families providing a cdf method, which transforms the data to a known
+            distribution for which an analytical confidence interval is available.
         scatter_kwargs: Key word arguments passed to `matplotlib.pyplot.scatter`.
         fill_between_kwargs: Key word arguments passed to
             `matplotlib.pyplot.fill_between`, for plotting the confidence interval.
@@ -787,14 +780,14 @@ def qq(
 
     !!! note
 
-        We can change e.g. the confidence level and number of simulations using
-        partial application:
+        To change settings of ``qq_fun``, use partial application, e.g.
         ```python
         from pymgcv.qq import qq_simulate
         from functools import partial
+        import pymgcv.plot as gplt
 
         qq_fun = partial(qq_simulate, level=0.95, n_sim=10)
-        # qq(..., qq_fun=qq_fun)
+        # gplt.qq(..., qq_fun=qq_fun)
         ```
 
     Returns:
