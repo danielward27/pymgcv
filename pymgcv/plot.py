@@ -251,7 +251,7 @@ def _get_term_plotter(
 
 def continuous_1d(
     *,
-    term: AbstractTerm,
+    term: AbstractTerm | int,
     gam: AbstractGAM,
     target: str | None = None,
     data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
@@ -273,6 +273,8 @@ def continuous_1d(
 
     Args:
         term: The model term to plot. Must be a univariate term (single variable).
+            If an integer is provided, it is assumed to be the index of the term
+            in the predictor of ``target``.
         gam: GAM model containing the term to plot.
         target: Name of the target variable (response variable or family
             parameter name from the model specification). If set to None, an error
@@ -309,6 +311,9 @@ def continuous_1d(
                 "Target must be specified when multiple predictors are present.",
             )
         target = list(gam.all_predictors.keys())[0]
+
+    if isinstance(term, int):
+        term = gam.all_predictors[target][term]
 
     data = data if data is not None else gam.fit_state.data
     data = deepcopy(data)
@@ -390,7 +395,7 @@ def continuous_1d(
 
 def continuous_2d(
     *,
-    term: AbstractTerm,
+    term: AbstractTerm | int,
     gam: AbstractGAM,
     target: str | None = None,
     data: pd.DataFrame | Mapping[str, np.ndarray | pd.Series] | None = None,
@@ -408,7 +413,9 @@ def continuous_2d(
 
     Args:
         term: The bivariate term to plot. Must have exactly two variables.
-            Can be S('x1', 'x2') or T('x1', 'x2').
+            Can be S('x1', 'x2') or T('x1', 'x2'). If an integer is provided,
+            it is interpreted as the index of the term the list of predictors
+            for ``target``.
         gam: GAM model containing the term to plot.
         target: Name of the target variable (response variable or family
             parameter name from the model specification). If set to None, an error
@@ -445,6 +452,9 @@ def continuous_2d(
                 "Target must be specified when multiple predictors are present.",
             )
         target = list(gam.all_predictors.keys())[0]
+
+    if isinstance(term, int):
+        term = gam.all_predictors[target][term]
 
     data = data if data is not None else gam.fit_state.data
     data = deepcopy(data)
@@ -530,7 +540,7 @@ def continuous_2d(
 
 def categorical(
     *,
-    term: L,
+    term: L | int,
     gam: AbstractGAM,
     target: str | None = None,
     data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
@@ -574,6 +584,12 @@ def categorical(
                 "Target must be specified when multiple predictors are present.",
             )
         target = list(gam.all_predictors.keys())[0]
+
+    if isinstance(term, int):
+        term = gam.all_predictors[target][term]  # type: ignore - checked below
+
+    if not isinstance(term, L):
+        raise TypeError("The term must be a linear term.")
 
     data = gam.fit_state.data if data is None else data
 
@@ -632,7 +648,7 @@ def categorical(
 
 def random_effect(
     *,
-    term: S,
+    term: S | int,
     gam: AbstractGAM,
     target: str | None = None,
     confidence_interval_level: float = 0.95,
@@ -650,6 +666,8 @@ def random_effect(
     Args:
         term: The random effect term to plot. Must be a smooth term with a
             [`RandomEffect`][pymgcv.basis_functions.RandomEffect] basis function.
+            If an integer is provided, it is assumed to be the index of the term
+            in the predictors for ``target``.
         gam: The fitted GAM model containing the random effect.
         target: The target variable to plot when multiple predictors are present.
             If None and only one predictor exists, that predictor is used.
@@ -685,6 +703,12 @@ def random_effect(
                 "Target must be specified when multiple predictors are present.",
             )
         target = list(gam.all_predictors.keys())[0]
+
+    if isinstance(term, int):
+        term = gam.all_predictors[target][term]  # type: ignore - checked below
+
+    if not isinstance(term, S):
+        raise TypeError("Term is not a smooth term.")
 
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
     scatter_kwargs.setdefault("s", 0.05 * rcParams["lines.markersize"] ** 2)
