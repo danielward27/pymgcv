@@ -136,7 +136,6 @@ def test_qq(test_case: tc.GAMTestCase):
             pass
         else:
             raise
-
     plt.close("all")
 
 
