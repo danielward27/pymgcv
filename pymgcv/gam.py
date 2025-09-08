@@ -451,7 +451,7 @@ class AbstractGAM(ABC):
     @overload
     def partial_effect(
         self,
-        term: AbstractTerm,
+        term: AbstractTerm | int,
         target: str | None = None,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
@@ -461,7 +461,7 @@ class AbstractGAM(ABC):
     @overload
     def partial_effect(
         self,
-        term: AbstractTerm,
+        term: AbstractTerm | int,
         target: str | None = None,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
@@ -470,7 +470,7 @@ class AbstractGAM(ABC):
 
     def partial_effect(
         self,
-        term: AbstractTerm,
+        term: AbstractTerm | int,
         target: str | None = None,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
@@ -483,7 +483,8 @@ class AbstractGAM(ABC):
 
         Args:
             term: The specific term to evaluate (must match a term used in the
-                original model specification)
+                original model specification) or an integer index representing
+                the position of the term in the target's predictor list
             target: Name of the target variable (response variable or family
                 parameter name from the model specification). If set to None, an error
                 is raised when multiple predictors are present; otherwise, the sole
@@ -496,8 +497,6 @@ class AbstractGAM(ABC):
             raise ValueError(
                 "Cannot compute partial effect before fitting the model.",
             )
-        if data is not None:
-            self._check_data(data, requires=term)
 
         if target is None:
             if len(self.all_predictors) > 1:
@@ -505,6 +504,12 @@ class AbstractGAM(ABC):
                     "Target must be specified when multiple predictors are present.",
                 )
             target = list(self.all_predictors.keys())[0]
+
+        if isinstance(term, int):
+            term = self.all_predictors[target][term]
+
+        if data is not None:
+            self._check_data(data, requires=term)
 
         data = data if data is not None else self.fit_state.data
 
@@ -547,7 +552,7 @@ class AbstractGAM(ABC):
 
     def partial_residuals(
         self,
-        term: AbstractTerm,
+        term: AbstractTerm | int,
         target: str | None = None,
         data: pd.DataFrame | Mapping[str, pd.Series | np.ndarray] | None = None,
         *,
@@ -561,7 +566,9 @@ class AbstractGAM(ABC):
         different functional form might be more appropriate.
 
         Args:
-            term: The model term to compute partial residuals for.
+            term: The model term to compute partial residuals for. If an integer,
+                it is interpreted as the index of the term in the predictor of
+                ``target``.
             target: Name of the target variable (response variable or family
                 parameter name from the model specification). If set to None, an error
                 is raised when multiple predictors are present; otherwise, the sole
@@ -587,6 +594,9 @@ class AbstractGAM(ABC):
                     "Target must be specified when multiple predictors are present.",
                 )
             target = list(self.all_predictors.keys())[0]
+
+        if isinstance(term, int):
+            term = self.all_predictors[target][term]
 
         link_fit = self.predict(data)[target]  # _check_data called within predict
         data = data if data is not None else self.fit_state.data
