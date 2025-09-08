@@ -23,8 +23,8 @@ Families define the distribution and link functions for GAM models. Each family 
 ::: pymgcv.families.Multinom
 
 ## Location-scale
-::: pymgcv.families.GammaLS
 ::: pymgcv.families.GauLSS
+::: pymgcv.families.GammaLS
 ::: pymgcv.families.GevLSS
 ::: pymgcv.families.GumbLS
 ::: pymgcv.families.Shash
