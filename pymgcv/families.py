@@ -21,6 +21,13 @@ class AbstractFamily(ABC):
     """
 
     rfamily: ro.ListVector
+    n_observed_predictors: int
+    n_unobserved_predictors: int
+
+    @property
+    def n_predictors(self) -> int:
+        """Return the total number of predictors."""
+        return self.n_observed_predictors + self.n_unobserved_predictors
 
     def link(self, x: np.ndarray) -> np.ndarray:
         """Compute the link function."""
@@ -89,6 +96,8 @@ class Gaussian(AbstractFamily, SupportsCDF):
 
     def __init__(self, link: Literal["identity", "log", "inverse"] = "identity"):
         self.rfamily = rstats.gaussian(link=link)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
     def cdf(
         self,
@@ -123,6 +132,8 @@ class Binomial(AbstractFamily, SupportsCDF):
         link: Literal["logit", "probit", "cauchit", "log", "cloglog"] = "logit",
     ):
         self.rfamily = rstats.binomial(link=link)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
     def cdf(
         self,
@@ -147,6 +158,8 @@ class Gamma(AbstractFamily, SupportsCDF):
 
     def __init__(self, link: Literal["inverse", "identity", "log"] = "inverse"):
         self.rfamily = rstats.Gamma(link=link)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
     def cdf(
         self,
@@ -176,6 +189,8 @@ class InverseGaussian(AbstractFamily):
         link: Literal["1/mu^2", "inverse", "identity", "log"] = "1/mu^2",
     ):
         self.rfamily = rstats.inverse_gaussian(link=link)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
@@ -188,6 +203,8 @@ class Poisson(AbstractFamily, SupportsCDF):
 
     def __init__(self, link: Literal["log", "identity", "sqrt"] = "log"):
         self.rfamily = rstats.poisson(link=link)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
     def cdf(
         self,
@@ -225,6 +242,8 @@ class Quasi(AbstractFamily):
         variance: Literal["constant", "mu(1-mu)", "mu", "mu^2", "mu^3"] = "constant",
     ):
         self.rfamily = rstats.quasi(link=link, variance=variance)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
@@ -240,6 +259,8 @@ class QuasiBinomial(AbstractFamily):
         link: Literal["logit", "probit", "cauchit", "log", "cloglog"] = "logit",
     ):
         self.rfamily = rstats.quasibinomial(link=link)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
@@ -252,6 +273,8 @@ class QuasiPoisson(AbstractFamily):
 
     def __init__(self, link: Literal["log", "identity", "sqrt"] = "log"):
         self.rfamily = rstats.quasipoisson(link=link)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
@@ -259,11 +282,14 @@ class Betar(AbstractFamily):
     r"""Beta regression family for use with GAM/BAM.
 
     The linear predictor controls the mean $\mu$, and the variance is given by
-    $\mu(1-\mu)/(1+\phi)$. The respoin
+    $\mu(1-\mu)/(1+\phi)$. Note, any observations too close to zero or one will be
+    clipped to ``eps`` and ``1-eps`` respsectively, to ensure the log likelihood is
+    bounded for all parameter values.
 
     Args:
         phi: The parameter $\phi$, influencing the variance.
-
+        link: The link function to use.
+        eps: Amount to clip values too close to zero or one.
     """
 
     def __init__(
@@ -273,10 +299,12 @@ class Betar(AbstractFamily):
         eps: float = 1e-10,
     ):
         self.rfamily = rmgcv.betar(theta=phi, link=link, eps=eps)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
-class NegBin(AbstractFamily):
+class NegativeBinomial(AbstractFamily):
     r"""Negative binomial family.
 
     Args:
@@ -294,7 +322,7 @@ class NegBin(AbstractFamily):
         *,
         theta_fixed: bool = False,
     ):
-        # For now this just uses nb family (not negbin)
+        # For now this just uses nb family (not NegativeBinomial)
         if theta_fixed and theta is None:
             raise ValueError("Theta must be specified if fixed.")
 
@@ -302,6 +330,8 @@ class NegBin(AbstractFamily):
             theta = theta if theta_fixed else -theta  # mgcv convention
 
         self.rfamily = rmgcv.nb(theta=ro.NULL if theta is None else theta, link=link)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
@@ -317,11 +347,17 @@ class OCat(AbstractFamily):
 
     def __init__(self, num_categories: int):
         self.rfamily = rmgcv.ocat(R=num_categories)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
 class Scat(AbstractFamily):
     r"""Scaled t family for heavy tailed data.
+
+    The idea is that $(y-\mu)/\sigma \sim t_\nu$ where $\mu$ is determined by a linear
+    predictor, while $\sigma$ and $\nu$ are parameters to be estimated alongside the
+    smoothing parameters.
 
     Args:
         link: The link function to use.
@@ -347,6 +383,8 @@ class Scat(AbstractFamily):
         if theta is not None and not theta_fixed:
             theta = -theta  # mgcv convention.
         self.rfamily = rmgcv.scat(link=link, min_df=min_df)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
@@ -371,6 +409,8 @@ class Tweedie(AbstractFamily):
         if isinstance(link, int | float):
             link = ro.rl(f"power({link})")  # type: ignore
         self.rfamily = rmgcv.Tweedie(p, link)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
@@ -412,6 +452,8 @@ class Tw(AbstractFamily):
             a=a,
             b=b,
         )
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
@@ -454,6 +496,8 @@ class ZIP(AbstractFamily):
         if theta is not None:
             theta = np.asarray(theta)  # type: ignore
         self.rfamily = rmgcv.ziP(theta=ro.NULL if theta is None else theta, b=b)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
@@ -472,6 +516,8 @@ class GammaLS(AbstractFamily):
         min_log_scale: float | int = -7,
     ):
         self.rfamily = rmgcv.gammals(b=min_log_scale)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 1
 
 
 # TODO when e.g. qq plotting finalized check works correctly with GauLSS
@@ -503,6 +549,8 @@ class GauLSS(AbstractFamily):
         min_std: float = 0.01,
     ):
         self.rfamily = rmgcv.gaulss(link=ro.StrVector([link, "logb"]), b=min_std)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 1
 
 
 @dataclass
@@ -527,6 +575,8 @@ class GevLSS(AbstractFamily):
     ):
         link = [location_link, "identity", shape_link]
         self.rfamily = rmgcv.gevlss(ro.StrVector(link))
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 2
 
 
 @dataclass
@@ -536,7 +586,8 @@ class GumbLS(AbstractFamily):
     `gumbls` fits Gumbel location–scale models with a location parameter $\mu$ and a
     log scale parameter $\beta$.
 
-    For $z = (y - \mu) e^{-\beta}$, the log Gumbel density is $\ell = -\beta - z - e^{-z}$.
+    For
+    $z = (y - \mu) e^{-\beta}$, the log Gumbel density is $\ell = -\beta - z - e^{-z}$.
     The mean is $\mu + \gamma e^{\beta}$, and the variance is $\pi^2 e^{2\beta}/6$.
 
     Note predictions on the response scale will return the log scale $\beta$
@@ -566,6 +617,8 @@ class GumbLS(AbstractFamily):
             link=ro.StrVector(["identity", scale_link]),
             b=min_log_scale,
         )
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 1
 
 
 @dataclass
@@ -573,10 +626,10 @@ class Multinom(AbstractFamily):
     r"""Multinomial family.
 
     Categories must be coded as integers from 0 to K. This family can only be used with
-    [`GAM`][pymgcv.gam.GAM]. k predictors should be specified, one in ``predictors``,
-    and the rest in ``family_predictors``. For the 0-th index, i.e. y=0, the likelihood
-    is $1 / [1+\sum_j \exp(\eta_j)$, where $\eta_j$ is the j-th linear predictor. For
-    y>0, it is given by $\exp(\eta_{y})/(1+\sum_j \exp(\eta_j))$.
+    [`GAM`][pymgcv.gam.GAM]. k predictors should be specified, with the first key
+    matching the target variables name in the data. For the 0-th index, i.e. y=0, the
+    likelihood is $1 / [1+\sum_j \exp(\eta_j)$, where $\eta_j$ is the j-th linear
+    predictor. For y>0, it is given by $\exp(\eta_{y})/(1+\sum_j \exp(\eta_j))$.
 
     Args:
         k: There are k+1 categories, and k linear predictors.
@@ -584,11 +637,18 @@ class Multinom(AbstractFamily):
 
     def __init__(self, k: int = 1):
         self.rfamily = rmgcv.multinom(K=k)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = k - 1
 
 
 @dataclass
 class MVN(AbstractFamily):
     """Multivariate normal family.
+
+    For this family, we expect $d$ linear predictors for the means, each with a key
+    corresponding to a variable name in data. The covariance is estimated during
+    fitting. For this family, deviance residuals are standardized to be approximately
+    indpendent standard normal.
 
     Args:
         d: The dimension of the distribution.
@@ -598,6 +658,8 @@ class MVN(AbstractFamily):
 
     def __init__(self, d: int):
         self.rfamily = rmgcv.mvn(d=d)
+        self.n_observed_predictors = d
+        self.n_unobserved_predictors = 0
 
 
 @dataclass
@@ -606,8 +668,9 @@ class Shash(AbstractFamily):
 
     Implements the four-parameter sinh-arcsinh (shash) distribution of Jones and Pewsey
     (2009). The location, scale, skewness and kurtosis of the density can depend on
-    additive smooth predictors. Requires one ``predictors``, and three
-    ``family_predictors`` when constructing the GAM.
+    additive smooth predictors. Requires four ``predictors``, with the first
+    (the location), corresponding to a variable name in the data, and the rest denoting
+    the scale, skewness and kurtosis (for which any names can be chosen).
 
     The density function is:
     $$
@@ -636,6 +699,8 @@ class Shash(AbstractFamily):
         phi_pen: float = 1e-3,
     ):
         self.rfamily = rmgcv.shash(b=b, phiPen=phi_pen)
+        self.n_observed_predictors = 1
+        self.n_unobserved_predictors = 3
 
 
 @dataclass

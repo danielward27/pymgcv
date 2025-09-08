@@ -38,7 +38,7 @@ cases_1d_continuous = get_cases_1d_continuous(GAM) | get_cases_1d_continuous(BAM
 )
 def test_continuous_1d(test_case: tc.GAMTestCase, kwargs: dict):
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
-    term = list(gam.all_predictors.values())[0][0]
+    term = list(gam.predictors.values())[0][0]
     gplt.continuous_1d(**kwargs, gam=gam, term=term, data=test_case.data)
     plt.close("all")
 
@@ -68,7 +68,7 @@ cases_2d_continuous = get_cases_2d_continuous(GAM) | get_cases_2d_continuous(BAM
 )
 def test_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
-    term = list(gam.all_predictors.values())[0][0]
+    term = list(gam.predictors.values())[0][0]
     gplt.continuous_2d(**kwargs, gam=gam, term=term, data=test_case.data)
     plt.close("all")
 
@@ -80,7 +80,7 @@ def test_continuous_2d(test_case: tc.GAMTestCase, kwargs: dict):
 def test_categorical(gam_type: type[AbstractGAM]):
     test_case = tc.categorical_linear_gam(gam_type)
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
-    term = list(gam.all_predictors.values())[0][0]
+    term = list(gam.predictors.values())[0][0]
     assert isinstance(term, L)
     gplt.categorical(target="y", gam=gam, term=term, data=test_case.data)
     plt.close("all")
@@ -146,7 +146,7 @@ def test_qq(test_case: tc.GAMTestCase):
 )
 def test_residuals_vs_linear_predictor(test_case: tc.GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
-    target = list(gam.all_predictors.keys())[0]
+    target = list(gam.predictors.keys())[0]
     try:
         gplt.residuals_vs_linear_predictor(gam, target=target)
     except NotImplementedError as e:

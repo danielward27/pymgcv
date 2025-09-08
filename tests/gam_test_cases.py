@@ -216,8 +216,10 @@ def gaulss_gam(gam_type: type[AbstractGAM]):
     return GAMTestCase(
         mgcv_args=f"list(y~s(x),~s(x1)),family=gaulss(),method='{method}'",
         gam_model=gam_type(
-            {"y": S("x")},
-            family_predictors={"scale": S("x1")},
+            {
+                "y": S("x"),
+                "scale": S("x1"),
+            },
             family=GauLSS(),
         ),
     )
@@ -417,8 +419,10 @@ def family_test_cases() -> dict[str, GAMTestCase]:
         "GauLSS": GAMTestCase(
             mgcv_args="list(y~s(x),~s(x1)), family=gaulss,method='REML'",
             gam_model=GAM(
-                {"y": S("x")},
-                family_predictors={"scale": S("x1")},
+                {
+                    "y": S("x"),
+                    "scale": S("x1"),
+                },
                 family=fam.GauLSS(),
             ),
         ),
@@ -429,16 +433,18 @@ def family_test_cases() -> dict[str, GAMTestCase]:
         "GumbLS": GAMTestCase(
             mgcv_args="list(prob~s(x),~s(x1)), family=gumbls,method='REML'",
             gam_model=GAM(
-                {"prob": S("x")},
-                family_predictors={"log_scale": S("x1")},
+                {
+                    "prob": S("x"),
+                    "log_scale": S("x1"),
+                },
                 family=fam.GumbLS(),
             ),
         ),
-        "NegBin": GAMTestCase(
+        "NegativeBinomial": GAMTestCase(
             mgcv_args="pos_int~s(x), family=nb(theta=1),method='REML'",
             gam_model=GAM(
                 {"pos_int": S("x")},
-                family=fam.NegBin(theta=1, theta_fixed=True),
+                family=fam.NegativeBinomial(theta=1, theta_fixed=True),
             ),
         ),
         "OCat": GAMTestCase(
@@ -453,7 +459,9 @@ def family_test_cases() -> dict[str, GAMTestCase]:
             gam_model=GAM({"pos_float": S("x")}, family=fam.Scat()),
         ),
         "Tweedie": GAMTestCase(
-            mgcv_args="pos_float~s(x), family=Tweedie(1.5, link=power(0.1)),method='REML'",
+            mgcv_args=(
+                "pos_float~s(x), family=Tweedie(1.5, link=power(0.1)),method='REML'"
+            ),
             gam_model=GAM({"pos_float": S("x")}, family=fam.Tweedie(p=1.5, link=0.1)),
         ),
         "Tw": GAMTestCase(
@@ -467,32 +475,41 @@ def family_test_cases() -> dict[str, GAMTestCase]:
         "GammaLS": GAMTestCase(
             mgcv_args="list(pos_float~s(x),~s(x1)), family=gammals,method='REML'",
             gam_model=GAM(
-                {"pos_float": S("x")},
-                family_predictors={"log_scale": S("x1")},
+                {
+                    "pos_float": S("x"),
+                    "log_scale": S("x1"),
+                },
                 family=fam.GammaLS(),
             ),
         ),
         "GevLSS": GAMTestCase(
             mgcv_args="list(pos_float~s(x),~s(x),~s(x1)), family=gevlss,method='REML'",
             gam_model=GAM(
-                {"pos_float": S("x")},
-                family_predictors={"log_scale": S("x"), "shape": S("x1")},
+                {
+                    "pos_float": S("x"),
+                    "log_scale": S("x"),
+                    "shape": S("x1"),
+                },
                 family=fam.GevLSS(),
             ),
         ),
         "Multinom": GAMTestCase(  # This is a bit clunky
-            mgcv_args="list(zero_to_two_int~s(x),~s(x)), family=multinom(K=2),method='REML'",
+            mgcv_args=(
+                "list(zero_to_two_int~s(x),~s(x)), family=multinom(K=2),method='REML'"
+            ),
             gam_model=GAM(
-                {"zero_to_two_int": S("x")},
-                family_predictors={"eta2": S("x")},
+                {
+                    "zero_to_two_int": S("x"),
+                    "eta2": S("x"),
+                },
                 family=fam.Multinom(k=2),
             ),
         ),
         "Shash": GAMTestCase(
             mgcv_args="list(y~s(x),~s(x),~1,~1), family=shash,method='REML'",
             gam_model=GAM(
-                {"y": S("x")},
-                family_predictors={
+                {
+                    "y": S("x"),
                     "log_scale": S("x"),
                     "shape": Intercept(),
                     "kurtosis": Intercept(),

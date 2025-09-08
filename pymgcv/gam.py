@@ -71,11 +71,10 @@ class AbstractGAM(ABC):
     """Abstract base class for GAM models.
 
     This class cannot be initialized but provides a common interface for fitting and
-    predicting GAM models.
+    predicting using different types of GAM models.
     """
 
     predictors: dict[str, list[AbstractTerm]]
-    family_predictors: dict[str, list[AbstractTerm]]
     family: AbstractFamily
     add_intercepts: bool
     fit_state: FitState | None
@@ -83,8 +82,6 @@ class AbstractGAM(ABC):
     def __init__(
         self,
         predictors: Mapping[str, Iterable[AbstractTerm] | AbstractTerm],
-        family_predictors: Mapping[str, Iterable[AbstractTerm] | AbstractTerm]
-        | None = None,
         *,
         family: AbstractFamily | None = None,
         add_intercepts: bool = True,
@@ -92,32 +89,47 @@ class AbstractGAM(ABC):
         r"""Initialize the model.
 
         Args:
-            predictors: Dictionary mapping response variable names to an iterable of
+            predictors: Dictionary mapping target variable names to an iterable of
                 [`AbstractTerm`][pymgcv.terms.AbstractTerm] objects used to predict
-                $g([\mathbb{E}[Y])$. For single response models, use a single key-value
-                pair. For multivariate models, include multiple response variables.
-            family_predictors: Dictionary mapping family parameter names to an iterable
-                of terms for modeling those parameters. Keys are used as labels during
-                prediction and should match the order expected by the mgcv family.
-            family: Family for the error distribution. See [Families](./families.md)
+                $g([\mathbb{E}[Y])$.
+
+                - For simple models, this will usually be a single
+                    key-value pair:
+                    ```python
+                    {"y": S("x1") + S("x2")}
+                    ```
+                - For multivariate models, e.g. [`MVN`][pymgcv.families.MVN], the
+                    dictionary will have multiple pairs:
+                        ```python
+                        {"y1": S("x1") + S("x2"), "y2": S("x2")}
+                        ```
+                - For multiparameter models, such as LSS-type models (e.g.
+                [`GauLSS`][pymgcv.families.GauLSS]), the first key-value pair
+                must correspond to the variable name in the data (usually modelling the
+                location), and the subsequent dictionary elements model the other
+                parameters **in the order as defined by the
+                family** (e.g. scale and shape). The names of these extra parameters,
+                can be anything, and are used as column names for prediction outputs.
+                ```python
+                {"y": S("x1") + S("x2"), "scale": S("x2")}
+                ```
+
+            family: Distribution family to use. See [Families](./families.md)
                 for available options.
             add_intercepts: If False, intercept terms must be manually added to the
                 formulae using [`Intercept`][pymgcv.terms.Intercept]. If True,
                 automatically adds an intercept term to each formula. Intercepts are
-                added as needed by methods, such that ``gam.predictors`` and
-                ``gam.family_predictors`` reflect the model as constructed.
+                added as needed by methods, such that ``gam.predictors`` reflect the
+                model as constructed (i.e. before adding intercepts).
         """
-        predictors, family_predictors = deepcopy((predictors, family_predictors))
-        family_predictors = {} if family_predictors is None else family_predictors
+        predictors = dict(predictors).copy()
         family = Gaussian() if family is None else family
 
-        def _ensure_list_of_terms(d):
-            return {
-                k: [v] if isinstance(v, AbstractTerm) else list(v) for k, v in d.items()
-            }
-
-        self.predictors = _ensure_list_of_terms(predictors)
-        self.family_predictors = _ensure_list_of_terms(family_predictors)
+        predictors = {
+            k: [v] if isinstance(v, AbstractTerm) else list(v)
+            for k, v in predictors.items()
+        }
+        self.predictors = predictors
         self.family = family
         self.fit_state = None
         self.add_intercepts = add_intercepts
@@ -125,7 +137,7 @@ class AbstractGAM(ABC):
 
     def _check_init(self):
         # Perform some basic checks
-        for terms in self.all_predictors.values():
+        for terms in self.predictors.values():
             identifiers = set()
             labels = set()
             for term in terms:
@@ -142,11 +154,11 @@ class AbstractGAM(ABC):
                 identifiers.add(mgcv_id)
                 labels.add(label)
 
-        for k in self.predictors:
-            if k in self.family_predictors:
-                raise ValueError(
-                    f"Cannot have key {k} in both predictors and family_predictors.",
-                )
+        if len(self.predictors) != self.family.n_predictors:
+            raise ValueError(
+                f"Expected {self.family.n_predictors} predictors, but received "
+                f"{len(self.predictors)} predictors.",
+            )
 
         disallowed = ["Intercept", "s(", "te(", "ti(", "t2(", ":", "*"]
         for var in self.referenced_variables:
@@ -239,15 +251,10 @@ class AbstractGAM(ABC):
         pass
 
     @property
-    def all_predictors(self) -> dict[str, list[AbstractTerm]]:
-        """All predictors (response and for family parameters)."""
-        return self.predictors | self.family_predictors
-
-    @property
     def referenced_variables(self) -> list[str]:
         """List of variables referenced by the model required to be present in data."""
-        vars = set(self.predictors.keys())
-        for predictor in self.all_predictors.values():
+        vars = set(list(self.predictors.keys())[: self.family.n_observed_predictors])
+        for predictor in self.predictors.values():
             for term in predictor:
                 vars.update(term.varnames)
                 if term.by is not None:
@@ -278,8 +285,11 @@ class AbstractGAM(ABC):
             case "all":
                 required_vars = self.referenced_variables
             case "covariates":
+                target = list(self.predictors.keys())[
+                    : self.family.n_observed_predictors
+                ]
                 required_vars = [
-                    v for v in self.referenced_variables if v not in self.predictors
+                    v for v in self.referenced_variables if v not in target
                 ]
             case AbstractTerm():
                 required_vars = requires.varnames
@@ -311,15 +321,16 @@ class AbstractGAM(ABC):
                 multi-formula models.
         """
         formulae = []
-
-        all_predictors = (
-            self.all_predictors
+        predictors = (
+            self.predictors
             if not self.add_intercepts
-            else _add_intercepts(self.all_predictors)
+            else _add_intercepts(self.predictors)
         )
 
-        for target, terms in all_predictors.items():
-            if target in self.family_predictors:
+        unobserved = list(predictors.keys())[self.family.n_observed_predictors :]
+
+        for target, terms in predictors.items():
+            if target in unobserved:  # e.g. lss scale
                 target = ""  # no left hand side
 
             formula_str = f"{target}~{'+'.join(map(str, terms))}"
@@ -485,10 +496,9 @@ class AbstractGAM(ABC):
             term: The specific term to evaluate (must match a term used in the
                 original model specification) or an integer index representing
                 the position of the term in the target's predictor list
-            target: Name of the target variable (response variable or family
-                parameter name from the model specification). If set to None, an error
-                is raised when multiple predictors are present; otherwise, the sole
-                available target is used.
+            target: Name of the target variable from the keys of ``gam.predictors``. If
+                set to None, the single predictor is used if only one is present,
+                otherwise an error is raised.
             data: DataFrame or dictionary containing the variables needed
                 to compute the partial effect for the term.
             compute_se: Whether to compute and return standard errors
@@ -499,21 +509,21 @@ class AbstractGAM(ABC):
             )
 
         if target is None:
-            if len(self.all_predictors) > 1:
+            if len(self.predictors) > 1:
                 raise ValueError(
                     "Target must be specified when multiple predictors are present.",
                 )
-            target = list(self.all_predictors.keys())[0]
+            target = list(self.predictors.keys())[0]
 
         if isinstance(term, int):
-            term = self.all_predictors[target][term]
+            term = self.predictors[target][term]
 
         if data is not None:
             self._check_data(data, requires=term)
 
         data = data if data is not None else self.fit_state.data
 
-        formula_idx = list(self.all_predictors.keys()).index(target)
+        formula_idx = list(self.predictors.keys()).index(target)
 
         if compute_se:
             return term._partial_effect_with_se(
@@ -589,14 +599,14 @@ class AbstractGAM(ABC):
             )
 
         if target is None:
-            if len(self.all_predictors) > 1:
+            if len(self.predictors) > 1:
                 raise ValueError(
                     "Target must be specified when multiple predictors are present.",
                 )
-            target = list(self.all_predictors.keys())[0]
+            target = list(self.predictors.keys())[0]
 
         if isinstance(term, int):
-            term = self.all_predictors[target][term]
+            term = self.predictors[target][term]
 
         link_fit = self.predict(data)[target]  # _check_data called within predict
         data = data if data is not None else self.fit_state.data
@@ -655,7 +665,7 @@ class AbstractGAM(ABC):
         compute_se: bool,
     ) -> dict[str, np.ndarray] | dict[str, FitAndSE[np.ndarray]]:
         """Formats output from mgcv predict."""
-        all_targets = self.all_predictors.keys()
+        all_targets = self.predictors.keys()
         if compute_se:
             fit_all = to_py(predictions.rx2["fit"]).reshape(-1, len(all_targets))
             se_all = to_py(predictions.rx2["se.fit"]).reshape(-1, len(all_targets))
@@ -692,13 +702,13 @@ class AbstractGAM(ABC):
 
         # Partition results based on formulas
         results = {}
-        all_predictors = (
-            self.all_predictors
+        predictors = (
+            self.predictors
             if not self.add_intercepts
-            else _add_intercepts(self.all_predictors)
+            else _add_intercepts(self.predictors)
         )
 
-        for i, (target, terms) in enumerate(all_predictors.items()):
+        for i, (target, terms) in enumerate(predictors.items()):
             fit = {}
             se = {}
 
@@ -825,7 +835,6 @@ class GAM(AbstractGAM):
     """Standard GAM Model."""
 
     predictors: dict[str, list[AbstractTerm]]
-    family_predictors: dict[str, list[AbstractTerm]]
     family: AbstractFamily
     add_intercepts: bool
     fit_state: FitState | None
@@ -1064,7 +1073,6 @@ class BAM(AbstractGAM):
     """A big-data GAM (BAM) model."""
 
     predictors: dict[str, list[AbstractTerm]]
-    family_predictors: dict[str, list[AbstractTerm]]
     family: AbstractFamily
     add_intercepts: bool
     fit_state: FitState | None

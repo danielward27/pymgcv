@@ -10,6 +10,7 @@ theme:
   icon:
     repo: fontawesome/brands/github
   logo: _static/favicon.svg
+  navigation_depth: 3
   favicon: "_static/favicon.svg"
 
 site_name: pymgcv
@@ -36,7 +37,7 @@ markdown_extensions:
       base_path: docs
   - admonition
   - toc:
-      toc_depth: 3
+      toc_depth: 2
   - pymdownx.highlight:
       anchor_linenums: true
       line_spans: __span
