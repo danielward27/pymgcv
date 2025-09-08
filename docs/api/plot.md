@@ -11,11 +11,13 @@ import pymgcv.plot as gplt
     * [`continuous_1d`][pymgcv.plot.continuous_1d]
     * [`continuous_2d`][pymgcv.plot.continuous_2d]
     * [`categorical`][pymgcv.plot.categorical]
+    * [`random_effect`][pymgcv.plot.random_effect]
 
 ::: pymgcv.plot.plot
 ::: pymgcv.plot.continuous_1d
 ::: pymgcv.plot.continuous_2d
 ::: pymgcv.plot.categorical
+::: pymgcv.plot.random_effect
 ::: pymgcv.plot.qq
 ::: pymgcv.plot.residuals_vs_linear_predictor
 ::: pymgcv.plot.hexbin_residuals

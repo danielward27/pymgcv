@@ -79,7 +79,7 @@ def plot(
     if isinstance(to_plot, type | types.UnionType):
         to_plot = {
             k: [v for v in terms if isinstance(v, to_plot)]
-            for k, terms in gam.all_predictors.items()
+            for k, terms in gam.predictors.items()
         }
 
     plotters = []
@@ -116,7 +116,7 @@ def plot(
         plotter.make_plot(axes[idx : (idx + plotter.required_axes)], **kwargs)
 
         # If multiple targets in the model, add target variable as title.
-        if len(gam.all_predictors) > 1:
+        if len(gam.predictors) > 1:
             for ax in axes[idx : (idx + plotter.required_axes)]:
                 ax.set_title(plotter.target_variable)
 
@@ -306,14 +306,14 @@ def continuous_1d(
         raise ValueError("Cannot plot before fitting the model.")
 
     if target is None:
-        if len(gam.all_predictors) > 1:
+        if len(gam.predictors) > 1:
             raise ValueError(
                 "Target must be specified when multiple predictors are present.",
             )
-        target = list(gam.all_predictors.keys())[0]
+        target = list(gam.predictors.keys())[0]
 
     if isinstance(term, int):
-        term = gam.all_predictors[target][term]
+        term = gam.predictors[target][term]
 
     data = data if data is not None else gam.fit_state.data
     data = deepcopy(data)
@@ -447,14 +447,14 @@ def continuous_2d(
         raise ValueError("Cannot plot before fitting the model.")
 
     if target is None:
-        if len(gam.all_predictors) > 1:
+        if len(gam.predictors) > 1:
             raise ValueError(
                 "Target must be specified when multiple predictors are present.",
             )
-        target = list(gam.all_predictors.keys())[0]
+        target = list(gam.predictors.keys())[0]
 
     if isinstance(term, int):
-        term = gam.all_predictors[target][term]
+        term = gam.predictors[target][term]
 
     data = data if data is not None else gam.fit_state.data
     data = deepcopy(data)
@@ -579,14 +579,14 @@ def categorical(
         raise RuntimeError("The model must be fitted before plotting.")
 
     if target is None:
-        if len(gam.all_predictors) > 1:
+        if len(gam.predictors) > 1:
             raise ValueError(
                 "Target must be specified when multiple predictors are present.",
             )
-        target = list(gam.all_predictors.keys())[0]
+        target = list(gam.predictors.keys())[0]
 
     if isinstance(term, int):
-        term = gam.all_predictors[target][term]  # type: ignore - checked below
+        term = gam.predictors[target][term]  # type: ignore - checked below
 
     if not isinstance(term, L):
         raise TypeError("The term must be a linear term.")
@@ -694,21 +694,21 @@ def random_effect(
     if gam.fit_state is None:
         raise RuntimeError("The model must be fitted before plotting.")
 
-    if not isinstance(term.bs, RandomEffect):
-        raise TypeError("Term is not a random effect term.")
-
     if target is None:
-        if len(gam.all_predictors) > 1:
+        if len(gam.predictors) > 1:
             raise ValueError(
                 "Target must be specified when multiple predictors are present.",
             )
-        target = list(gam.all_predictors.keys())[0]
+        target = list(gam.predictors.keys())[0]
 
     if isinstance(term, int):
-        term = gam.all_predictors[target][term]  # type: ignore - checked below
+        term = gam.predictors[target][term]  # type: ignore - checked below
 
     if not isinstance(term, S):
         raise TypeError("Term is not a smooth term.")
+
+    if not isinstance(term.bs, RandomEffect):
+        raise TypeError("Term is not a random effect term.")
 
     scatter_kwargs = {} if scatter_kwargs is None else scatter_kwargs
     scatter_kwargs.setdefault("s", 0.05 * rcParams["lines.markersize"] ** 2)
@@ -727,35 +727,30 @@ def random_effect(
     axline_kwargs.setdefault("linestyle", "--")
     ax = plt.gca() if ax is None else ax
 
-    # TODO remove data argument?
     levels = np.unique(gam.fit_state.data[term.varnames[0]])
     pred = gam.partial_effect(
         term=term,
         target=target,
         data=pd.DataFrame(pd.Series(levels, name=term.varnames[0], dtype="category")),
     )
-    order = np.argsort(pred)
-
+    pred = np.sort(pred)
     n = len(levels)
     probs = (np.arange(n) + 0.5) / n
     x = norm.ppf(probs)
 
-    ax.scatter(
-        x,
-        pred[order],
-        **scatter_kwargs,
-    )
+    _with_disable(ax.scatter)(x, pred, **scatter_kwargs)
 
     # Add CI lines. Confidence interval based on formula in
     # "Worm plot: a simple diagnostic device for modelling growth reference curves"
     # page 6. We need to multiply them by sd(.dat$y) because we are not normalizing the
     # random effects.
     alpha = (1 - confidence_interval_level) / 2
+    pred_std = np.std(pred)
     interval = (
-        np.std(pred) * norm.ppf(alpha) * np.sqrt(probs * (1 - probs) / n) / norm.pdf(x)
+        pred_std * norm.ppf(alpha) * np.sqrt(probs * (1 - probs) / n) / norm.pdf(x)
     )
 
-    ref_y = x * np.std(pred)
+    ref_y = x * pred_std + np.median(pred)
     _with_disable(ax.fill_between)(
         x,
         ref_y - interval,
@@ -763,14 +758,15 @@ def random_effect(
         alpha=0.2,
         **fill_between_kwargs,
     )
-    # RE constrained to be centered, so plot reference through (0, 0)
+
+    # Use the median y value as the constraining point
     _with_disable(ax.axline)(
-        (0, 0),
-        slope=np.std(pred).item(),
+        (0, np.median(pred)),
+        slope=pred_std.item(),
         **axline_kwargs,
-    )  # TODO use axline in qq too?
+    )
     ax.set_xlabel("Gaussian Quantiles")
-    ax.set_ylabel(f"{term.varnames[0]} effect")  # TODO target?
+    ax.set_ylabel(f"{term.varnames[0]} effect")
     return ax
 
 
@@ -909,7 +905,7 @@ def residuals_vs_linear_predictor(
         ax: The axes to plot on.
         scatter_kwargs: Keyword arguments to pass to the scatter plot.
     """
-    if len(gam.predictors) > 1:
+    if gam.family.n_observed_predictors > 1:
         raise NotImplementedError(
             "Multivariate response families are not supported for "
             "residuals_vs_linear_predictor.",
@@ -920,11 +916,11 @@ def residuals_vs_linear_predictor(
     ax = plt.gca() if ax is None else ax
     residuals = gam.residuals(type)
     if target is None:
-        if len(gam.all_predictors) > 1:
+        if len(gam.predictors) > 1:
             raise ValueError(
                 "Target must be specified when multiple predictors are present.",
             )
-        target = list(gam.all_predictors.keys())[0]
+        target = list(gam.predictors.keys())[0]
     predictions = gam.predict()[target]
     ax.scatter(predictions, residuals, **scatter_kwargs)
     ax.set_xlabel("Linear predictor")

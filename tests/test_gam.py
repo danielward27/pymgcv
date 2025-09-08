@@ -44,9 +44,9 @@ def test_partial_effects(test_case: GAMTestCase):
     gam = test_case.gam_model.fit(test_case.data, **test_case.fit_kwargs)
     partial_effects = gam.partial_effects(test_case.data, compute_se=True)
 
-    all_predictors = gam.all_predictors
+    predictors = gam.predictors
 
-    for target, terms in all_predictors.items():
+    for target, terms in predictors.items():
         for term in terms:
             effect = gam.partial_effect(
                 term,
@@ -82,7 +82,7 @@ def test_with_se_matches_without(test_case: GAMTestCase):
     partial_effects_with_se = gam.partial_effects(compute_se=True)
     partial_effects_without = gam.partial_effects(compute_se=False)
 
-    for target in gam.all_predictors.keys():
+    for target in gam.predictors.keys():
         assert (
             pytest.approx(partial_effects_with_se[target].fit)
             == partial_effects_without[target]

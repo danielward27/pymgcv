@@ -49,7 +49,7 @@ def qq_simulate(
 
     fit, weights, sigma2 = to_py(fit), to_py(weights), to_py(sigma2)
 
-    if len(gam.predictors) > 1:
+    if gam.family.n_observed_predictors > 1:
         raise NotImplementedError(
             "Multivariate response families are not supported for qq_simulate.",
         )
