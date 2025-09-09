@@ -19,8 +19,8 @@ site_author: Daniel Ward
 extra:
   generator: false
 # site_url: TODO
-repo_url: https://github.com/danielward27/pymgcv
-repo_name: danielward27/pymgcv
+repo_url: https://github.com/SmoothForge/pymgcv
+repo_name: SmoothForge/pymgcv
 edit_uri: ""
 strict: false # TODO Don't allow warnings during the build process
 
