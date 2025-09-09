@@ -5,4 +5,4 @@
 ## 📚 Documentation
 All the information and examples you need are in the **documentation**:
 
-- [Check out the documentation here!](https://danielward27.github.io/pymgcv/)
+- [Check out the documentation here!](https://SmoothForge.github.io/pymgcv/)
